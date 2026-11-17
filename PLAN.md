@@ -2,7 +2,9 @@
 
 > **Titre de travail :** *Dust It Alone*
 > **Genre :** jeu incrémental de nettoyage (« cleaning idle / zone clearer »), dans la lignée de *Leaf It Alone* et *Moonsweeper*
-> **Plateforme :** navigateur (desktop + mobile), hébergé sur **Vercel**
+> **Plateforme :** navigateur, **PC en priorité** (souris + clavier), mobile ensuite — hébergé sur **Vercel**
+> **Durée visée :** ~10 h (jeu complet : 8 pièces + prestige + histoire)
+> **Style :** cartoon stylisé, joyeusement chaotique, avec beaucoup de personnalité (inspiré de l'esprit de *Gamble With Your Friends*, sans reprendre ses visuels)
 > **Langue :** français d'abord, anglais ensuite
 
 ---
@@ -32,7 +34,7 @@
 21. [Feuille de route (jalons)](#21-feuille-de-route-jalons)
 22. [Risques et parades](#22-risques-et-parades)
 23. [Après la v1](#23-après-la-v1)
-24. [Questions ouvertes](#24-questions-ouvertes)
+24. [Décisions prises](#24-décisions-prises)
 
 ---
 
@@ -87,7 +89,7 @@ Sous la poussière se cachent des **souvenirs** (photos, lettres, jouets) qui ra
 - **Première pièce terminée :** ~3 min
 - **Premier assistant :** ~8 min
 - **Premier prestige :** ~45–60 min
-- **Fin de l'histoire (v1) :** ~6–10 h de jeu actif + idle
+- **Fin de l'histoire (v1) :** **~10 h** de jeu actif + idle (choix validé)
 
 ---
 
@@ -297,17 +299,23 @@ Un **simulateur** (script Node, `tools/simulate.ts`) qui joue une partie « bot 
 
 ## 12. Direction artistique
 
-- **Style :** 2D vue du dessus, palette chaude et douce (beige, bois, vert sauge, lumière dorée), contours légers, rendu « cosy ».
-- **Particules :** petites formes simples (cercles, ovales, feuilles) dessinées une fois dans une **texture atlas** pour être affichées en masse très vite.
-- **Feedback (« juice ») :**
-  - petits nombres qui s'envolent (« +12 ») — regroupés pour éviter le spam
-  - léger tremblement de la pelle quand elle reçoit beaucoup de saleté
-  - étincelles quand une pièce atteint 100 %
-  - le sol se « révèle » progressivement (texture propre sous la saleté)
-  - rayons de lumière animés, grains de poussière qui flottent dans l'air (ambiance)
-- **Assets :** dessinés en SVG/vectoriel puis exportés en atlas PNG, ou générés procéduralement pour les particules. Tout est original.
+**Choix validé :** un style **cartoon stylisé, joyeusement chaotique**, dans l'esprit de *Gamble With Your Friends* : aucune recherche de réalisme, un charme un peu « fait main », et des menus qui ont autant de personnalité que le jeu lui-même. On reprend l'**esprit**, jamais les visuels, personnages ou assets de ce jeu : tout est dessiné pour *Dust It Alone*.
 
----
+### Règles du style
+- **Contours épais et sombres** sur tout (sol, objets, particules, boutons), légèrement **bancals** (lignes tracées avec un petit tremblement aléatoire).
+- **Couleurs saturées et chaudes** : bois orangé, jaune moutarde, rouge tomate, vert pomme, violet prune pour les ombres. Pas de gris tristes.
+- **Formes rondes et exagérées** : les moutons de poussière ont des yeux, la pelle est trop grosse, le balai est trop gros.
+- **Animations élastiques** (« squash & stretch ») : ce qui reçoit quelque chose rebondit, ce qui apparaît fait *pop*.
+- **Humour** : textes décalés (« La poussière ne se balaiera pas toute seule. Enfin si, mais plus tard. »), petites réactions des assistants.
+- **Interface qui a du caractère** : boutons épais avec ombre décalée, éléments légèrement penchés, chiffres qui sautillent quand ils montent, police ronde et grasse (*Lilita One*).
+
+### Particules et feedback
+- Particules dessinées une fois dans une **texture atlas** (affichage en masse très rapide), avec contour.
+- **Nombres qui s'envolent** (« +12 ») regroupés par pelle pour éviter le spam.
+- La pelle **rebondit** quand elle reçoit de la saleté.
+- Confettis quand une pièce atteint 100 %.
+- Rayons de lumière et grains qui flottent dans l'air pour l'ambiance.
+- **Vue de dessus 2D** (le genre s'y prête beaucoup mieux qu'une vue 3D à la première personne).
 
 ## 13. Audio
 
@@ -466,8 +474,8 @@ dust-it-alone/
 ### Budgets
 | Cible | Particules max à l'écran | FPS visé |
 |---|---|---|
-| Desktop correct | 30 000 | 60 |
-| Mobile milieu de gamme | 8 000 | 60 (minimum 30) |
+| **PC (priorité)** | 30 000 | 60 |
+| Mobile milieu de gamme (plus tard) | 8 000 | 60 (minimum 30) |
 
 - **Qualité adaptative** : si le FPS moyen tombe sous 50 pendant 3 s, on réduit le plafond de particules (et inversement). Réglage manuel Bas / Moyen / Haut / Auto.
 - **Particules au repos** : une particule immobile n'est plus simulée (« endormie ») tant que rien ne la touche → énorme gain.
@@ -650,14 +658,16 @@ Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 
 ---
 
-## 24. Questions ouvertes
+## 24. Décisions prises
 
-Ce sont les points où ton avis compte avant de commencer à coder :
+| Question | Décision |
+|---|---|
+| Durée | **~10 h**, jeu complet (8 pièces, prestige, histoire) |
+| Style | **Cartoon stylisé et chaotique**, dans l'esprit de *Gamble With Your Friends* (voir §12) |
+| Plateforme | **PC en priorité** (souris + clavier). Le mobile vient après le lancement PC |
+| Thème / nom | Manoir + souvenirs, *Dust It Alone* (par défaut, modifiable) |
+| Stack | Vite + TypeScript + PixiJS + Preact |
 
-1. **Thème** : le manoir abandonné + souvenirs te plaît, ou tu préfères autre chose (station spatiale, plage, forêt, appartement en désordre…) ?
-2. **Nom** : on garde *Dust It Alone* ou on cherche un nom plus original ?
-3. **Durée** : plutôt petit jeu de ~2 h (4 pièces, pas de prestige) ou le jeu complet (~6–10 h) décrit ici ?
-4. **Graphismes** : style dessiné « cosy » détaillé, ou minimaliste (formes géométriques, couleurs franches) qui va plus vite à produire ?
-5. **Priorité plateforme** : surtout PC, surtout téléphone, ou les deux à égalité ?
-6. **Stack** : PixiJS + Preact comme proposé, ou tu préfères tout en Canvas « fait maison » / un autre framework (React, Phaser…) ?
-7. **Langues** : français uniquement au début, ou français + anglais dès la v1 ?
+### Questions encore ouvertes
+1. Langues : français seul au début, ou français + anglais dès la v1 ?
+2. Nom définitif du jeu ?
