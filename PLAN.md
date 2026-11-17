@@ -1,10 +1,10 @@
 # 🧹 Dust It Alone — Plan de conception complet
 
 > **Titre de travail :** *Dust It Alone*
-> **Genre :** jeu incrémental de nettoyage (« cleaning idle / zone clearer »), dans la lignée de *Leaf It Alone* et *Moonsweeper*
+> **Genre :** jeu incrémental de nettoyage (« cleaning idle / zone clearer ») **en 3D, à la première personne**, dans la lignée de *Leaf It Alone* et *Moonsweeper*
 > **Plateforme :** navigateur, **PC en priorité** (souris + clavier), mobile ensuite — hébergé sur **Vercel**
 > **Durée visée :** ~10 h (jeu complet : 8 pièces + prestige + histoire)
-> **Style :** cartoon stylisé, joyeusement chaotique, avec beaucoup de personnalité (inspiré de l'esprit de *Gamble With Your Friends*, sans reprendre ses visuels)
+> **Style :** **belle 3D** (ombres douces, lumière volumétrique, occlusion ambiante, bloom), formes rondes et couleurs chaleureuses, avec une touche d'humour et de chaos (dans l'esprit de *Gamble With Your Friends*, sans reprendre ses visuels)
 > **Langue :** français d'abord, anglais ensuite
 
 ---
@@ -16,7 +16,7 @@
 3. [Les piliers du jeu](#3-les-piliers-du-jeu)
 4. [Les boucles de jeu](#4-les-boucles-de-jeu)
 5. [Mécaniques détaillées](#5-mécaniques-détaillées)
-6. [Les zones (pièces du manoir)](#6-les-zones-pièces-du-manoir)
+6. [La carte : un grand château](#6-la-carte--un-grand-château)
 7. [Économie et équilibrage](#7-économie-et-équilibrage)
 8. [Arbre d'améliorations](#8-arbre-daméliorations)
 9. [Prestige : le Grand Ménage](#9-prestige--le-grand-ménage)
@@ -40,9 +40,9 @@
 
 ## 1. Pitch
 
-Tu incarnes **Plume**, un petit esprit du ménage qui se réveille dans un vieux manoir abandonné depuis des décennies. Chaque pièce est recouverte de poussière, de toiles d'araignée, de taches et de bazar. Tu balaies, tu aspires, tu souffles… et chaque grain ramassé te rapporte de quoi améliorer tes outils, débloquer de nouvelles pièces et recruter de petits assistants qui nettoient pour toi.
+Tu incarnes **Plume**, un petit esprit du ménage qui se réveille dans un **immense château abandonné** depuis des siècles. **Vu à travers ses yeux (première personne)**, balai en main, tu explores le château en 3D, pièce après pièce, couloir après couloir, de la cave aux tours. Chaque pièce est recouverte de poussière, de toiles d'araignée, de taches et de bazar. Tu balaies, tu aspires, tu souffles… et chaque grain ramassé te rapporte de quoi améliorer tes outils, débloquer de nouvelles pièces et recruter de petits assistants qui nettoient pour toi.
 
-Sous la poussière se cachent des **souvenirs** (photos, lettres, jouets) qui racontent peu à peu l'histoire de la famille qui vivait là.
+Sous la poussière se cachent des **souvenirs** (photos, lettres, jouets) qui racontent peu à peu l'histoire de la famille royale qui vivait là.
 
 **La promesse :** le plaisir hyper satisfaisant de voir une surface sale redevenir propre, des milliers de particules qui bougent sous ton curseur, et des chiffres qui montent.
 
@@ -56,7 +56,7 @@ Sous la poussière se cachent des **souvenirs** (photos, lettres, jouets) qui ra
 | Ramasser = gagner de la monnaie | ✅ | Les particules doivent être **poussées dans la pelle / la bouche d'aération** au début, puis on débloque l'aspiration directe |
 | Améliorations (rayon, force, valeur…) | ✅ | Arbre d'améliorations **par outil** + améliorations globales |
 | Automatisation | ✅ | Des **assistants avec une personnalité** (moutons de poussière apprivoisés, robot, courant d'air) visibles à l'écran |
-| Zones successives | ✅ | Les zones sont des **pièces d'un manoir**, avec une ambiance et une saleté propres à chacune |
+| Zones successives | ✅ | Les zones sont des **pièces d'un grand château**, avec une ambiance et une saleté propres à chacune |
 | Prestige / reset | ✅ | Le **Grand Ménage** : la maison se re-salit au fil des saisons, on garde des **Étincelles** permanentes |
 | — | — | Les **souvenirs cachés** et une petite histoire racontée en fragments |
 
@@ -145,7 +145,7 @@ Visibles à l'écran, avec une IA simple (chercher la zone la plus sale, pousser
 | **Plumette** | Petit plumeau volant, s'occupe des toiles d'araignée | Pièce 2 |
 | **Roulio** | Petit robot aspirateur, va vers la zone la plus dense, vide son réservoir tout seul | Pièce 3 |
 | **Courant d'air** | Souffle régulier dans une direction, pousse tout vers les bouches | Pièce 4 |
-| **Chat du manoir** | Dort la plupart du temps ; quand il se réveille, il « nettoie » une grande zone en courant (bonus aléatoire) | Pièce 5 |
+| **Chat du château** | Dort la plupart du temps ; quand il se réveille, il « nettoie » une grande zone en courant (bonus aléatoire) | Pièce 5 |
 
 Chaque assistant s'améliore : vitesse, rayon, nombre, intelligence (aller où c'est le plus sale).
 
@@ -158,23 +158,58 @@ Chaque assistant s'améliore : vitesse, rayon, nombre, intelligence (aller où c
 
 ---
 
-## 6. Les zones (pièces du manoir)
+## 6. La carte : un grand château
 
-| # | Pièce | Ambiance | Saletés introduites | Outil débloqué | Coût de déblocage |
+**Choix validé : la carte est un château entier, avec beaucoup de pièces reliées entre elles**, pour que le monde soit vraiment grand. On ne « téléporte » pas d'une pièce à l'autre : on **marche** d'une salle à la suivante par les portes, les couloirs et les escaliers, et on voit le château se dessiner autour de soi.
+
+### Plan du château (v1 : 14 pièces sur 5 niveaux)
+
+```
+                         ┌───────────────────┐
+  NIVEAU 4 (toit)        │ Chemin de ronde 🍂 │──── Tour de l'horloge ⏰
+                         └─────────┬─────────┘
+                         ┌─────────┴─────────┐
+  NIVEAU 3 (combles)     │ Combles du donjon │  ← départ du jeu
+                         └─────────┬─────────┘
+            ┌──────────────┬───────┴──────┬──────────────┐
+  NIVEAU 2  │ Bibliothèque │   Galerie    │ Chambre royale│
+  (étage)   │      📚      │ des portraits│      👑       │
+            └──────────────┴───────┬──────┴──────────────┘
+            ┌──────────┬───────────┴──────────┬───────────┐
+  NIVEAU 1  │ Cuisines │  GRAND HALL (énorme) │ Salle des │──── Chapelle
+  (rez-de-  │   🍳     │   escalier d'honneur │ banquets  │
+  chaussée) └────┬─────┴───────────┬──────────┴───────────┘
+                 │          Cour intérieure 🌳 (extérieur)
+            ┌────┴─────┐  ┌────────┴──┐
+  NIVEAU 0  │ Caves à  │──│ Cachots ⛓️ │
+  (sous-sol)│  vin 🍷  │  └───────────┘
+            └──────────┘
+```
+
+| # | Pièce | Taille | Ambiance | Saletés introduites | Ouverture |
 |---|---|---|---|---|---|
-| 1 | **Le Grenier** | bois, poutres, rayons de lumière | Poussière, Moutons | Balai | Gratuit |
-| 2 | **La Cuisine** | carrelage damier, vieux fourneau | Miettes, Toiles | Plumeau | 500 |
-| 3 | **Le Salon** | tapis persan, cheminée | Taches | Éponge, Aspirateur | 8 000 |
-| 4 | **La Véranda** | verrière, plantes | Feuilles mortes | Souffleur | 120 000 |
-| 5 | **La Cave** | pierres, bouteilles | Gravats | — (force requise) | 2 M |
-| 6 | **La Bibliothèque** | étagères, cheminée | Suie | — | 40 M |
-| 7 | **La Chambre d'enfant** | jouets, papier peint | tout mélangé | — | 900 M |
-| 8 | **Le Jardin d'hiver** (finale) | serre, lune | tout + poussière d'étoile abondante | — | 25 B |
+| 1 | **Combles du donjon** | moyenne | charpente, lucarne, cartons | Poussière, Moutons | Départ |
+| 2 | **Galerie des portraits** | longue | tableaux qui « suivent du regard », tapis rouge | Toiles d'araignée | 500 |
+| 3 | **Bibliothèque** | grande, 2 niveaux | étagères géantes, échelles | Miettes de papier, Suie | 6 000 |
+| 4 | **Chambre royale** | moyenne | lit à baldaquin, coffres | Taches (vin renversé) | 40 000 |
+| 5 | **Grand Hall** | **immense** | escalier d'honneur, lustre, armures | tout mélangé, énormément | 250 000 |
+| 6 | **Salle des banquets** | grande | table de 20 m, cheminée | Miettes, Taches | 1,5 M |
+| 7 | **Cuisines** | moyenne | fourneaux, chaudrons | Miettes, Graisse (tache) | 8 M |
+| 8 | **Chapelle** | moyenne | vitraux colorés (lumière colorée au sol !) | Poussière d'étoile fréquente | 40 M |
+| 9 | **Cour intérieure** | grande, extérieur | arbre géant, fontaine | Feuilles mortes | 200 M |
+| 10 | **Caves à vin** | longue | tonneaux, voûtes, torches | Gravats, Toiles | 1 B |
+| 11 | **Cachots** | moyenne | grilles, chaînes, très sombre (lanterne !) | Suie, Gravats | 6 B |
+| 12 | **Tour de l'horloge** | haute, en spirale | mécanisme géant qui tourne | tout | 40 B |
+| 13 | **Chemin de ronde** | très longue, extérieur | remparts, vue sur la vallée, vent | Feuilles (le vent les ramène !) | 250 B |
+| 14 | **Salle du trône** (finale, secrète) | immense | trône, vitraux, lune | tout + poussière d'étoile | Tous les souvenirs |
 
-- Chaque pièce a sa propre **taille de monde**, sa **vitesse de dépôt**, ses **positions de pelles / bouches**, et des **obstacles** (meubles) qui gênent le passage des particules.
-- On peut **revenir** dans n'importe quelle pièce débloquée. Les assistants assignés à une pièce continuent d'y travailler même quand on n'y est pas (simulation simplifiée hors écran, voir §16).
-
----
+### Règles de la carte
+- **Portes verrouillées** 🔒 : chaque nouvelle pièce s'ouvre en payant son prix devant la porte (cadenas qui saute, porte qui s'ouvre en grinçant). On voit un peu la pièce suivante par le trou de la serrure / la porte entrouverte, pour donner envie.
+- **Couloirs et escaliers** qui relient les pièces ; ils se salissent aussi (un peu).
+- **Raccourcis** à débloquer (passages secrets derrière des tableaux, toboggan à linge vers les cuisines) pour circuler vite quand le château devient grand.
+- **Carte du château** (`M`) : plan par étages, % de propreté de chaque pièce, position du joueur et des assistants.
+- Chaque pièce a sa **taille**, sa **vitesse de dépôt**, ses **pelles / bouches d'aération**, ses **meubles-obstacles** et sa **lumière** propre.
+- Les **assistants** sont assignés à une pièce et continuent d'y travailler quand tu es ailleurs (simulation simplifiée hors écran, voir §16).
 
 ## 7. Économie et équilibrage
 
@@ -254,7 +289,7 @@ Un **simulateur** (script Node, `tools/simulate.ts`) qui joue une partie « bot 
 ## 9. Prestige : le Grand Ménage
 
 - **Débloqué** quand on a atteint la Pièce 5 (la Cave) pour la première fois.
-- **Narration :** les saisons passent, le manoir se re-salit, mais Plume a gagné en expérience.
+- **Narration :** les saisons passent, le château se re-salit, mais Plume a gagné en expérience.
 - **On perd :** pièces, améliorations, assistants, pièces débloquées (sauf ce que l'arbre permanent garde).
 - **On garde :** Étincelles, souvenirs, étoiles de pièce, succès, statistiques.
 
@@ -272,50 +307,59 @@ Un **simulateur** (script Node, `tools/simulate.ts`) qui joue une partie « bot 
 
 ## 10. Histoire et souvenirs
 
-- **~40 souvenirs** répartis dans les 8 pièces (5 par pièce).
+- **~45 souvenirs** répartis dans les 14 pièces du château (3 ou 4 par pièce).
 - Un souvenir est caché sous une **zone très sale** ; il apparaît quand la zone est propre (petite brillance, on clique pour le ramasser).
 - Chaque souvenir = une **illustration + 1 à 3 phrases** qui racontent l'histoire de la famille (ton doux, un peu mélancolique, fin heureuse).
 - **Album** : écran qui montre les souvenirs trouvés (silhouettes pour les autres).
 - Compléter les 5 souvenirs d'une pièce donne un **bonus permanent** pour cette pièce.
-- Compléter tout l'album débloque la **fin** (petite cinématique : la famille revient au manoir 🏡).
+- Compléter tout l'album ouvre la **Salle du trône** et débloque la **fin** (petite cinématique : la famille royale revient au château 🏰).
 
 ---
 
 ## 11. Contrôles
 
-| Action | Souris | Tactile | Clavier |
-|---|---|---|---|
-| Utiliser l'outil | bouger le curseur (clic maintenu = puissance ×1,5) | glisser le doigt | — |
-| Changer d'outil | molette / barre d'outils | barre d'outils | `1` à `5` |
-| Vider l'aspirateur | clic sur la poubelle | tap sur la poubelle | `E` |
-| Ouvrir la boutique | bouton | bouton | `B` |
-| Changer de pièce | carte du manoir | carte | `M` / `←` `→` |
-| Pause / menu | bouton | bouton | `Échap` |
+Jeu **en première personne**, pensé pour le PC (souris + clavier). La souris est capturée pendant le jeu (Pointer Lock) ; `Échap` la libère et met le jeu en pause.
 
-- Sur mobile : le curseur est **décalé** légèrement au-dessus du doigt (option) pour voir ce qu'on nettoie.
-- Retour **haptique** léger sur mobile (`navigator.vibrate`) au ramassage d'une particule rare (désactivable).
+| Action | Contrôle |
+|---|---|
+| Se déplacer | `Z Q S D` (AZERTY) ou `W A S D` (QWERTY), et les flèches. On utilise les **touches physiques**, donc les deux claviers marchent sans réglage |
+| Regarder / viser | souris |
+| Balayer | le balai est **au sol, là où tu regardes** (à portée de bras). Tourner la tête ou marcher balaie la poussière |
+| Frotter plus fort | clic gauche maintenu |
+| Courir | `Maj` |
+| Changer d'outil | `1` à `5` / molette |
+| Boutique | `B` |
+| Carte du château | `M` |
+| Pause | `Échap` |
 
----
+- **Confort** : sensibilité de la souris réglable, balancement de la marche désactivable, champ de vision réglable (contre le mal des transports).
+- Plus tard, pour le mobile : joystick virtuel à gauche et glisser pour regarder à droite.
 
 ## 12. Direction artistique
 
-**Choix validé :** un style **cartoon stylisé, joyeusement chaotique**, dans l'esprit de *Gamble With Your Friends* : aucune recherche de réalisme, un charme un peu « fait main », et des menus qui ont autant de personnalité que le jeu lui-même. On reprend l'**esprit**, jamais les visuels, personnages ou assets de ce jeu : tout est dessiné pour *Dust It Alone*.
+**Choix validé : une vraie belle 3D, vue à la première personne.** Une ambiance chaleureuse et un peu loufoque, dans l'esprit de *Gamble With Your Friends*, sans reprendre ses visuels. Tout est créé pour *Dust It Alone*.
 
-### Règles du style
-- **Contours épais et sombres** sur tout (sol, objets, particules, boutons), légèrement **bancals** (lignes tracées avec un petit tremblement aléatoire).
-- **Couleurs saturées et chaudes** : bois orangé, jaune moutarde, rouge tomate, vert pomme, violet prune pour les ombres. Pas de gris tristes.
-- **Formes rondes et exagérées** : les moutons de poussière ont des yeux, la pelle est trop grosse, le balai est trop gros.
-- **Animations élastiques** (« squash & stretch ») : ce qui reçoit quelque chose rebondit, ce qui apparaît fait *pop*.
-- **Humour** : textes décalés (« La poussière ne se balaiera pas toute seule. Enfin si, mais plus tard. »), petites réactions des assistants.
-- **Interface qui a du caractère** : boutons épais avec ombre décalée, éléments légèrement penchés, chiffres qui sautillent quand ils montent, police ronde et grasse (*Lilita One*).
+### Rendu
+- **Matériaux physiques (PBR)** : le bois est mat avec un léger relief, le laiton brille, le plastique des pelles a un vernis, et le tissu du fauteuil comme les moutons de poussière ont un reflet velouté.
+- **Ombres douces en temps réel** : le soleil qui entre par la lucarne projette les ombres des meubles, de la charpente, du balai… et de chaque mouton de poussière.
+- **Éclairage d'environnement** (reflets doux sur toutes les surfaces) et **lumières d'appoint** chaudes (lampe posée sur une caisse).
+- **Occlusion ambiante (GTAO)** : les coins, les dessous de meubles et les tas de poussière s'assombrissent naturellement.
+- **Bloom** : la lucarne, l'ampoule et la poussière d'étoile rayonnent.
+- **Rayon de lumière volumétrique** et grains de poussière qui flottent dedans, **brouillard** léger pour la profondeur.
+- **Tone mapping ACES** pour des couleurs riches et cinématographiques.
+- Réglage **Qualité Haute / Basse** (`?quality=low`) : la version basse coupe le post-traitement pour les PC modestes.
 
-### Particules et feedback
-- Particules dessinées une fois dans une **texture atlas** (affichage en masse très rapide), avec contour.
-- **Nombres qui s'envolent** (« +12 ») regroupés par pelle pour éviter le spam.
-- La pelle **rebondit** quand elle reçoit de la saleté.
-- Confettis quand une pièce atteint 100 %.
-- Rayons de lumière et grains qui flottent dans l'air pour l'ambiance.
-- **Vue de dessus 2D** (le genre s'y prête beaucoup mieux qu'une vue 3D à la première personne).
+### Formes et personnalité
+- Formes **rondes et généreuses** (arêtes arrondies partout), couleurs chaudes : bois miel, moutarde, rouge tomate, vert d'eau, prune.
+- Les **moutons de poussière ont des yeux et te regardent en permanence** 👀.
+- Animations élastiques : la pelle rebondit quand elle reçoit de la saleté, la brosse du balai s'écrase et penche selon ton geste.
+- Humour dans les textes et les menus (« La poussière t'attend. Elle est patiente. »).
+- Interface (HUD) **cartoon** par-dessus la 3D : contours épais, boutons penchés, police ronde *Lilita One*.
+
+### Pièces en 3D
+- Chaque pièce est un vrai volume : les combles ont une **charpente apparente**, un toit en pente, des pignons et une lucarne ronde ; le Grand Hall a un escalier d'honneur et un lustre ; la chapelle des vitraux qui projettent des couleurs au sol.
+- **Architecture de château** : murs de pierre épais, voûtes, arches, torches, tapisseries, portes en bois massif ferrées.
+- Les meubles sont de **vrais obstacles** : la poussière rebondit dessus et le joueur ne les traverse pas.
 
 ## 13. Audio
 
@@ -348,7 +392,7 @@ Un **simulateur** (script Node, `tools/simulate.ts`) qui joue une partie « bot 
 1. **Écran titre** (Continuer / Nouvelle partie / Paramètres)
 2. **Jeu** (ci-dessus)
 3. **Boutique** (panneau latéral sur desktop, tiroir du bas sur mobile) avec onglets : Outils / Global / Assistants. Les achats possibles sont mis en évidence ; achat ×1 / ×10 / Max.
-4. **Carte du manoir** (plan de la maison, pièces débloquées, % de propreté, étoiles)
+4. **Carte du château** (plan par étages, pièces débloquées, % de propreté, étoiles)
 5. **Arbre des Étincelles** (prestige)
 6. **Album des souvenirs**
 7. **Succès & statistiques**
@@ -372,19 +416,20 @@ Pas de pavé de texte : des **bulles contextuelles** très courtes au bon moment
 |---|---|---|
 | Build | **Vite** | ultra rapide, sortie statique parfaite pour Vercel |
 | Langage | **TypeScript** (strict) | moins de bugs, autocomplétion |
-| Rendu du jeu | **PixiJS v8** (WebGL / WebGPU) | affiche des dizaines de milliers de sprites sans broncher |
+| Rendu du jeu | **Three.js** (WebGL 2) | 3D complète : ombres, PBR, post-traitement (GTAO, bloom), instanciation de milliers de particules |
 | Interface (menus) | **Preact** + **@preact/signals** | très léger (~4 ko), réactif, parfait pour la boutique et les panneaux |
 | Styles UI | CSS modules / CSS simple avec variables | pas besoin de plus |
 | Tests | **Vitest** (logique) + **Playwright** (test de fumée dans un vrai navigateur) | |
 | Qualité | ESLint + Prettier | |
 | PWA (optionnel) | `vite-plugin-pwa` | jouable hors connexion, installable sur téléphone |
 
-> Alternative possible si on veut zéro dépendance : Canvas 2D maison. Mais avec beaucoup de particules, PixiJS est nettement plus sûr côté performances (surtout mobile).
+> Pourquoi pas un moteur comme Unity ou Godot ? Three.js reste léger (aucun téléchargement de plusieurs centaines de Mo), se charge en quelques secondes dans le navigateur et se déploie tel quel sur Vercel.
 
 ### 15.2 Principes
 
-- **Logique séparée du rendu** : la simulation (particules, économie, assistants) ne connaît pas PixiJS. Le rendu lit l'état et l'affiche. → testable, et on peut faire tourner la simulation hors écran.
+- **Logique séparée du rendu** : la simulation (particules, économie, assistants) ne connaît pas Three.js. Elle tourne sur le **plan du sol** (2D), et le rendu la transforme en 3D. Le rendu lit l'état et l'affiche. → testable, et on peut faire tourner la simulation hors écran.
 - **Boucle à pas fixe** : la logique tourne à 60 Hz fixe (accumulateur), le rendu au rythme de l'écran. Comportement identique sur un écran 60 Hz ou 144 Hz.
+- **Château modulaire** : chaque pièce a sa propre simulation (coordonnées locales) et une **position dans le château** (origine, rotation, étage). Les portes relient les pièces. Seules la pièce du joueur et ses voisines sont affichées en détail ; les autres sont simulées en mode « compteurs ».
 - **Données en configuration** : toutes les pièces, saletés, améliorations, assistants, souvenirs sont décrits dans des fichiers `src/data/*.ts` typés. Équilibrer = modifier des chiffres, pas du code.
 - **Particules en « structure de tableaux »** : `Float32Array` pour x, y, vx, vy, `Uint8Array` pour le type, etc. Pas d'objet JS par particule → pas de ramasse-miettes qui fait ramer.
 - **Grille spatiale** : le monde est découpé en cases ; pour savoir quelles particules sont sous l'outil, on ne regarde que les cases concernées.
@@ -433,12 +478,15 @@ dust-it-alone/
 │   │   ├── sparkTree.ts
 │   │   ├── memories.ts
 │   │   └── achievements.ts
-│   ├── render/                  # 🎨 PixiJS
-│   │   ├── app.ts
-│   │   ├── particleRenderer.ts
-│   │   ├── roomRenderer.ts
-│   │   ├── fx.ts                # nombres volants, étincelles, tremblements
-│   │   └── atlas.ts
+│   ├── player/
+│   │   └── player.ts            # caméra première personne, déplacements, collisions, visée du balai
+│   ├── render/                  # 🎨 Three.js
+│   │   ├── world3d.ts           # scène, lumières, ombres, post-traitement, particules instanciées
+│   │   ├── props.ts             # meubles, pelles, balai
+│   │   ├── materials.ts         # matériaux PBR
+│   │   ├── geometry.ts          # formes (boîtes arrondies, moutons, étoiles)
+│   │   ├── canvasTextures.ts    # textures dessinées (planches…)
+│   │   └── floaters.ts          # nombres volants
 │   ├── audio/
 │   │   ├── synth.ts             # sons générés
 │   │   └── music.ts
@@ -472,11 +520,13 @@ dust-it-alone/
 ## 16. Performances
 
 ### Budgets
-| Cible | Particules max à l'écran | FPS visé |
-|---|---|---|
-| **PC (priorité)** | 30 000 | 60 |
-| Mobile milieu de gamme (plus tard) | 8 000 | 60 (minimum 30) |
+| Cible | Particules max | Rendu | FPS visé |
+|---|---|---|---|
+| **PC avec carte graphique correcte (priorité)** | 6 000 à 10 000 par pièce, toutes instanciées et avec ombres | qualité Haute (ombres 4096, GTAO, bloom, MSAA) | 60 |
+| PC portable modeste | idem | qualité Basse (sans post-traitement, ombres 2048) | 60 |
+| Mobile (plus tard) | 3 000 | qualité Basse | 30–60 |
 
+- **Instanciation** : chaque type de particule = 1 seul appel de dessin, quel que soit le nombre.
 - **Qualité adaptative** : si le FPS moyen tombe sous 50 pendant 3 s, on réduit le plafond de particules (et inversement). Réglage manuel Bas / Moyen / Haut / Auto.
 - **Particules au repos** : une particule immobile n'est plus simulée (« endormie ») tant que rien ne la touche → énorme gain.
 - **Pièces hors écran** : pas de particules individuelles, juste des **compteurs** (saleté présente par type, débit de dépôt, débit de nettoyage des assistants). Quand on revient dans la pièce, on régénère des particules à partir des compteurs.
@@ -575,14 +625,14 @@ Détection d'une nouvelle version (fichier `version.json` vérifié de temps en 
 Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 
 ### M0 — Mise en place (½ journée)
-- Projet Vite + TS + PixiJS + Preact, ESLint, Prettier, Vitest
-- `vercel.json`, premier déploiement « Hello manoir »
+- Projet Vite + TS + Three.js + Preact, Vitest
+- `vercel.json`, premier déploiement « Hello château »
 - CI GitHub Actions
 - ✅ *Résultat : une URL Vercel qui affiche un écran vide avec le titre.*
 
 ### M1 — Le prototype qui fait du bien (2–3 jours) ⭐ le plus important
-- Particules (poussière) en SoA + grille spatiale + rendu PixiJS
-- Balai (pousser), pelle (ramasser), compteur de pièces
+- Particules (poussière) en SoA + rendu 3D instancié avec ombres
+- Joueur en première personne, balai au sol là où on regarde, pelles, compteur de pièces
 - Dépôt continu de saleté, % de propreté
 - Sons basiques, nombres volants
 - ✅ *Résultat : on s'amuse 2 minutes juste à balayer. Si ce n'est pas satisfaisant ici, on ajuste avant d'aller plus loin.*
@@ -594,8 +644,9 @@ Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 - Format des nombres, combo
 - ✅ *Résultat : une vraie boucle « ramasser → acheter → plus fort ».*
 
-### M3 — Pièces et outils (3–4 jours)
-- Pièces 1 à 3 (Grenier, Cuisine, Salon), carte du manoir
+### M3 — Le château et ses premières pièces (4–5 jours)
+- Structure du château : pièces placées dans un même monde 3D, portes, couloirs, escaliers
+- Pièces 1 à 4 (Combles, Galerie des portraits, Bibliothèque, Chambre royale), portes verrouillées, carte du château
 - Moutons, miettes, toiles, taches
 - Plumeau, éponge, aspirateur (+ réservoir)
 - Obstacles (meubles)
@@ -609,7 +660,7 @@ Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 
 ### M5 — Prestige, histoire et fin de contenu (4–5 jours)
 - Pièces 4 à 8, souffleur, feuilles, gravats, suie
-- Courant d'air, Chat du manoir
+- Courant d'air, Chat du château
 - Grand Ménage + arbre des Étincelles
 - Souvenirs + album + fin
 - Événements aléatoires
@@ -639,11 +690,12 @@ Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 | Risque | Impact | Parade |
 |---|---|---|
 | Le balayage n'est pas satisfaisant | 🔴 le jeu entier tombe à plat | M1 dédié uniquement à ça, on itère jusqu'à ce que ce soit bon |
-| Ralentissements sur mobile | 🟠 | SoA, particules endormies, qualité adaptative, plafond de particules |
+| Ralentissements (3D + ombres + post-traitement) | 🟠 | Instanciation, particules endormies, réglage de qualité, ombres et GTAO réglables |
+| Mal des transports en première personne | 🟡 | Champ de vision réglable, balancement de la marche désactivable, mouvements doux |
 | Économie cassée (trop lent / trop rapide) | 🟠 | Données en config + simulateur + menu debug |
 | Sauvegarde perdue / corrompue | 🔴 frustration énorme | 2 emplacements, migrations testées, export manuel |
 | Trop de contenu prévu | 🟡 | Les jalons M1–M4 font déjà un jeu complet ; M5+ peut être réduit (moins de pièces) |
-| Ressembler trop aux jeux d'inspiration | 🟡 | Thème manoir/souvenirs, assets 100 % originaux, mécaniques propres (taches à frotter, réservoir, assistants avec personnalité) |
+| Ressembler trop aux jeux d'inspiration | 🟡 | Thème château/souvenirs, assets 100 % originaux, mécaniques propres (taches à frotter, réservoir, assistants avec personnalité) |
 
 ---
 
@@ -663,10 +715,11 @@ Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 | Question | Décision |
 |---|---|
 | Durée | **~10 h**, jeu complet (8 pièces, prestige, histoire) |
-| Style | **Cartoon stylisé et chaotique**, dans l'esprit de *Gamble With Your Friends* (voir §12) |
+| Style | **Belle 3D à la première personne** (ombres, PBR, GTAO, bloom), ambiance chaleureuse et loufoque dans l'esprit de *Gamble With Your Friends* (voir §12) |
 | Plateforme | **PC en priorité** (souris + clavier). Le mobile vient après le lancement PC |
-| Thème / nom | Manoir + souvenirs, *Dust It Alone* (par défaut, modifiable) |
-| Stack | Vite + TypeScript + PixiJS + Preact |
+| Carte | **Un grand château** de 14 pièces sur 5 niveaux, reliées par des portes, couloirs et escaliers (voir §6) |
+| Thème / nom | Château + souvenirs, *Dust It Alone* (par défaut, modifiable) |
+| Stack | Vite + TypeScript + **Three.js** + Preact |
 
 ### Questions encore ouvertes
 1. Langues : français seul au début, ou français + anglais dès la v1 ?

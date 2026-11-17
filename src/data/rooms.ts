@@ -26,12 +26,17 @@ export interface RoomDef {
   respawn: Partial<Record<DirtId, number>>;
   /** Zones où la poussière s'accumule. */
   patches: DirtPatch[];
+  /** Meubles posés au sol : la poussière et le joueur ne les traversent pas. */
+  obstacles: Prop[];
 }
+
+export type PropKind = 'boxes' | 'trunk' | 'armchair' | 'crate';
+export interface Prop { kind: PropKind; rect: Rect }
 
 export const ROOMS: RoomDef[] = [
   {
     id: 'attic',
-    name: 'Le Grenier',
+    name: 'Les Combles du donjon',
     width: 1600,
     height: 900,
     collectors: [
@@ -47,6 +52,12 @@ export const ROOMS: RoomDef[] = [
       { x: 300, y: 720, spread: 140, weight: 2 },
       { x: 1300, y: 700, spread: 150, weight: 2 },
       { x: 800, y: 450, spread: 700, weight: 3 },
+    ],
+    obstacles: [
+      { kind: 'boxes', rect: { x: 70, y: 60, w: 170, h: 150 } },
+      { kind: 'trunk', rect: { x: 1300, y: 50, w: 200, h: 105 } },
+      { kind: 'armchair', rect: { x: 1340, y: 720, w: 160, h: 140 } },
+      { kind: 'crate', rect: { x: 90, y: 730, w: 130, h: 120 } },
     ],
   },
 ];

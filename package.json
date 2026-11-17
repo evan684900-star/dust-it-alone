@@ -12,11 +12,12 @@
   },
   "dependencies": {
     "@preact/signals": "^2.9.0",
-    "pixi.js": "^8.17.1",
-    "preact": "^10.29.1"
+    "preact": "^10.29.1",
+    "three": "^0.187.0"
   },
   "devDependencies": {
     "@preact/preset-vite": "^2.10.6",
+    "@types/three": "^0.187.0",
     "typescript": "^5.9.3",
     "vite": "^7.3.8",
     "vitest": "^5.0.5"

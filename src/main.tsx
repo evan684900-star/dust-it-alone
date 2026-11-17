@@ -11,7 +11,7 @@ async function boot() {
     /* police indisponible : on continue avec celle du système */
   }
   const game = new Game();
-  await game.mount(document.getElementById('stage')!);
+  game.mount(document.getElementById('stage')!);
   render(<App game={game} />, document.getElementById('ui')!);
 }
 

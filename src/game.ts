@@ -1,7 +1,7 @@
-import { Application } from 'pixi.js';
 import { ROOMS } from './data/rooms';
 import { RoomSim, type BroomInput } from './sim/roomSim';
-import { Scene } from './render/scene';
+import { World3D } from './render/world3d';
+import { Player } from './player/player';
 import { Synth } from './audio/synth';
 import { createFixedLoop } from './core/loop';
 import { loadSave, writeSave, type SaveData } from './save/save';
@@ -12,22 +12,25 @@ export const CLEAN_THRESHOLD = 0.95;
 const CLEAN_BONUS = 250;
 const AUTOSAVE_MS = 15_000;
 
-/** Chef d'orchestre : relie simulation, rendu, son, interface et sauvegarde. */
+/** Chef d'orchestre : relie simulation, joueur, rendu 3D, son, interface et sauvegarde. */
 export class Game {
   readonly synth = new Synth();
   private sim: RoomSim;
-  private scene!: Scene;
+  private player: Player;
+  private world!: World3D;
   private input: BroomInput = { active: false, x: 0, y: 0, pressed: false };
   private save: SaveData;
   private earnedWindow: number[] = new Array(5).fill(0);
   private windowStart = performance.now();
-  private debug = new URLSearchParams(location.search).has('debug');
-  private fpsAcc = { frames: 0, time: 0, fps: 0 };
+  readonly debug = new URLSearchParams(location.search).has('debug');
+  private fpsAcc = { frames: 0, time: 0 };
+  private last = performance.now();
 
   constructor() {
     this.save = loadSave();
     this.sim = new RoomSim(ROOMS[0]);
     this.sim.fill(1);
+    this.player = new Player(this.sim.room);
     store.coins.value = this.save.coins;
     store.totalCoins.value = this.save.totalCoins;
     store.roomCleanedOnce.value = this.save.roomCleanedOnce;
@@ -36,38 +39,30 @@ export class Game {
     this.synth.setMuted(this.save.muted);
   }
 
-  async mount(host: HTMLElement): Promise<void> {
-    const app = new Application();
-    await app.init({
-      resizeTo: window,
-      background: '#3a2340',
-      antialias: true,
-      resolution: Math.min(window.devicePixelRatio || 1, 2),
-      autoDensity: true,
-      preference: 'webgl',
-    });
-    host.appendChild(app.canvas);
-    app.canvas.id = 'game-canvas';
-
-    this.scene = new Scene(app);
-    this.scene.init(this.sim);
-    window.addEventListener('resize', () => requestAnimationFrame(() => this.scene.layout()));
-
-    this.bindInput(app.canvas);
+  mount(host: HTMLElement): void {
+    this.world = new World3D(host);
+    this.world.build(this.sim);
+    if (new URLSearchParams(location.search).get('quality') === 'low') this.world.quality = 'low';
+    this.bindInput();
 
     const step = createFixedLoop((dt) => this.tick(dt));
-    app.ticker.add((t) => {
-      const dt = t.deltaMS / 1000;
+    const frame = (now: number) => {
+      const dt = Math.min(0.1, (now - this.last) / 1000);
+      this.last = now;
       step(dt);
-      this.scene.render(this.sim, dt, {
-        x: this.input.x,
-        y: this.input.y,
-        visible: this.input.active && store.started.value,
-        pressed: this.input.pressed,
-      });
+      const p = this.player;
+      const bp = p.broomPoint();
+      this.world.render(
+        this.sim,
+        dt,
+        { x: p.x, z: p.z, eye: p.eye, yaw: p.yaw, pitch: p.pitch },
+        { visible: store.started.value, x: bp.x, z: bp.z, pressed: this.input.pressed },
+      );
       this.synth.swish(Math.hypot(this.sim.broomVel.x, this.sim.broomVel.y), this.sim.broomPushed);
       this.updateHud(dt);
-    });
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
 
     setInterval(() => this.persist(), AUTOSAVE_MS);
     window.addEventListener('pagehide', () => this.persist());
@@ -76,9 +71,27 @@ export class Game {
     });
   }
 
+  /** Lancement / reprise : on capture la souris pour la visée. */
   start(): void {
     this.synth.unlock();
     store.started.value = true;
+    store.paused.value = false;
+    this.lockPointer();
+  }
+
+  private lockPointer(): void {
+    const c = this.world.canvas;
+    try {
+      const r = c.requestPointerLock() as unknown as Promise<void> | undefined;
+      r?.catch?.(() => this.onLockFailed());
+    } catch {
+      this.onLockFailed();
+    }
+  }
+
+  private onLockFailed(): void {
+    // Sans capture de la souris (ex. tests automatiques), on joue quand même en mode debug.
+    if (!this.debug) store.paused.value = true;
   }
 
   toggleMute(): void {
@@ -87,37 +100,69 @@ export class Game {
     this.persist();
   }
 
-  private bindInput(canvas: HTMLCanvasElement): void {
-    const move = (e: PointerEvent) => {
-      const p = this.scene.toWorld(e.clientX, e.clientY);
-      this.input.x = p.x;
-      this.input.y = p.y;
-      this.input.active = p.inside;
-      canvas.style.cursor = p.inside && store.started.value ? 'none' : 'default';
-    };
-    canvas.addEventListener('pointermove', move);
-    canvas.addEventListener('pointerdown', (e) => {
-      move(e);
-      this.input.pressed = true;
-      this.synth.unlock();
+  private get playing(): boolean {
+    return store.started.value && !store.paused.value;
+  }
+
+  private bindInput(): void {
+    const canvas = this.world.canvas;
+    let lockedAt = 0;
+    document.addEventListener('pointerlockchange', () => {
+      const locked = document.pointerLockElement === canvas;
+      if (locked) lockedAt = performance.now();
+      if (!locked && store.started.value && !this.debug) {
+        store.paused.value = true;
+        this.input.pressed = false;
+        this.player.clearKeys();
+      }
     });
-    window.addEventListener('pointerup', () => (this.input.pressed = false));
-    canvas.addEventListener('pointerleave', () => {
-      this.input.active = false;
-      this.input.pressed = false;
+    document.addEventListener('mousemove', (e) => {
+      if (!this.playing) return;
+      if (document.pointerLockElement !== canvas) return;
+      // Chrome envoie parfois un énorme « saut » juste après la capture de la souris : on l'ignore.
+      if (performance.now() - lockedAt < 150) return;
+      if (Math.abs(e.movementX) > 400 || Math.abs(e.movementY) > 400) return;
+      this.player.look(e.movementX, e.movementY);
     });
+    canvas.addEventListener('mousedown', (e) => {
+      if (store.started.value && store.paused.value) {
+        this.start();
+        return;
+      }
+      if (e.button === 0) this.input.pressed = true;
+    });
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) this.input.pressed = false;
+    });
+    window.addEventListener('keydown', (e) => {
+      if (!this.playing) return;
+      this.player.setKey(e.code, true);
+      if (this.debug && e.code === 'KeyG') this.earn(1000);
+      if (this.debug && e.code === 'KeyC') for (let i = 0; i < this.sim.pool.cap; i++) this.sim.pool.kill(i);
+    });
+    window.addEventListener('keyup', (e) => this.player.setKey(e.code, false));
+    window.addEventListener('blur', () => this.player.clearKeys());
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
     if (this.debug) {
-      window.addEventListener('keydown', (e) => {
-        if (e.key === 'g') this.earn(1000);
-        if (e.key === 'c') for (let i = 0; i < this.sim.pool.cap; i++) this.sim.pool.kill(i);
-      });
+      // Petites commandes pour les tests automatiques.
+      (window as unknown as Record<string, unknown>).__dust = {
+        look: (dx: number, dy: number) => this.player.look(dx, dy),
+        key: (code: string, down: boolean) => this.player.setKey(code, down),
+        press: (down: boolean) => (this.input.pressed = down),
+        player: this.player,
+        world: this.world,
+      };
     }
   }
 
   private tick(dt: number): void {
-    const input = store.started.value ? this.input : { ...this.input, active: false };
-    this.sim.step(dt, input);
+    if (this.playing) this.player.update(dt);
+    const bp = this.player.broomPoint();
+    this.input.active = this.playing;
+    this.input.x = bp.x;
+    this.input.y = bp.z;
+    this.sim.step(dt, this.input);
     const events = this.sim.drainEvents();
     if (events.length === 0) return;
     let gained = 0;
@@ -125,7 +170,7 @@ export class Game {
     for (const e of events) {
       gained += e.coins;
       counts[e.type]++;
-      this.scene.onCollect(e.collector, e.coins, e.type === 'star');
+      this.world.onCollect(e.collector, e.coins, e.type === 'star');
     }
     this.earn(gained);
     const lvl = this.sim.combo.level;
@@ -158,9 +203,9 @@ export class Game {
     if (c >= CLEAN_THRESHOLD && !store.roomCleanedOnce.value) {
       store.roomCleanedOnce.value = true;
       this.earn(CLEAN_BONUS);
-      this.scene.celebrate();
+      this.world.celebrate();
       this.synth.fanfare();
-      store.pushToast('Grenier impeccable ! ✨', `Bonus de ${CLEAN_BONUS} pièces. La poussière, elle, n'a pas dit son dernier mot…`, 6000);
+      store.pushToast('Combles impeccables ! ✨', `Bonus de ${CLEAN_BONUS} pièces. La poussière, elle, n'a pas dit son dernier mot…`, 6000);
       this.persist();
     }
 
@@ -168,11 +213,12 @@ export class Game {
       this.fpsAcc.frames++;
       this.fpsAcc.time += dt;
       if (this.fpsAcc.time >= 0.5) {
-        this.fpsAcc.fps = this.fpsAcc.frames / this.fpsAcc.time;
+        const fps = this.fpsAcc.frames / this.fpsAcc.time;
         this.fpsAcc.frames = 0;
         this.fpsAcc.time = 0;
         const p = this.sim.pool.aliveCount;
-        store.debugInfo.value = `${this.fpsAcc.fps.toFixed(0)} FPS · poussière ${p.dust} · moutons ${p.bunny} · étoiles ${p.star} · [G] +1000 · [C] tout nettoyer`;
+        const info = this.world.renderer.info.render;
+        store.debugInfo.value = `${fps.toFixed(0)} FPS · ${info.calls} draw calls · ${(info.triangles / 1000).toFixed(0)}k tris · poussière ${p.dust} · moutons ${p.bunny} · étoiles ${p.star} · [G] +1000 · [C] tout nettoyer`;
       }
     }
   }

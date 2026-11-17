@@ -40,3 +40,18 @@ describe('RoomSim', () => {
     expect(sim.pool.aliveCount.dust).toBeGreaterThan(50);
   });
 });
+
+describe('obstacles', () => {
+  it('la poussière rebondit sur les meubles', () => {
+    const room = { ...ROOMS[0], respawn: {} };
+    const sim = new RoomSim(room, 5);
+    const box = room.obstacles[0].rect;
+    const i = sim.pool.spawn('dust', box.x + box.w + 60, box.y + box.h / 2);
+    sim.pool.vx[i] = -1200;
+    for (let t = 0; t < 120; t++) sim.step(1 / 60, idle);
+    const x = sim.pool.x[i];
+    const y = sim.pool.y[i];
+    const insideBox = x > box.x && x < box.x + box.w && y > box.y && y < box.y + box.h;
+    expect(insideBox).toBe(false);
+  });
+});

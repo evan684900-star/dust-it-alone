@@ -24,3 +24,6 @@ export function pushToast(title: string, text: string, ms = 4200): void {
     toasts.value = toasts.value.filter((x) => x.id !== t.id);
   }, ms);
 }
+
+/** Jeu en pause (la souris n'est plus capturée). */
+export const paused = signal(false);

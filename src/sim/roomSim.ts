@@ -241,6 +241,27 @@ export class RoomSim {
       if (py < r) { py = r; pvy = -pvy * 0.35; }
       else if (py > H - r) { py = H - r; pvy = -pvy * 0.35; }
 
+      // Rebond sur les meubles.
+      const obstacles = this.room.obstacles;
+      for (let o = 0; o < obstacles.length; o++) {
+        const b = obstacles[o].rect;
+        const left = b.x - r;
+        const right = b.x + b.w + r;
+        const top = b.y - r;
+        const bottom = b.y + b.h + r;
+        if (px <= left || px >= right || py <= top || py >= bottom) continue;
+        // On ressort par le côté le plus proche.
+        const dl = px - left;
+        const dr = right - px;
+        const dt2 = py - top;
+        const db = bottom - py;
+        const m = Math.min(dl, dr, dt2, db);
+        if (m === dl) { px = left; pvx = -Math.abs(pvx) * 0.35; }
+        else if (m === dr) { px = right; pvx = Math.abs(pvx) * 0.35; }
+        else if (m === dt2) { py = top; pvy = -Math.abs(pvy) * 0.35; }
+        else { py = bottom; pvy = Math.abs(pvy) * 0.35; }
+      }
+
       x[i] = px;
       y[i] = py;
       vx[i] = pvx;
@@ -281,6 +302,7 @@ export class RoomSim {
       const py = p.y + this.rng.gauss() * p.spread * 0.5;
       if (px < r + 4 || py < r + 4 || px > this.room.width - r - 4 || py > this.room.height - r - 4) continue;
       if (this.room.collectors.some((c) => inside(grow(c.rect, 60), px, py))) continue;
+      if (this.room.obstacles.some((o) => inside(grow(o.rect, r + 2), px, py))) continue;
       this.pool.spawn(id, px, py, this.rng.range(0, Math.PI * 2));
       return true;
     }
@@ -297,10 +319,10 @@ export class RoomSim {
   }
 }
 
-function inside(r: Rect, x: number, y: number): boolean {
+export function inside(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 }
 
-function grow(r: Rect, m: number): Rect {
+export function grow(r: Rect, m: number): Rect {
   return { x: r.x - m, y: r.y - m, w: r.w + 2 * m, h: r.h + 2 * m };
 }

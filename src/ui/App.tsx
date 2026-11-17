@@ -8,6 +8,8 @@ export function App({ game }: { game: Game }) {
   return (
     <>
       {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
+      {store.started.value && !store.paused.value && <Crosshair />}
+      {store.started.value && store.paused.value && <PauseScreen game={game} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
     </>
@@ -22,15 +24,44 @@ function TitleScreen({ game }: { game: Game }) {
         <h1 class="logo">
           <span class="w1">Dust</span> <span class="w2">It</span> <span class="w3">Alone</span>
         </h1>
-        <p class="tagline">Un vieux manoir. Beaucoup trop de poussière. Un seul balai.</p>
+        <p class="tagline">Un vieux château. Beaucoup trop de poussière. Un seul balai.</p>
         <button class="btn btn-big" onClick={() => game.start()}>
           {hasSave ? 'On reprend le ménage !' : 'Au boulot !'}
         </button>
         {hasSave && <p class="save-info">🪙 {formatNumber(store.coins.value)} pièces en poche</p>}
-        <p class="hint">Bouge la souris pour balayer · maintiens le clic pour frotter plus fort</p>
+        <Controls />
       </div>
     </div>
   );
+}
+
+function Controls() {
+  return (
+    <div class="controls">
+      <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer</span>
+      <span>🖱️ viser et balayer</span>
+      <span><kbd>clic</kbd> frotter fort</span>
+      <span><kbd>Maj</kbd> courir</span>
+      <span><kbd>Échap</kbd> pause</span>
+    </div>
+  );
+}
+
+function PauseScreen({ game }: { game: Game }) {
+  return (
+    <div class="title-screen">
+      <div class="title-card pause-card">
+        <h2 class="pause-title">Pause</h2>
+        <p class="tagline">La poussière t'attend. Elle est patiente.</p>
+        <button class="btn btn-big" onClick={() => game.start()}>Reprendre le ménage</button>
+        <Controls />
+      </div>
+    </div>
+  );
+}
+
+function Crosshair() {
+  return <div class="crosshair" />;
 }
 
 /** Nombre qui sautille quand il augmente. */

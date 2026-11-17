@@ -238,3 +238,59 @@ body {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* ───────── Première personne ───────── */
+.crosshair {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  margin: -5px 0 0 -5px;
+  border-radius: 50%;
+  background: var(--cream);
+  border: 2px solid var(--ink);
+  opacity: 0.85;
+}
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 16px;
+  margin-top: 20px;
+  font-size: 14px;
+  font-weight: 700;
+}
+kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 1px 6px;
+  margin: 0 1px;
+  font: 13px/20px var(--font-display);
+  text-align: center;
+  background: var(--cream);
+  border: 2px solid var(--ink);
+  border-bottom-width: 4px;
+  border-radius: 6px;
+}
+.pause-title { font-family: var(--font-display); font-size: 64px; margin: 0; font-weight: normal; color: var(--tomato); -webkit-text-stroke: 3px var(--ink); paint-order: stroke fill; text-shadow: 5px 6px 0 var(--ink); }
+
+/* Panneaux du HUD légèrement translucides pour laisser voir la 3D. */
+.panel { background: rgba(255, 243, 214, 0.92); }
+
+/* ───────── Nombres qui s'envolent ───────── */
+.floaters { position: fixed; inset: 0; pointer-events: none; overflow: hidden; }
+.floater {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: none;
+  font-family: var(--font-display);
+  font-size: 34px;
+  color: var(--mustard);
+  -webkit-text-stroke: 7px var(--ink);
+  paint-order: stroke fill;
+  white-space: nowrap;
+  will-change: transform, opacity;
+}
+.floater.big { color: #fff; font-size: 44px; }
