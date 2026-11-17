@@ -1,4 +1,5 @@
 import { signal } from '@preact/signals';
+import type { QualityLevel, QualitySetting } from '../render/quality';
 
 /** État partagé entre le jeu et l'interface (Preact). */
 export const coins = signal(0);
@@ -27,3 +28,13 @@ export function pushToast(title: string, text: string, ms = 4200): void {
 
 /** Jeu en pause (la souris n'est plus capturée). */
 export const paused = signal(false);
+
+/** Réglage choisi (Auto ou un niveau précis) et niveau réellement appliqué. */
+export const qualitySetting = signal<QualitySetting>('auto');
+export const qualityLevel = signal<QualityLevel>('medium');
+export const showFps = signal(false);
+export const fps = signal(0);
+/** Panneau des réglages ouvert. */
+export const settingsOpen = signal(false);
+/** Nom du rendu logiciel détecté (navigateur sans accélération graphique), sinon null. */
+export const gpuWarning = signal<string | null>(null);

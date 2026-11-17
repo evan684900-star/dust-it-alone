@@ -1,3 +1,5 @@
+import { isQualitySetting, type QualitySetting } from '../render/quality';
+
 export const SAVE_KEY = 'dust-it-alone:save';
 export const SAVE_VERSION = 1;
 
@@ -8,10 +10,12 @@ export interface SaveData {
   totalCoins: number;
   roomCleanedOnce: boolean;
   muted: boolean;
+  quality: QualitySetting;
+  showFps: boolean;
 }
 
 export function defaultSave(): SaveData {
-  return { version: SAVE_VERSION, savedAt: Date.now(), coins: 0, totalCoins: 0, roomCleanedOnce: false, muted: false };
+  return { version: SAVE_VERSION, savedAt: Date.now(), coins: 0, totalCoins: 0, roomCleanedOnce: false, muted: false, quality: 'auto', showFps: false };
 }
 
 /** Fait passer une ancienne sauvegarde au format actuel. */
@@ -27,6 +31,8 @@ export function migrate(raw: unknown): SaveData {
     totalCoins: num(r.totalCoins, 0),
     roomCleanedOnce: r.roomCleanedOnce === true,
     muted: r.muted === true,
+    quality: isQualitySetting(r.quality) ? r.quality : 'auto',
+    showFps: r.showFps === true,
   };
 }
 

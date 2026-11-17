@@ -14,6 +14,7 @@ import { dustBunnyGeometry, grainGeometry, roundedBox, starGeometry } from './ge
 import { blobShadow, drawPlanks, softDot } from './canvasTextures';
 import { buildBroom, buildDustpan, buildProp } from './props';
 import { Floaters } from './floaters';
+import { QUALITY_PRESETS, type QualityLevel } from './quality';
 
 /** Hauteur des murs bas et du faîte du toit (cm). */
 export const KNEE = 140;
@@ -58,8 +59,18 @@ export class World3D {
   private composer: EffectComposer;
   private gtao: GTAOPass;
   private bloom: UnrealBloomPass;
-  /** 'high' = toutes les options, 'low' = sans post-traitement (PC modestes). */
-  quality: 'high' | 'low' = 'high';
+  quality: QualityLevel = 'medium';
+  private sun!: THREE.DirectionalLight;
+  private extraLights: THREE.Light[] = [];
+  private ambience: THREE.Object3D[] = [];
+  private particleMats: { rich: THREE.Material; cheap: THREE.Material; mesh: THREE.InstancedMesh; big: boolean }[] = [];
+  private useComposer = true;
+  private dustGeoHigh = grainGeometry();
+  private dustGeoLow = (() => {
+    const g = new THREE.OctahedronGeometry(1, 0);
+    g.scale(1, 0.55, 0.85);
+    return g;
+  })();
   private room!: RoomDef;
   private dust!: THREE.InstancedMesh;
   private bunnies!: THREE.InstancedMesh;
@@ -78,7 +89,7 @@ export class World3D {
 
   constructor(host: HTMLElement) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(PAL.ink);
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -96,7 +107,7 @@ export class World3D {
     this.scene.environmentIntensity = 0.55;
 
     // Post-traitement : occlusion ambiante (les coins s'assombrissent), halo lumineux, couleurs finales.
-    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 4 });
+    const target = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: 2 });
     this.composer = new EffectComposer(this.renderer, target);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.gtao = new GTAOPass(this.scene, this.camera, 1, 1);
@@ -131,6 +142,9 @@ export class World3D {
     this.buildParticles(sim);
     for (const p of this.room.obstacles) {
       const obj = buildProp(p);
+      obj.traverse((o) => {
+        if ((o as THREE.PointLight).isPointLight) this.extraLights.push(o as THREE.Light);
+      });
       this.scene.add(obj);
       this.addShadow(p.rect.x + p.rect.w / 2, p.rect.y + p.rect.h / 2, Math.max(p.rect.w, p.rect.h) * 0.75);
     }
@@ -157,10 +171,11 @@ export class World3D {
     s.add(new THREE.HemisphereLight(0xffe9c8, 0x6a4a5a, 1.6));
     // Le soleil entre par la lucarne : c'est lui qui projette les grandes ombres.
     const sun = new THREE.DirectionalLight(0xffd59a, 4.2);
+    this.sun = sun;
     sun.position.set(W + 500, 900, H / 2 - 120);
     sun.target.position.set(W / 2 - 150, 0, H / 2 + 60);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
+    sun.shadow.mapSize.set(2048, 2048);
     const sc = sun.shadow.camera;
     sc.left = -1100; sc.right = 1100; sc.top = 800; sc.bottom = -800; sc.near = 100; sc.far = 3200;
     sun.shadow.bias = -0.0004;
@@ -279,6 +294,7 @@ export class World3D {
       cone.position.copy(beamStart).lerp(beamTarget, 0.5);
       cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), beamTarget.clone().sub(beamStart).normalize());
       s.add(cone);
+      this.ambience.push(cone);
     }
     const pool = new THREE.Mesh(
       new THREE.CircleGeometry(1, 32),
@@ -308,6 +324,7 @@ export class World3D {
       new THREE.PointsMaterial({ size: 7, map: canvasTex(softDot()), transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     s.add(this.motes);
+    this.ambience.push(this.motes);
   }
 
   private shadowTex: THREE.Texture | null = null;
@@ -332,11 +349,68 @@ export class World3D {
       this.scene.add(mesh);
       return mesh;
     };
-    this.dust = make(grainGeometry(), fabric(0xffffff, { sheen: 0.6 }), r.dust.count);
+    const reg = (mesh: THREE.InstancedMesh, cheap: THREE.Material, big: boolean) => {
+      this.particleMats.push({ rich: mesh.material as THREE.Material, cheap, mesh, big });
+      return mesh;
+    };
+    this.dust = reg(make(this.dustGeoHigh, fabric(0xffffff, { sheen: 0.6 }), r.dust.count), mat(0xffffff, { roughness: 0.95 }), false);
     const c = new THREE.Color();
     for (let i = 0; i < r.dust.count; i++) this.dust.setColorAt(i, c.set(DUST_COLORS[(i * 7) % DUST_COLORS.length]));
-    this.bunnies = make(dustBunnyGeometry(), fabric(0xffffff, { vertexColors: true }), r.bunny.count);
-    this.stars = make(starGeometry(), new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.25 }), r.star.count);
+    this.bunnies = reg(make(dustBunnyGeometry(), fabric(0xffffff, { vertexColors: true }), r.bunny.count), mat(0xffffff, { vertexColors: true, roughness: 0.95 }), true);
+    const starMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.25 });
+    this.stars = reg(make(starGeometry(), starMat, r.star.count), starMat, true);
+  }
+
+  /** Applique un niveau de qualité (à tout moment, sans recharger). */
+  setQuality(level: QualityLevel): void {
+    this.quality = level;
+    const q = QUALITY_PRESETS[level];
+    const r = this.renderer;
+    r.setPixelRatio(Math.min(window.devicePixelRatio || 1, q.pixelRatio));
+
+    const shadowsOn = q.shadowMap > 0;
+    r.shadowMap.enabled = shadowsOn;
+    this.sun.castShadow = shadowsOn;
+    if (shadowsOn && this.sun.shadow.mapSize.x !== q.shadowMap) {
+      this.sun.shadow.mapSize.set(q.shadowMap, q.shadowMap);
+      this.sun.shadow.map?.dispose();
+      this.sun.shadow.map = null;
+    }
+
+    this.dust.geometry = q.lowPolyDust ? this.dustGeoLow : this.dustGeoHigh;
+    for (const p of this.particleMats) {
+      p.mesh.material = q.richParticles ? p.rich : p.cheap;
+      p.mesh.castShadow = p.big ? q.bigParticleShadows : q.dustShadows;
+    }
+    for (const l of this.extraLights) l.visible = q.extraLights;
+    for (const o of this.ambience) o.visible = q.ambienceFx;
+
+    this.gtao.enabled = q.gtao;
+    this.bloom.enabled = q.bloom;
+    this.useComposer = q.gtao || q.bloom || q.msaa > 0;
+    for (const rt of [this.composer.renderTarget1, this.composer.renderTarget2]) {
+      if (rt.samples !== q.msaa) {
+        rt.samples = q.msaa;
+        rt.dispose();
+      }
+    }
+
+    // Les matériaux doivent être recompilés quand on active/désactive les ombres ou des lumières.
+    {
+      this.scene.traverse((o) => {
+        const m = (o as THREE.Mesh).material;
+        if (!m) return;
+        for (const mm of Array.isArray(m) ? m : [m]) mm.needsUpdate = true;
+      });
+    }
+    this.resize();
+  }
+
+  /** Nom de la carte graphique utilisée par le navigateur (pour repérer un rendu logiciel). */
+  gpuName(): string {
+    const gl = this.renderer.getContext();
+    const ext = gl.getExtension('WEBGL_debug_renderer_info');
+    return String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER));
   }
 
   private buildRing(): void {
@@ -417,7 +491,7 @@ export class World3D {
     this.updateFx(dt);
     this.floaters.update(dt);
     this.renderer.info.reset();
-    if (this.quality === 'high') this.composer.render(dt);
+    if (this.useComposer) this.composer.render(dt);
     else this.renderer.render(this.scene, cam);
   }
 

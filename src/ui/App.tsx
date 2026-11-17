@@ -3,6 +3,7 @@ import type { Game } from '../game';
 import { CLEAN_THRESHOLD } from '../game';
 import { formatNumber } from '../core/format';
 import * as store from '../state/store';
+import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 
 export function App({ game }: { game: Game }) {
   return (
@@ -12,6 +13,8 @@ export function App({ game }: { game: Game }) {
       {store.started.value && store.paused.value && <PauseScreen game={game} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
+      {store.showFps.value && !store.debugInfo.value && <div class="fps-counter">{Math.round(store.fps.value)} FPS</div>}
+      {store.settingsOpen.value && <SettingsPanel game={game} />}
     </>
   );
 }
@@ -29,6 +32,8 @@ function TitleScreen({ game }: { game: Game }) {
           {hasSave ? 'On reprend le ménage !' : 'Au boulot !'}
         </button>
         {hasSave && <p class="save-info">🪙 {formatNumber(store.coins.value)} pièces en poche</p>}
+        <SettingsButton />
+        <GpuWarning />
         <Controls />
       </div>
     </div>
@@ -54,7 +59,67 @@ function PauseScreen({ game }: { game: Game }) {
         <h2 class="pause-title">Pause</h2>
         <p class="tagline">La poussière t'attend. Elle est patiente.</p>
         <button class="btn btn-big" onClick={() => game.start()}>Reprendre le ménage</button>
+        <SettingsButton />
+        <GpuWarning />
         <Controls />
+      </div>
+    </div>
+  );
+}
+
+function SettingsButton() {
+  const s = store.qualitySetting.value;
+  const label = s === 'auto' ? `Auto · ${QUALITY_LABELS[store.qualityLevel.value]}` : QUALITY_LABELS[s];
+  return (
+    <button class="btn btn-settings" onClick={() => (store.settingsOpen.value = true)}>
+      ⚙️ Graphismes : {label}
+    </button>
+  );
+}
+
+function GpuWarning() {
+  if (!store.gpuWarning.value) return null;
+  return (
+    <div class="gpu-warning">
+      <strong>⚠️ Ton navigateur n'utilise pas ta carte graphique</strong>
+      <span>
+        Le jeu est alors très lent. Dans Chrome ou Edge, ouvre les paramètres → <em>Système</em> → active
+        « Utiliser l'accélération graphique », puis redémarre le navigateur. La qualité a été mise au minimum en attendant.
+      </span>
+    </div>
+  );
+}
+
+function SettingsPanel({ game }: { game: Game }) {
+  const options: QualitySetting[] = ['auto', ...QUALITY_ORDER];
+  const close = () => (store.settingsOpen.value = false);
+  return (
+    <div class="settings-backdrop" onClick={close}>
+      <div class="settings-card" onClick={(e) => e.stopPropagation()}>
+        <h2>⚙️ Graphismes</h2>
+        <div class="quality-list">
+          {options.map((q) => (
+            <button
+              key={q}
+              class={`quality-option ${store.qualitySetting.value === q ? 'selected' : ''}`}
+              onClick={() => game.setQuality(q)}
+            >
+              <span class="q-name">
+                {QUALITY_LABELS[q]}
+                {q === 'auto' && store.qualitySetting.value === 'auto' && (
+                  <small> (en ce moment : {QUALITY_LABELS[store.qualityLevel.value]})</small>
+                )}
+              </span>
+              <span class="q-hint">{QUALITY_HINTS[q]}</span>
+            </button>
+          ))}
+        </div>
+        <label class="toggle">
+          <input type="checkbox" checked={store.showFps.value} onChange={() => game.toggleFps()} />
+          Afficher les FPS
+        </label>
+        <p class="settings-fps">Actuellement : <strong>{Math.round(store.fps.value)} FPS</strong></p>
+        <button class="btn" onClick={close}>OK</button>
       </div>
     </div>
   );

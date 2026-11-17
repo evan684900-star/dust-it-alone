@@ -29,3 +29,12 @@ describe('sauvegarde', () => {
     expect(d.roomCleanedOnce).toBe(false);
   });
 });
+
+describe('réglages graphiques', () => {
+  it('garde la qualité choisie et rejette les valeurs inconnues', () => {
+    expect(migrate({ quality: 'low' }).quality).toBe('low');
+    expect(migrate({ quality: 'turbo' }).quality).toBe('auto');
+    expect(migrate({}).quality).toBe('auto');
+    expect(migrate({ showFps: true }).showFps).toBe(true);
+  });
+});

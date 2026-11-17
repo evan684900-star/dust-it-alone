@@ -6,6 +6,7 @@ import { Synth } from './audio/synth';
 import { createFixedLoop } from './core/loop';
 import { loadSave, writeSave, type SaveData } from './save/save';
 import * as store from './state/store';
+import { AUTO_START, QUALITY_LABELS, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
 /** Seuil de propreté pour « pièce impeccable ». */
 export const CLEAN_THRESHOLD = 0.95;
@@ -35,6 +36,9 @@ export class Game {
     store.totalCoins.value = this.save.totalCoins;
     store.roomCleanedOnce.value = this.save.roomCleanedOnce;
     store.muted.value = this.save.muted;
+    store.showFps.value = this.save.showFps;
+    const urlQ = new URLSearchParams(location.search).get('quality');
+    store.qualitySetting.value = isQualitySetting(urlQ) ? urlQ : this.save.quality;
     store.roomName.value = this.sim.room.name;
     this.synth.setMuted(this.save.muted);
   }
@@ -42,12 +46,15 @@ export class Game {
   mount(host: HTMLElement): void {
     this.world = new World3D(host);
     this.world.build(this.sim);
-    if (new URLSearchParams(location.search).get('quality') === 'low') this.world.quality = 'low';
+    const qs = store.qualitySetting.value;
+    this.applyQuality(qs === 'auto' ? AUTO_START : qs);
+    this.checkGpu();
     this.bindInput();
 
     const step = createFixedLoop((dt) => this.tick(dt));
     const frame = (now: number) => {
-      const dt = Math.min(0.1, (now - this.last) / 1000);
+      const realDt = Math.max(0.0001, (now - this.last) / 1000);
+      const dt = Math.min(0.1, realDt);
       this.last = now;
       step(dt);
       const p = this.player;
@@ -59,7 +66,8 @@ export class Game {
         { visible: store.started.value, x: bp.x, z: bp.z, pressed: this.input.pressed },
       );
       this.synth.swish(Math.hypot(this.sim.broomVel.x, this.sim.broomVel.y), this.sim.broomPushed);
-      this.updateHud(dt);
+      this.updateHud(realDt);
+      if (!store.paused.value && !document.hidden) this.autoQuality(realDt);
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -92,6 +100,61 @@ export class Game {
   private onLockFailed(): void {
     // Sans capture de la souris (ex. tests automatiques), on joue quand même en mode debug.
     if (!this.debug) store.paused.value = true;
+  }
+
+  /** Choix du joueur dans les réglages. */
+  setQuality(setting: QualitySetting): void {
+    store.qualitySetting.value = setting;
+    this.applyQuality(setting === 'auto' ? AUTO_START : setting);
+    this.autoSamples = [];
+    this.persist();
+  }
+
+  toggleFps(): void {
+    store.showFps.value = !store.showFps.value;
+    this.persist();
+  }
+
+  private applyQuality(level: QualityLevel): void {
+    this.world.setQuality(level);
+    store.qualityLevel.value = level;
+    this.autoCooldown = 2.5;
+  }
+
+  /** Mode Auto : si les FPS restent bas, on descend d'un cran. */
+  private autoSamples: number[] = [];
+  private autoCooldown = 0;
+  private autoQuality(dt: number): void {
+    if (store.qualitySetting.value !== 'auto') return;
+    if (this.autoCooldown > 0) {
+      this.autoCooldown -= Math.min(dt, 0.5);
+      return;
+    }
+    this.autoSamples.push(dt);
+    const total = this.autoSamples.reduce((a, b) => a + b, 0);
+    if (total < 2) return;
+    const fps = this.autoSamples.length / total;
+    this.autoSamples = [];
+    if (fps < 15 && store.qualityLevel.value !== 'minimal') {
+      // Vraiment très lent : on va directement au minimum.
+      this.applyQuality('minimal');
+      store.pushToast('Qualité ajustée', `Ça ramait beaucoup (${Math.round(fps)} FPS) : passage en qualité Minimale.`, 3500);
+    } else if (fps < 45) {
+      const lower = lowerQuality(store.qualityLevel.value);
+      if (lower) {
+        this.applyQuality(lower);
+        store.pushToast('Qualité ajustée', `Ça ramait un peu (${Math.round(fps)} FPS) : passage en qualité ${QUALITY_LABELS[lower]}.`, 3500);
+      }
+    }
+  }
+
+  /** Repère les navigateurs qui dessinent sans la carte graphique (très lent). */
+  private checkGpu(): void {
+    const name = this.world.gpuName();
+    if (/swiftshader|llvmpipe|software|basic render/i.test(name)) {
+      if (store.qualitySetting.value === 'auto') this.applyQuality('minimal');
+      store.gpuWarning.value = name;
+    }
   }
 
   toggleMute(): void {
@@ -209,16 +272,17 @@ export class Game {
       this.persist();
     }
 
-    if (this.debug) {
-      this.fpsAcc.frames++;
-      this.fpsAcc.time += dt;
-      if (this.fpsAcc.time >= 0.5) {
-        const fps = this.fpsAcc.frames / this.fpsAcc.time;
-        this.fpsAcc.frames = 0;
-        this.fpsAcc.time = 0;
+    this.fpsAcc.frames++;
+    this.fpsAcc.time += dt;
+    if (this.fpsAcc.time >= 0.5) {
+      const fps = this.fpsAcc.frames / this.fpsAcc.time;
+      this.fpsAcc.frames = 0;
+      this.fpsAcc.time = 0;
+      store.fps.value = fps;
+      if (this.debug) {
         const p = this.sim.pool.aliveCount;
         const info = this.world.renderer.info.render;
-        store.debugInfo.value = `${fps.toFixed(0)} FPS · ${info.calls} draw calls · ${(info.triangles / 1000).toFixed(0)}k tris · poussière ${p.dust} · moutons ${p.bunny} · étoiles ${p.star} · [G] +1000 · [C] tout nettoyer`;
+        store.debugInfo.value = `${fps.toFixed(0)} FPS · qualité ${store.qualityLevel.value} · ${info.calls} draw calls · ${(info.triangles / 1000).toFixed(0)}k tris · poussière ${p.dust} · moutons ${p.bunny} · étoiles ${p.star} · [G] +1000 · [C] tout nettoyer`;
       }
     }
   }
@@ -230,6 +294,8 @@ export class Game {
       totalCoins: store.totalCoins.value,
       roomCleanedOnce: store.roomCleanedOnce.value,
       muted: store.muted.value,
+      quality: store.qualitySetting.value,
+      showFps: store.showFps.value,
     };
     writeSave(this.save);
   }
