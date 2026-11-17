@@ -404,3 +404,44 @@ kbd {
 .map-me-halo { fill: rgba(255, 90, 78, 0.25); }
 .map-help { font-weight: 800; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .chip { display: inline-block; padding: 1px 10px; border: 3px solid var(--ink); border-radius: 10px; }
+
+/* ───────── Bulle de dialogue ───────── */
+.dialogue {
+  position: fixed;
+  left: 50%;
+  bottom: 130px;
+  transform: translateX(-50%) rotate(-0.6deg);
+  width: min(640px, calc(100vw - 40px));
+  padding: 22px 24px 16px;
+  background: var(--cream);
+  border: 5px solid var(--ink);
+  border-radius: 22px;
+  box-shadow: 6px 8px 0 var(--ink);
+  pointer-events: auto;
+  cursor: pointer;
+  animation: bubble-in 0.35s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+}
+@keyframes bubble-in { from { transform: translateX(-50%) translateY(30px) scale(0.6); opacity: 0; } }
+.dialogue p { margin: 0; font-size: 20px; font-weight: 800; line-height: 1.35; min-height: 2.7em; }
+.dialogue-rest { visibility: hidden; }
+.dialogue.thought p { font-style: italic; color: #5a4060; }
+.dialogue-name {
+  position: absolute;
+  top: -20px;
+  left: 18px;
+  padding: 2px 14px;
+  font: 20px var(--font-display);
+  background: var(--mustard);
+  border: 4px solid var(--ink);
+  border-radius: 12px;
+  transform: rotate(-3deg);
+}
+.dialogue.thought .dialogue-name { background: var(--sky); }
+.dialogue-next { position: absolute; right: 16px; bottom: 6px; font-size: 16px; animation: next-bob 0.6s ease-in-out infinite alternate; }
+@keyframes next-bob { to { transform: translateY(4px); } }
+
+/* Outil verrouillé : petit refus (secousse). */
+.tool.shake-0 { animation: tool-no 0.35s; }
+.tool.shake-1 { animation: tool-no2 0.35s; }
+@keyframes tool-no { 20%, 60% { transform: translateX(-5px) rotate(-4deg); } 40%, 80% { transform: translateX(5px) rotate(4deg); } }
+@keyframes tool-no2 { 20%, 60% { transform: translateX(-5px) rotate(-4deg); } 40%, 80% { transform: translateX(5px) rotate(4deg); } }

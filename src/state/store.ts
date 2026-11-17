@@ -63,3 +63,38 @@ export interface CastleRoomInfo {
   price: number;
 }
 export const castle = signal<CastleRoomInfo[]>([]);
+
+// ───────────────────────────── Dialogues ─────────────────────────────
+
+export interface DialogueLine {
+  id: number;
+  /** Qui parle (affiché sur l'étiquette). */
+  speaker: string;
+  text: string;
+  /** Hauteur de la « voix » synthétique (Hz). */
+  voice: number;
+  /** Pensée (en italique) plutôt que parole. */
+  thought?: boolean;
+}
+
+/** Réplique affichée en ce moment, et celles qui attendent leur tour. */
+export const dialogue = signal<DialogueLine | null>(null);
+const dialogueQueue: DialogueLine[] = [];
+let dialogueId = 0;
+
+/** Ajoute une réplique à la file (elles s'enchaînent toutes seules). */
+export function say(speaker: string, text: string, voice = 420, thought = false): void {
+  const line = { id: ++dialogueId, speaker, text, voice, thought };
+  if (dialogue.value) dialogueQueue.push(line);
+  else dialogue.value = line;
+}
+
+/** Passe à la réplique suivante. */
+export function nextDialogue(): void {
+  dialogue.value = dialogueQueue.shift() ?? null;
+}
+
+/** Outil sélectionné (1 = balai ; les autres arrivent plus tard). */
+export const selectedTool = signal(0);
+/** Petit tremblement sur un outil verrouillé (index), pour le retour visuel. */
+export const toolShake = signal<{ index: number; at: number } | null>(null);

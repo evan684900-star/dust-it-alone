@@ -3,7 +3,7 @@ import { RoomSim, type BroomInput } from './sim/roomSim';
 import { World3D } from './render/world3d';
 import { Player } from './player/player';
 import { Navigation } from './world/nav';
-import { Synth } from './audio/synth';
+import { sfx } from './audio/synth';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
 import { loadSave, writeSave, type SaveData } from './save/save';
@@ -21,7 +21,7 @@ interface RoomRuntime {
 
 /** Chef d'orchestre : relie simulation, joueur, château, rendu 3D, son, interface et sauvegarde. */
 export class Game {
-  readonly synth = new Synth();
+  readonly synth = sfx;
   private rooms: RoomRuntime[];
   private nav: Navigation;
   private player: Player;
@@ -118,7 +118,16 @@ export class Game {
   /** Lancement / reprise : on capture la souris pour la visée. */
   start(): void {
     this.synth.unlock();
+    const firstTime = !store.started.value && !this.save.introSeen;
     store.started.value = true;
+    if (firstTime) {
+      this.save.introSeen = true;
+      // Réplique provisoire, en attendant l'histoire complète.
+      setTimeout(() => {
+        store.say('Plume', '… Tant de poussière. Combien de temps ai-je dormi ?', 520, true);
+        store.say('Plume', 'Le vieux balai est toujours là. Bon. Au travail !', 520, true);
+      }, 900);
+    }
     store.paused.value = false;
     store.mapOpen.value = false;
     this.lockPointer();
@@ -240,6 +249,9 @@ export class Game {
       if (!this.playing) return;
       this.player.setKey(e.code, true);
       if (e.code === 'KeyE') this.tryUnlock();
+      if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
+      const digit = /^Digit([1-5])$/.exec(e.code);
+      if (digit) this.selectTool(Number(digit[1]) - 1);
       if (this.debug && e.code === 'KeyG') this.earn(10000);
       if (this.debug && e.code === 'KeyC') {
         const r = this.currentRoom && this.runtime(this.currentRoom);
@@ -247,6 +259,10 @@ export class Game {
       }
     });
     window.addEventListener('keyup', (e) => this.player.setKey(e.code, false));
+    window.addEventListener('wheel', (e) => {
+      if (!this.playing) return;
+      this.selectTool((store.selectedTool.value + (e.deltaY > 0 ? 1 : 4)) % 5);
+    }, { passive: true });
     window.addEventListener('blur', () => this.player.clearKeys());
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
@@ -267,6 +283,17 @@ export class Game {
     }
   }
 
+  /** Changer d'outil (seul le balai existe pour l'instant). */
+  selectTool(index: number): void {
+    if (index === 0) {
+      if (store.selectedTool.value !== 0) this.synth.tool();
+      store.selectedTool.value = 0;
+      return;
+    }
+    store.toolShake.value = { index, at: performance.now() };
+    this.synth.denied();
+  }
+
   /** Ouvre / ferme la carte du château (la souris est libérée pendant ce temps). */
   toggleMap(): void {
     const open = !store.mapOpen.value;
@@ -284,13 +311,14 @@ export class Game {
     const room = roomById(d.room)!;
     if (store.coins.value < room.price) {
       store.pushToast('Pas assez de pièces 🪙', `Il manque ${formatNumber(room.price - store.coins.value)} pièces pour ouvrir ${room.name}.`, 2500);
-      this.synth.click();
+      this.synth.denied();
       return;
     }
     store.coins.value -= room.price;
     this.save.rooms[room.id] = { unlocked: true, cleaned: false };
     this.world.setDoorState((dd) => this.doorOpen(dd));
-    this.synth.fanfare();
+    this.synth.unlockDoor();
+    setTimeout(() => this.synth.fanfare(), 700);
     store.pushToast('Porte ouverte ! 🔓', `${room.name} est accessible. La poussière y est ${room.valueMult}× plus précieuse !`, 4500);
     this.visibleKey = '';
     this.publishCastle();

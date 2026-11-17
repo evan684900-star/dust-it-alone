@@ -1,6 +1,7 @@
 import { render } from 'preact';
 import { Game } from './game';
 import { App } from './ui/App';
+import { installUiSounds } from './audio/uiSounds';
 import './ui/styles.css';
 
 async function boot() {
@@ -13,6 +14,7 @@ async function boot() {
   const game = new Game();
   game.mount(document.getElementById('stage')!);
   render(<App game={game} />, document.getElementById('ui')!);
+  installUiSounds();
 }
 
 void boot();

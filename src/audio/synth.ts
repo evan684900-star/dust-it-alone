@@ -12,7 +12,10 @@ export class Synth {
   private swishGain!: GainNode;
   private swishFilter!: BiquadFilterNode;
   private lastBlip = 0;
+  private lastUi = 0;
   private muted = false;
+  private muffle!: BiquadFilterNode;
+  private noiseBuf!: AudioBuffer;
 
   /** À appeler suite à un clic (les navigateurs l'exigent). */
   unlock(): void {
@@ -27,7 +30,11 @@ export class Synth {
     this.master = ctx.createGain();
     this.master.gain.value = this.muted ? 0 : 0.7;
     const comp = ctx.createDynamicsCompressor();
-    this.master.connect(comp).connect(ctx.destination);
+    // Filtre « étouffé » : utilisé quand le jeu est en pause.
+    this.muffle = ctx.createBiquadFilter();
+    this.muffle.type = 'lowpass';
+    this.muffle.frequency.value = 20000;
+    this.master.connect(this.muffle).connect(comp).connect(ctx.destination);
 
     // « Shhh » du balai : bruit filtré en boucle dont on module le volume.
     const len = ctx.sampleRate * 2;
@@ -49,6 +56,171 @@ export class Synth {
     this.swishGain.gain.value = 0;
     src.connect(this.swishFilter).connect(this.swishGain).connect(this.master);
     src.start();
+    this.noiseBuf = buf;
+  }
+
+  // ───────────────────────────── Sons de l'interface ─────────────────────────────
+
+  /** Survol d'un bouton : petit « tic » très discret. */
+  hover(): void {
+    if (!this.ready() || this.now() - this.lastUi < 0.04) return;
+    this.lastUi = this.now();
+    this.tone(1900 + Math.random() * 200, this.now(), 0.025, 'sine', 0.025);
+  }
+
+  /** Clic sur un bouton : « pop » qui descend. */
+  press(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(880, t, 0.07, 'sine', 0.11, 0.55);
+    this.tone(1760, t, 0.03, 'triangle', 0.03);
+  }
+
+  /** Ouverture d'un panneau : glissando qui monte + souffle. */
+  open(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(330, t, 0.16, 'triangle', 0.07, 2.4);
+    this.noise(t, 0.18, 600, 3200, 0.05);
+  }
+
+  /** Fermeture d'un panneau : glissando qui descend. */
+  close(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(780, t, 0.14, 'triangle', 0.06, 0.45);
+    this.noise(t, 0.14, 2800, 500, 0.04);
+  }
+
+  /** Carte du château : froissement de papier. */
+  paper(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 4; k++) this.noise(t + k * 0.05 + Math.random() * 0.02, 0.06, 1500 + Math.random() * 2500, 900 + Math.random() * 3000, 0.07);
+  }
+
+  /** Notification : petit carillon à deux notes. */
+  chime(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(1318.5, t, 0.25, 'triangle', 0.06);
+    this.tone(1975.5, t + 0.09, 0.35, 'triangle', 0.05);
+  }
+
+  /** Arrivée dans un nouveau lieu : cloche douce. */
+  bell(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(523.25, t, 0.9, 'sine', 0.06);
+    this.tone(784, t, 0.7, 'sine', 0.035);
+    this.tone(1046.5, t + 0.02, 0.5, 'sine', 0.02);
+  }
+
+  /** Changement d'outil : « swoosh » + note. */
+  tool(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.noise(t, 0.1, 900, 4000, 0.05);
+    this.tone(660, t + 0.03, 0.09, 'square', 0.035, 1.5);
+  }
+
+  /** Action impossible (outil verrouillé, pas assez de pièces) : « bonk » grave. */
+  denied(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(196, t, 0.09, 'square', 0.05, 0.85);
+    this.tone(147, t + 0.1, 0.14, 'square', 0.05, 0.85);
+  }
+
+  /** Cadenas qui saute puis porte qui grince. */
+  unlockDoor(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(2400, t, 0.03, 'square', 0.06);
+    this.tone(1600, t + 0.05, 0.05, 'square', 0.05);
+    // Grincement : dent de scie grave qui ondule, filtrée.
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, t + 0.15);
+    osc.frequency.linearRampToValueAtTime(95, t + 0.9);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 23;
+    const lfoGain = ctx.createGain();
+    lfoGain.gain.value = 14;
+    lfo.connect(lfoGain).connect(osc.frequency);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.frequency.value = 900;
+    f.Q.value = 3;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.09, t + 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.95);
+    osc.connect(f).connect(g).connect(this.master);
+    osc.start(t + 0.15);
+    lfo.start(t + 0.15);
+    osc.stop(t + 1);
+    lfo.stop(t + 1);
+  }
+
+  /** Une porte verrouillée apparaît devant soi : cliquetis de cadenas. */
+  rattle(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 3; k++) this.tone(2600 + k * 300, t + k * 0.045, 0.025, 'square', 0.025);
+  }
+
+  /** Le combo passe un palier : note qui monte avec le palier. */
+  comboUp(level: number): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    const base = 523.25 * 2 ** ((level * 4) / 12);
+    this.tone(base, t, 0.12, 'triangle', 0.07);
+    this.tone(base * 1.5, t + 0.07, 0.18, 'triangle', 0.06);
+  }
+
+  /** « Voix » d'un personnage : un petit bip par lettre (hauteur propre à chacun). */
+  voice(pitch: number, char: string): void {
+    if (!this.ready()) return;
+    if (/[\s.,!?…'’«»:;—-]/.test(char)) return;
+    const t = this.now();
+    // La hauteur varie selon la lettre : ça « parle » sans vraiment parler.
+    const v = (char.toLowerCase().charCodeAt(0) % 7) / 7;
+    this.tone(pitch * (0.85 + v * 0.35), t, 0.045, 'square', 0.022, 0.92);
+  }
+
+  /** Pause : tout le son devient étouffé (comme à travers une porte). */
+  setMuffled(on: boolean): void {
+    if (!this.ctx) return;
+    this.muffle.frequency.setTargetAtTime(on ? 700 : 20000, this.ctx.currentTime, 0.12);
+  }
+
+  private ready(): boolean {
+    return this.ctx !== null && this.ctx.state === 'running';
+  }
+
+  private now(): number {
+    return this.ctx!.currentTime;
+  }
+
+  /** Souffle filtré (le filtre glisse de `f0` à `f1`). */
+  private noise(at: number, dur: number, f0: number, f1: number, vol: number): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass';
+    f.Q.value = 1.2;
+    f.frequency.setValueAtTime(f0, at);
+    f.frequency.exponentialRampToValueAtTime(f1, at + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, at);
+    g.gain.exponentialRampToValueAtTime(vol, at + dur * 0.25);
+    g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+    src.connect(f).connect(g).connect(this.master);
+    src.start(at, Math.random() * 1.5);
+    src.stop(at + dur + 0.02);
   }
 
   setMuted(m: boolean): void {
@@ -113,3 +285,6 @@ export class Synth {
     osc.stop(at + dur + 0.02);
   }
 }
+
+/** Le synthétiseur du jeu (un seul pour tout le monde : jeu et interface). */
+export const sfx = new Synth();

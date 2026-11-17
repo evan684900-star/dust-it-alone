@@ -25,6 +25,8 @@ export interface SaveData {
   muted: boolean;
   quality: QualitySetting;
   showFps: boolean;
+  /** Le petit texte d'introduction a déjà été vu. */
+  introSeen: boolean;
 }
 
 export function defaultSave(): SaveData {
@@ -38,6 +40,7 @@ export function defaultSave(): SaveData {
     muted: false,
     quality: 'auto',
     showFps: false,
+    introSeen: false,
   };
 }
 
@@ -75,6 +78,7 @@ export function migrate(raw: unknown): SaveData {
     muted: r.muted === true,
     quality: isQualitySetting(r.quality) ? r.quality : 'auto',
     showFps: r.showFps === true,
+    introSeen: r.introSeen === true,
   };
 }
 

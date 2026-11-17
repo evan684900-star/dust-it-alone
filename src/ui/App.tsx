@@ -3,6 +3,7 @@ import type { Game } from '../game';
 import { CLEAN_THRESHOLD } from '../game';
 import { formatNumber } from '../core/format';
 import * as store from '../state/store';
+import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 
 export function App({ game }: { game: Game }) {
@@ -11,6 +12,7 @@ export function App({ game }: { game: Game }) {
       {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && <Crosshair />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && <DoorPrompt />}
+      {store.started.value && store.dialogue.value && <DialogueBubble key={store.dialogue.value.id} line={store.dialogue.value} />}
       {store.started.value && store.mapOpen.value && <CastleMap game={game} />}
       {store.started.value && store.paused.value && !store.mapOpen.value && <PauseScreen game={game} />}
       <Toasts />
@@ -205,6 +207,51 @@ function CastleMap({ game }: { game: Game }) {
   );
 }
 
+/**
+ * Bulle de dialogue : le texte s'écrit lettre par lettre, avec un petit bip
+ * synthétique par lettre (la « voix » du personnage). Clic, Espace ou Entrée
+ * pour accélérer puis passer à la suite.
+ */
+function DialogueBubble({ line }: { line: store.DialogueLine }) {
+  const [shown, setShown] = useState(0);
+  const done = shown >= line.text.length;
+  useEffect(() => {
+    if (done) {
+      const t = setTimeout(() => store.nextDialogue(), 2600 + line.text.length * 25);
+      return () => clearTimeout(t);
+    }
+    const ch = line.text[shown];
+    const pause = /[.!?…]/.test(ch) ? 260 : /[,;:]/.test(ch) ? 120 : 32;
+    const t = setTimeout(() => {
+      if (shown % 2 === 0) sfx.voice(line.voice, ch);
+      setShown(shown + 1);
+    }, pause);
+    return () => clearTimeout(t);
+  }, [shown, done]);
+  const advance = () => (done ? store.nextDialogue() : setShown(line.text.length));
+  // Espace / Entrée pendant l'écriture : on affiche tout d'un coup.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.code === 'Space' || e.code === 'Enter') && !done) {
+        e.stopImmediatePropagation();
+        setShown(line.text.length);
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [done]);
+  return (
+    <div class={`dialogue ${line.thought ? 'thought' : ''}`} onClick={advance}>
+      <span class="dialogue-name">{line.speaker}</span>
+      <p>
+        {line.text.slice(0, shown)}
+        <span class="dialogue-rest">{line.text.slice(shown)}</span>
+      </p>
+      {done && <span class="dialogue-next">▼</span>}
+    </div>
+  );
+}
+
 function Crosshair() {
   return <div class="crosshair" />;
 }
@@ -265,7 +312,11 @@ function Hud({ game }: { game: Game }) {
       <div class="bottom-bar">
         <div class="panel tools tilt-r">
           {TOOLS.map((t, k) => (
-            <div class={`tool ${t.unlocked ? 'active' : 'locked'}`} title={t.unlocked ? t.name : 'Pas encore débloqué'}>
+            <div
+              key={t.id}
+              class={`tool ${t.unlocked ? (store.selectedTool.value === k ? 'active' : '') : 'locked'} ${store.toolShake.value?.index === k ? 'shake-' + (Math.floor(store.toolShake.value.at) % 2) : ''}`}
+              title={t.unlocked ? t.name : 'Pas encore débloqué'}
+            >
               <span class="tool-icon">{t.unlocked ? t.icon : '?'}</span>
               <span class="tool-key">{k + 1}</span>
             </div>
