@@ -13,7 +13,7 @@ npm run dev        # http://localhost:5173
 
 Ajoute `?debug` à l'adresse pour afficher les FPS et les raccourcis de test (`G` : +1000 pièces, `C` : tout nettoyer), et `?quality=low` pour désactiver le post-traitement.
 
-Contrôles : `ZQSD`/`WASD` pour se déplacer, la souris pour viser et balayer, clic maintenu pour frotter fort, `Maj` pour courir, `Échap` pour la pause.
+Contrôles : `ZQSD`/`WASD` pour se déplacer, la souris pour viser et balayer, clic maintenu pour frotter fort, `Maj` pour courir, `E` pour ouvrir une porte, `M` pour la carte du château, `Échap` pour la pause.
 
 ## Commandes
 
@@ -36,9 +36,11 @@ Vite · TypeScript · Three.js (3D : ombres, PBR, GTAO, bloom) · Preact + Signa
 ## Avancement
 
 - [x] **M0** : mise en place (Vite, TS, Three.js, Preact, tests, CI, config Vercel)
+- [x] **Qualité graphique** : Auto + 5 niveaux, optimisé pour les puces intégrées
 - [x] **M1** : prototype 3D en première personne (balai, pelles, poussière, moutons, poussière d'étoile, combo, propreté, sons, effets)
 - [ ] **M2** : boutique, améliorations, économie
-- [ ] **M3** : le château (pièces reliées par des portes, couloirs, escaliers), nouveaux outils
+- [x] **M3 (partie 1)** : le château — 5 pièces sur 3 étages (Combles, Galerie des portraits, Bibliothèque, Chambre royale, Grand Hall), 2 escaliers, portes verrouillées, carte
+- [ ] **M3 (partie 2)** : nouveaux outils, pièces suivantes (cuisines, chapelle, caves…)
 - [ ] **M4** : assistants et gains hors-ligne
 - [ ] **M5** : prestige, souvenirs, pièces 4 à 8
 - [ ] **M6** : polish

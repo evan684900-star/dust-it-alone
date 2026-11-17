@@ -9,8 +9,10 @@ export function App({ game }: { game: Game }) {
   return (
     <>
       {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
-      {store.started.value && !store.paused.value && <Crosshair />}
-      {store.started.value && store.paused.value && <PauseScreen game={game} />}
+      {store.started.value && !store.paused.value && !store.mapOpen.value && <Crosshair />}
+      {store.started.value && !store.paused.value && !store.mapOpen.value && <DoorPrompt />}
+      {store.started.value && store.mapOpen.value && <CastleMap game={game} />}
+      {store.started.value && store.paused.value && !store.mapOpen.value && <PauseScreen game={game} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
       {store.showFps.value && !store.debugInfo.value && <div class="fps-counter">{Math.round(store.fps.value)} FPS</div>}
@@ -47,6 +49,8 @@ function Controls() {
       <span>🖱️ viser et balayer</span>
       <span><kbd>clic</kbd> frotter fort</span>
       <span><kbd>Maj</kbd> courir</span>
+      <span><kbd>E</kbd> ouvrir une porte</span>
+      <span><kbd>M</kbd> carte du château</span>
       <span><kbd>Échap</kbd> pause</span>
     </div>
   );
@@ -128,6 +132,79 @@ function SettingsPanel({ game }: { game: Game }) {
   );
 }
 
+function DoorPrompt() {
+  const d = store.doorPrompt.value;
+  if (!d) return null;
+  return (
+    <div class={`door-prompt ${d.affordable ? 'ok' : 'nope'}`}>
+      <span class="lock">🔒</span>
+      <div>
+        <strong>{d.name}</strong>
+        <span>
+          {d.affordable ? (
+            <>
+              <kbd>E</kbd> Ouvrir pour {formatNumber(d.price)} 🪙
+            </>
+          ) : (
+            <>Il faut {formatNumber(d.price)} 🪙 (encore {formatNumber(d.price - store.coins.value)})</>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const SHORT_NAMES: Record<string, string> = { attic: 'Combles', gallery: 'Galerie', library: 'Bibliothèque', bedroom: 'Chambre', hall: 'Grand Hall' };
+const LEVEL_NAMES: Record<number, string> = { 400: 'Combles', 0: 'Étage', [-400]: 'Rez-de-chaussée' };
+
+/** Carte du château vue de dessus, avec les étages en couleurs. */
+function CastleMap({ game }: { game: Game }) {
+  const rooms = store.castle.value;
+  if (rooms.length === 0) return null;
+  const pad = 200;
+  const minX = Math.min(...rooms.map((r) => r.x)) - pad;
+  const minZ = Math.min(...rooms.map((r) => r.z)) - pad;
+  const maxX = Math.max(...rooms.map((r) => r.x + r.w)) + pad;
+  const maxZ = Math.max(...rooms.map((r) => r.z + r.h)) + pad;
+  const p = store.playerPos.value;
+  const levelColor: Record<number, string> = { 400: '#c99a5a', 0: '#9fbfa0', [-400]: '#a7a3c9' };
+  return (
+    <div class="settings-backdrop" onClick={() => game.toggleMap()}>
+      <div class="settings-card map-card" onClick={(e) => e.stopPropagation()}>
+        <h2>🗺️ Le château</h2>
+        <svg class="castle-map" viewBox={`${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}`}>
+          {/* Escaliers */}
+          <rect x={-800} y={140} width={800} height={140} class="map-stair" />
+          <rect x={-4000} y={25} width={800} height={300} class="map-stair" />
+          {rooms.map((r) => (
+            <g key={r.id}>
+              <rect x={r.x} y={r.z} width={r.w} height={r.h} rx={40} class={`map-room ${r.unlocked ? '' : 'locked'}`} style={{ fill: r.unlocked ? levelColor[r.level] : undefined }} />
+              {r.unlocked && <rect x={r.x} y={r.z + r.h - 60} width={r.w * Math.max(0, Math.min(1, r.clean))} height={60} class="map-clean" />}
+              <text x={r.x + r.w / 2} y={r.z + r.h / 2 - 40} class="map-label">
+                {r.unlocked ? (SHORT_NAMES[r.id] ?? r.name) : '🔒 ' + formatNumber(r.price) + ' 🪙'}
+              </text>
+              <text x={r.x + r.w / 2} y={r.z + r.h / 2 + 160} class="map-sub">
+                {r.unlocked ? `${LEVEL_NAMES[r.level] ?? ''} · ${Math.floor(r.clean * 100)} %${r.cleaned ? ' ⭐' : ''}` : '???'}
+              </text>
+            </g>
+          ))}
+          {/* Le joueur : une flèche dans la direction du regard. */}
+          <g transform={`translate(${p.x} ${p.z}) rotate(${(-p.yaw * 180) / Math.PI})`}>
+            <circle r={110} class="map-me-halo" />
+            <path d="M0,-130 L80,90 L0,40 L-80,90 Z" class="map-me" />
+          </g>
+        </svg>
+        <p class="map-help">
+          Les couleurs indiquent l'étage : <span class="chip" style={{ background: levelColor[400] }}>Combles</span>
+          <span class="chip" style={{ background: levelColor[0] }}>Étage</span>
+          <span class="chip" style={{ background: levelColor[-400] }}>Rez-de-chaussée</span>
+        </p>
+        <button class="btn" onClick={() => game.toggleMap()}>Fermer (M)</button>
+      </div>
+    </div>
+  );
+}
+
 function Crosshair() {
   return <div class="crosshair" />;
 }
@@ -170,7 +247,7 @@ function Hud({ game }: { game: Game }) {
         </div>
 
         <div class="panel room-panel tilt-r">
-          <span class="room-name">{store.roomName.value}</span>
+          <span class="room-name">{store.placeName.value || store.roomName.value}</span>
           <div class="clean-bar" title="Propreté de la pièce">
             <div class="clean-fill" style={{ width: `${clean * 100}%` }} />
             <div class="clean-star" style={{ left: `${CLEAN_THRESHOLD * 100}%` }}>

@@ -9,11 +9,14 @@ function memoryStore() {
 describe('sauvegarde', () => {
   it('écrit puis relit les données', () => {
     const s = memoryStore();
-    writeSave({ ...migrate(null), coins: 123, totalCoins: 456, roomCleanedOnce: true }, s);
+    const data = migrate(null);
+    data.rooms.gallery = { unlocked: true, cleaned: true };
+    writeSave({ ...data, coins: 123, totalCoins: 456, player: { x: 1, z: 2, y: 3, yaw: 0.5 } }, s);
     const loaded = loadSave(s);
     expect(loaded.coins).toBe(123);
     expect(loaded.totalCoins).toBe(456);
-    expect(loaded.roomCleanedOnce).toBe(true);
+    expect(loaded.rooms.gallery).toEqual({ unlocked: true, cleaned: true });
+    expect(loaded.player).toEqual({ x: 1, z: 2, y: 3, yaw: 0.5 });
   });
   it('se rabat sur la copie de secours si la sauvegarde est abîmée', () => {
     const s = memoryStore();
@@ -26,7 +29,13 @@ describe('sauvegarde', () => {
     const d = migrate({ coins: -5, totalCoins: 'beaucoup', roomCleanedOnce: 'oui' });
     expect(d.coins).toBe(0);
     expect(d.totalCoins).toBe(0);
-    expect(d.roomCleanedOnce).toBe(false);
+    expect(d.rooms.attic.unlocked).toBe(true);
+  });
+  it('convertit une sauvegarde de la version 1 (une seule pièce)', () => {
+    const d = migrate({ version: 1, coins: 50, roomCleanedOnce: true });
+    expect(d.coins).toBe(50);
+    expect(d.rooms.attic).toEqual({ unlocked: true, cleaned: true });
+    expect(d.player).toBeNull();
   });
 });
 

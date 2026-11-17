@@ -1,22 +1,25 @@
 import type { RoomDef } from '../data/rooms';
-import { grow, inside } from '../sim/roomSim';
+import type { Navigation } from '../world/nav';
 
 export const EYE_HEIGHT = 158;
-const WALK = 300;
-const SPRINT = 500;
-const BODY = 32;
+const WALK = 320;
+const SPRINT = 540;
 /** Distance min/max (cm) entre les pieds et la brosse du balai. */
 const REACH_MIN = 55;
 const REACH_MAX = 230;
 
 /**
- * Joueur en première personne : position au sol, regard (lacet / tangage),
- * et calcul du point où la brosse touche le sol.
+ * Joueur en première personne : position dans le château, altitude (escaliers),
+ * regard (lacet / tangage) et point où la brosse touche le sol.
  */
 export class Player {
   x: number;
   z: number;
-  yaw = Math.PI / 2; // regarde vers la pelle de gauche
+  /** Altitude du sol sous les pieds. */
+  y: number;
+  /** Altitude affichée (lissée dans les escaliers). */
+  private smoothY: number;
+  yaw: number;
   pitch = -0.55;
   sensitivity = 0.0022;
   private keys = new Set<string>();
@@ -24,9 +27,13 @@ export class Player {
   private bobAmount = 0;
   sprinting = false;
 
-  constructor(private room: RoomDef) {
-    this.x = room.width / 2;
-    this.z = room.height / 2;
+  constructor(private nav: Navigation, start: { x: number; z: number; y: number; yaw: number; pitch?: number }) {
+    this.x = start.x;
+    this.z = start.z;
+    this.y = start.y;
+    this.smoothY = start.y;
+    this.yaw = start.yaw;
+    if (start.pitch !== undefined) this.pitch = start.pitch;
   }
 
   look(dx: number, dy: number): void {
@@ -64,43 +71,52 @@ export class Player {
     if (mx) this.tryMove(this.x + mx, this.z);
     if (mz) this.tryMove(this.x, this.z + mz);
 
+    this.smoothY += (this.y - this.smoothY) * Math.min(1, dt * 14);
     const moving = mx !== 0 || mz !== 0;
     this.bobAmount += ((moving ? (this.sprinting ? 1.6 : 1) : 0) - this.bobAmount) * Math.min(1, dt * 8);
     if (moving) this.bobPhase += dt * (this.sprinting ? 13 : 9);
   }
 
-  private blocked(x: number, z: number): boolean {
-    const r = this.room;
-    if (x < BODY + 20 || z < BODY + 30 || x > r.width - BODY - 20 || z > r.height - BODY - 30) return true;
-    for (const o of r.obstacles) if (inside(grow(o.rect, BODY), x, z)) return true;
-    for (const c of r.collectors) if (inside(grow(c.rect, BODY + 30), x, z)) return true;
-    return false;
-  }
-
   private tryMove(x: number, z: number): void {
-    if (!this.blocked(x, z)) {
+    const ny = this.nav.canStand(x, z, this.y);
+    if (ny !== null) {
       this.x = x;
       this.z = z;
+      this.y = ny;
     }
   }
 
-  /** Hauteur des yeux avec le léger balancement de la marche. */
+  /** Hauteur des yeux (monde) avec le léger balancement de la marche. */
   get eye(): number {
-    return EYE_HEIGHT + Math.sin(this.bobPhase * 2) * 2.2 * this.bobAmount;
+    return this.smoothY + EYE_HEIGHT + Math.sin(this.bobPhase * 2) * 2.2 * this.bobAmount;
   }
 
-  /** Point du sol visé par le balai (le centre de l'écran, à portée de bras). */
-  broomPoint(): { x: number; z: number } {
+  get feet(): number {
+    return this.smoothY;
+  }
+
+  /** Pièce où se trouve le joueur (null dans un escalier ou une porte). */
+  room(): RoomDef | null {
+    return this.nav.roomAt(this.x, this.z, this.y);
+  }
+
+  /**
+   * Point du sol visé par le balai (monde). Il reste dans la pièce du joueur :
+   * pas question de balayer à travers les murs.
+   */
+  broomPoint(): { x: number; z: number; room: RoomDef | null } {
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
-    // Le regard descend vers le sol : on cherche où il le touche.
     let d = REACH_MAX;
-    if (this.pitch < -0.02) d = this.eye / Math.tan(-this.pitch);
+    if (this.pitch < -0.02) d = (this.eye - this.smoothY) / Math.tan(-this.pitch);
     d = Math.max(REACH_MIN, Math.min(REACH_MAX, d));
-    const r = this.room;
-    return {
-      x: Math.max(8, Math.min(r.width - 8, this.x + fx * d)),
-      z: Math.max(8, Math.min(r.height - 8, this.z + fz * d)),
-    };
+    let bx = this.x + fx * d;
+    let bz = this.z + fz * d;
+    const r = this.room();
+    if (r) {
+      bx = Math.max(r.origin.x + 8, Math.min(r.origin.x + r.width - 8, bx));
+      bz = Math.max(r.origin.z + 8, Math.min(r.origin.z + r.height - 8, bz));
+    }
+    return { x: bx, z: bz, room: r };
   }
 }

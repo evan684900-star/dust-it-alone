@@ -40,3 +40,26 @@ export const settingsOpen = signal(false);
 export const gpuWarning = signal<string | null>(null);
 /** Nom de la carte graphique détectée. */
 export const gpuName = signal('');
+
+/** Nom de l'endroit où l'on se trouve (pièce ou escalier). */
+export const placeName = signal('');
+/** Porte verrouillée devant soi : on affiche « [E] Ouvrir ». */
+export const doorPrompt = signal<{ name: string; price: number; affordable: boolean } | null>(null);
+/** Carte du château ouverte. */
+export const mapOpen = signal(false);
+export const playerPos = signal({ x: 0, z: 0, yaw: 0 });
+
+export interface CastleRoomInfo {
+  id: string;
+  name: string;
+  x: number;
+  z: number;
+  w: number;
+  h: number;
+  level: number;
+  unlocked: boolean;
+  cleaned: boolean;
+  clean: number;
+  price: number;
+}
+export const castle = signal<CastleRoomInfo[]>([]);
