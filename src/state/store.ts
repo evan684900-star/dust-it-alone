@@ -38,3 +38,5 @@ export const fps = signal(0);
 export const settingsOpen = signal(false);
 /** Nom du rendu logiciel détecté (navigateur sans accélération graphique), sinon null. */
 export const gpuWarning = signal<string | null>(null);
+/** Nom de la carte graphique détectée. */
+export const gpuName = signal('');

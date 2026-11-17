@@ -63,8 +63,10 @@ export class World3D {
   private sun!: THREE.DirectionalLight;
   private extraLights: THREE.Light[] = [];
   private ambience: THREE.Object3D[] = [];
-  private particleMats: { rich: THREE.Material; cheap: THREE.Material; mesh: THREE.InstancedMesh; big: boolean }[] = [];
+  private particleMats: { rich: THREE.Material; mid: THREE.Material; low: THREE.Material; mesh: THREE.InstancedMesh; big: boolean }[] = [];
+  private lambertCache = new Map<THREE.Material, THREE.Material>();
   private useComposer = true;
+  private envMap!: THREE.Texture;
   private dustGeoHigh = grainGeometry();
   private dustGeoLow = (() => {
     const g = new THREE.OctahedronGeometry(1, 0);
@@ -88,7 +90,8 @@ export class World3D {
   private headLean = 0;
 
   constructor(host: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    // Pas d'anticrénelage sur l'image de base (coûteux sur les puces intégrées) : les niveaux élevés ont le leur.
+    this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(PAL.ink);
     this.renderer.shadowMap.enabled = true;
@@ -103,7 +106,8 @@ export class World3D {
 
     // Éclairage d'environnement : reflets doux sur toutes les surfaces.
     const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.envMap = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = this.envMap;
     this.scene.environmentIntensity = 0.55;
 
     // Post-traitement : occlusion ambiante (les coins s'assombrissent), halo lumineux, couleurs finales.
@@ -349,8 +353,8 @@ export class World3D {
       this.scene.add(mesh);
       return mesh;
     };
-    const reg = (mesh: THREE.InstancedMesh, cheap: THREE.Material, big: boolean) => {
-      this.particleMats.push({ rich: mesh.material as THREE.Material, cheap, mesh, big });
+    const reg = (mesh: THREE.InstancedMesh, mid: THREE.Material, big: boolean) => {
+      this.particleMats.push({ rich: mesh.material as THREE.Material, mid, low: toLambert(mid), mesh, big });
       return mesh;
     };
     this.dust = reg(make(this.dustGeoHigh, fabric(0xffffff, { sheen: 0.6 }), r.dust.count), mat(0xffffff, { roughness: 0.95 }), false);
@@ -379,9 +383,11 @@ export class World3D {
 
     this.dust.geometry = q.lowPolyDust ? this.dustGeoLow : this.dustGeoHigh;
     for (const p of this.particleMats) {
-      p.mesh.material = q.richParticles ? p.rich : p.cheap;
+      p.mesh.material = q.cheapMaterials ? p.low : q.richParticles ? p.rich : p.mid;
       p.mesh.castShadow = p.big ? q.bigParticleShadows : q.dustShadows;
     }
+    this.swapMaterials(q.cheapMaterials);
+    this.scene.environment = q.cheapMaterials ? null : this.envMap;
     for (const l of this.extraLights) l.visible = q.extraLights;
     for (const o of this.ambience) o.visible = q.ambienceFx;
 
@@ -404,6 +410,30 @@ export class World3D {
       });
     }
     this.resize();
+  }
+
+  /** Remplace les matériaux physiques par des matériaux simples (et inversement). */
+  private swapMaterials(cheap: boolean): void {
+    const particles = new Set<THREE.Object3D>(this.particleMats.map((p) => p.mesh));
+    this.scene.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || particles.has(mesh)) return;
+      const ud = mesh.userData as { richMat?: THREE.Material | THREE.Material[] };
+      ud.richMat ??= mesh.material;
+      if (!cheap) {
+        mesh.material = ud.richMat;
+        return;
+      }
+      const conv = (m: THREE.Material) => {
+        let c = this.lambertCache.get(m);
+        if (!c) {
+          c = toLambert(m);
+          this.lambertCache.set(m, c);
+        }
+        return c;
+      };
+      mesh.material = Array.isArray(ud.richMat) ? ud.richMat.map(conv) : conv(ud.richMat);
+    });
   }
 
   /** Nom de la carte graphique utilisée par le navigateur (pour repérer un rendu logiciel). */
@@ -650,4 +680,20 @@ function popEase(t: number): number {
   const c = 2.2;
   const u = t - 1;
   return 1 + (c + 1) * u * u * u + c * u * u;
+}
+
+/** Version « éclairage simple » d'un matériau physique (bien plus légère pour les puces intégrées). */
+function toLambert(m: THREE.Material): THREE.Material {
+  const sm = m as THREE.MeshStandardMaterial;
+  if (!sm.isMeshStandardMaterial) return m;
+  return new THREE.MeshLambertMaterial({
+    color: sm.color,
+    map: sm.map,
+    emissive: sm.emissive,
+    emissiveIntensity: sm.emissiveIntensity,
+    vertexColors: sm.vertexColors,
+    side: sm.side,
+    transparent: sm.transparent,
+    opacity: sm.opacity,
+  });
 }

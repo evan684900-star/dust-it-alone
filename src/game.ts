@@ -6,7 +6,7 @@ import { Synth } from './audio/synth';
 import { createFixedLoop } from './core/loop';
 import { loadSave, writeSave, type SaveData } from './save/save';
 import * as store from './state/store';
-import { AUTO_START, QUALITY_LABELS, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
+import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
 /** Seuil de propreté pour « pièce impeccable ». */
 export const CLEAN_THRESHOLD = 0.95;
@@ -47,7 +47,8 @@ export class Game {
     this.world = new World3D(host);
     this.world.build(this.sim);
     const qs = store.qualitySetting.value;
-    this.applyQuality(qs === 'auto' ? AUTO_START : qs);
+    this.autoStart = autoStartFor(this.world.gpuName());
+    this.applyQuality(qs === 'auto' ? this.autoStart : qs);
     this.checkGpu();
     this.bindInput();
 
@@ -105,7 +106,7 @@ export class Game {
   /** Choix du joueur dans les réglages. */
   setQuality(setting: QualitySetting): void {
     store.qualitySetting.value = setting;
-    this.applyQuality(setting === 'auto' ? AUTO_START : setting);
+    this.applyQuality(setting === 'auto' ? this.autoStart : setting);
     this.autoSamples = [];
     this.persist();
   }
@@ -120,6 +121,8 @@ export class Game {
     store.qualityLevel.value = level;
     this.autoCooldown = 2.5;
   }
+
+  private autoStart = AUTO_START;
 
   /** Mode Auto : si les FPS restent bas, on descend d'un cran. */
   private autoSamples: number[] = [];
@@ -139,7 +142,7 @@ export class Game {
       // Vraiment très lent : on va directement au minimum.
       this.applyQuality('minimal');
       store.pushToast('Qualité ajustée', `Ça ramait beaucoup (${Math.round(fps)} FPS) : passage en qualité Minimale.`, 3500);
-    } else if (fps < 45) {
+    } else if (fps < 40) {
       const lower = lowerQuality(store.qualityLevel.value);
       if (lower) {
         this.applyQuality(lower);
@@ -151,10 +154,8 @@ export class Game {
   /** Repère les navigateurs qui dessinent sans la carte graphique (très lent). */
   private checkGpu(): void {
     const name = this.world.gpuName();
-    if (/swiftshader|llvmpipe|software|basic render/i.test(name)) {
-      if (store.qualitySetting.value === 'auto') this.applyQuality('minimal');
-      store.gpuWarning.value = name;
-    }
+    if (/swiftshader|llvmpipe|software|basic render/i.test(name)) store.gpuWarning.value = name;
+    store.gpuName.value = name;
   }
 
   toggleMute(): void {

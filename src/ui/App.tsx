@@ -118,7 +118,10 @@ function SettingsPanel({ game }: { game: Game }) {
           <input type="checkbox" checked={store.showFps.value} onChange={() => game.toggleFps()} />
           Afficher les FPS
         </label>
-        <p class="settings-fps">Actuellement : <strong>{Math.round(store.fps.value)} FPS</strong></p>
+        <p class="settings-fps">
+          Actuellement : <strong>{Math.round(store.fps.value)} FPS</strong>
+          {store.gpuName.value && <span class="gpu-name">Carte graphique : {store.gpuName.value}</span>}
+        </p>
         <button class="btn" onClick={close}>OK</button>
       </div>
     </div>
