@@ -37,7 +37,7 @@ export function App({ game }: { game: Game }) {
       {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
       {store.credits.value && <Credits />}
       {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
-      {store.started.value && store.tip.value && !store.paused.value && !store.treeOpen.value && <div class="tip" key={store.tip.value.id}><span>{store.tip.value.icon}</span><p>{store.tip.value.text}</p></div>}
+      {store.started.value && store.tip.value && !store.paused.value && !store.treeOpen.value && <DustuceTip key={store.tip.value.id} icon={store.tip.value.icon} text={store.tip.value.text} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
       {store.showFps.value && !store.debugInfo.value && <div class="fps-counter">{Math.round(store.fps.value)} FPS</div>}
@@ -605,6 +605,37 @@ function DialogueBubble({ line }: { line: store.DialogueLine }) {
         <span class="dialogue-rest">{line.text.slice(shown)}</span>
       </p>
       {done && <span class="dialogue-next">▼</span>}
+    </div>
+  );
+}
+
+/** Dustuce, le grain de poussière qui donne des conseils. */
+function DustuceTip({ icon, text }: { icon: string; text: string }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (shown >= text.length) return;
+    const ch = text[shown];
+    const pause = /[.!?…]/.test(ch) ? 220 : /[,;:]/.test(ch) ? 100 : 26;
+    const t = setTimeout(() => {
+      if (shown % 2 === 0) sfx.voice(760, ch);
+      setShown(shown + 1);
+    }, pause);
+    return () => clearTimeout(t);
+  }, [shown]);
+  return (
+    <div class="tip">
+      <div class="dustuce" aria-hidden="true">
+        <span class="dustuce-eye" />
+        <span class="dustuce-eye" />
+        <span class="dustuce-icon">{icon}</span>
+      </div>
+      <div class="tip-body">
+        <span class="tip-name">Dustuce</span>
+        <p>
+          {text.slice(0, shown)}
+          <span class="dialogue-rest">{text.slice(shown)}</span>
+        </p>
+      </div>
     </div>
   );
 }

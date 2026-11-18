@@ -503,17 +503,17 @@ export class Game {
     const startTime = this.save.stats.playTime;
     return new TipDirector(
       [
-        { id: 'sweep', icon: '🧹', text: 'Maintiens le clic gauche et avance : la brosse pousse la poussière. Fais-la tomber dans une pelle 🧺 pour gagner des pièces !', when: () => this.save.stats.playTime - startTime > 14, done: () => grains() >= 25 },
-        { id: 'tree', icon: '🌳', text: 'Tu as assez de pièces pour une amélioration ! Appuie sur B pour ouvrir l’Arbre des Souvenirs.', when: () => store.treeBuyable.value, done: () => this.treeOpened || this.save.stats.levelsBought > 0 },
-        { id: 'door', icon: '🚪', text: 'Une porte verrouillée ! Approche-toi et appuie sur E quand tu as assez de pièces pour l’ouvrir.', when: () => store.doorPrompt.value !== null, done: () => unlocked() > 1 },
-        { id: 'map', icon: '🗺️', text: 'Le château est grand : appuie sur M pour voir la carte.', when: () => unlocked() >= 2, done: () => this.mapOpened },
-        { id: 'souvenir', icon: '✨', text: 'Quelque chose brille par terre… Plus une pièce est propre, plus elle révèle de souvenirs. Va le ramasser !', when: () => (sim()?.cleanliness ?? 0) >= 0.27 && this.save.souvenirs.length === 0, done: () => this.save.souvenirs.length > 0 },
-        { id: 'album', icon: '📜', text: 'Tu as trouvé un souvenir ! Appuie sur J pour ouvrir l’album et le relire.', when: () => this.save.souvenirs.length > 0, done: () => this.albumOpened },
-        { id: 'sprint', icon: '💨', text: 'Maintiens Maj pour courir.', when: () => unlocked() >= 3 },
+        { id: 'sweep', icon: '🧹', text: 'Psst ! En bas ! C’est moi, Dustuce, le grain de poussière le plus sympa du château. Je vais t’aider. Maintiens le clic gauche et avance : ta brosse pousse la poussière. Fais-la tomber dans une pelle, ça rapporte des pièces !', when: () => this.save.stats.playTime - startTime > 14, done: () => grains() >= 25 },
+        { id: 'tree', icon: '🌳', text: 'Ooh, ça brille dans tes poches ! Tu as de quoi t’offrir une amélioration. Appuie sur B pour ouvrir l’Arbre des Souvenirs.', when: () => store.treeBuyable.value, done: () => this.treeOpened || this.save.stats.levelsBought > 0 },
+        { id: 'door', icon: '🚪', text: 'Une porte fermée à clé… Derrière, il y a plein de poussière, des cousins à moi ! Appuie sur E quand tu as assez de pièces pour l’ouvrir.', when: () => store.doorPrompt.value !== null, done: () => unlocked() > 1 },
+        { id: 'map', icon: '🗺️', text: 'Le château est immense, même pour moi. Appuie sur M pour voir la carte, comme ça on ne se perd pas.', when: () => unlocked() >= 2, done: () => this.mapOpened },
+        { id: 'souvenir', icon: '✨', text: 'Tu as vu ? Quelque chose brille par terre ! Plus une pièce est propre, plus elle révèle de souvenirs. Va vite le ramasser !', when: () => (sim()?.cleanliness ?? 0) >= 0.27 && this.save.souvenirs.length === 0, done: () => this.save.souvenirs.length > 0 },
+        { id: 'album', icon: '📜', text: 'Ton premier souvenir ! Ça m’émeut, j’en ai la poussière aux yeux. Appuie sur J pour le relire dans l’album.', when: () => this.save.souvenirs.length > 0, done: () => this.albumOpened },
+        { id: 'sprint', icon: '💨', text: 'Tu marches drôlement lentement… Maintiens Maj pour courir !', when: () => unlocked() >= 3 },
         {
           id: 'tool',
           icon: '🧰',
-          text: 'Nouvel outil ! Change d’outil avec les touches 1 à 5 (ou la molette). Certaines saletés ne partent qu’avec le bon outil.',
+          text: 'Un nouvel outil ! Change d’outil avec les touches 1 à 5 ou la molette. Certaines saletés ne partent qu’avec le bon outil, crois-moi.',
           when: () => {
             const n = toolCount();
             const more = n > tools;
@@ -522,8 +522,8 @@ export class Game {
           },
           done: () => store.selectedTool.value > 0,
         },
-        { id: 'vacuum', icon: '🫙', text: 'Ton aspirateur est plein ! Approche-toi d’une pelle et appuie sur E pour le vider.', when: () => !!store.vacuum.value && store.vacuum.value.load >= store.vacuum.value.cap },
-        { id: 'journal', icon: '🏆', text: 'Premier succès ! Appuie sur K pour ouvrir ton carnet : succès et statistiques.', when: () => this.save.achievements.length > 0, done: () => this.journalOpened },
+        { id: 'vacuum', icon: '🫙', text: 'Ton aspirateur est plein à craquer ! J’ai failli y passer… Approche-toi d’une pelle et appuie sur E pour le vider.', when: () => !!store.vacuum.value && store.vacuum.value.load >= store.vacuum.value.cap },
+        { id: 'journal', icon: '🏆', text: 'Bravo, ton premier succès ! Appuie sur K pour ouvrir ton carnet : tes succès et tes statistiques y sont.', when: () => this.save.achievements.length > 0, done: () => this.journalOpened },
       ],
       { seen: this.save.tips, time: 0 },
       (t) => (store.tip.value = t ? { id: t.id, icon: t.icon, text: t.text } : null),

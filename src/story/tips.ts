@@ -16,7 +16,7 @@ export interface TipState {
 }
 
 /** Durée d'affichage max d'une bulle (secondes). */
-export const TIP_SECONDS = 12;
+export const TIP_SECONDS = 16;
 
 /**
  * Choisit la bulle à montrer : la première pas encore vue dont le moment est venu.
