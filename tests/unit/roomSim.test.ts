@@ -26,12 +26,46 @@ describe('RoomSim', () => {
     expect(coins).toBeGreaterThanOrEqual(1);
   });
 
-  it('le balai pousse la poussière dans sa direction', () => {
+  // Lacet pour que l'avant de la brosse regarde vers +x (direction (-sin, -cos) = (1, 0)).
+  const FACE_PLUS_X = -Math.PI / 2;
+
+  it('la brosse pousse de face la poussière qu’elle rencontre', () => {
     const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 3);
     const i = sim.pool.spawn('dust', 800, 450);
-    // Le balai traverse la particule de gauche à droite.
-    for (let k = 0; k < 20; k++) sim.step(1 / 60, { active: true, x: 700 + k * 15, y: 450, pressed: false });
-    expect(sim.pool.x[i]).toBeGreaterThan(820);
+    for (let k = 0; k < 20; k++) sim.step(1 / 60, { active: true, x: 700 + k * 15, y: 450, pressed: false, yaw: FACE_PLUS_X });
+    expect(sim.pool.x[i]).toBeGreaterThan(900);
+  });
+
+  it('la hitbox est un rectangle : un grain sur le côté de la brosse n’est pas touché', () => {
+    const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 6);
+    // La brosse fait 74 cm de large (le long de y ici) : un grain à 60 cm du centre est hors de la brosse…
+    const outside = sim.pool.spawn('dust', 800, 450 + 60);
+    // … alors qu'un cercle de 58 cm de rayon l'aurait balayé à l'ancienne.
+    const inside = sim.pool.spawn('dust', 800, 450 + 25);
+    for (let k = 0; k < 20; k++) sim.step(1 / 60, { active: true, x: 700 + k * 15, y: 450, pressed: false, yaw: FACE_PLUS_X });
+    expect(sim.pool.x[outside]).toBe(800);
+    expect(sim.pool.x[inside]).toBeGreaterThan(900);
+  });
+
+  it('balayer de côté (le long des poils) entraîne beaucoup moins que de face', () => {
+    const run = (yaw: number) => {
+      const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 7);
+      const i = sim.pool.spawn('dust', 800, 450);
+      for (let k = 0; k < 20; k++) sim.step(1 / 60, { active: true, x: 700 + k * 15, y: 450, pressed: false, yaw });
+      return sim.pool.x[i] - 800;
+    };
+    const facing = run(FACE_PLUS_X);
+    const sideways = run(0); // brosse tournée de 90° : elle glisse sur le grain
+    expect(sideways).toBeLessThan(facing * 0.5);
+  });
+
+  it('tourner la tête balaie : la rotation pousse les grains au bout de la brosse', () => {
+    const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 8);
+    // Grain au bout de la brosse (côté +y), brosse immobile qui pivote sur elle-même.
+    const i = sim.pool.spawn('dust', 800, 450 + 30);
+    for (let k = 0; k < 15; k++) sim.step(1 / 60, { active: true, x: 800, y: 450, pressed: false, yaw: FACE_PLUS_X + k * 0.06 });
+    const moved = Math.hypot(sim.pool.x[i] - 800, sim.pool.y[i] - 480);
+    expect(moved).toBeGreaterThan(15);
   });
 
   it('la saleté réapparaît avec le temps', () => {

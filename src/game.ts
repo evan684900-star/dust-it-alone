@@ -26,7 +26,7 @@ export class Game {
   private nav: Navigation;
   private player: Player;
   private world!: World3D;
-  private input: BroomInput = { active: false, x: 0, y: 0, pressed: false };
+  private input: BroomInput = { active: false, x: 0, y: 0, pressed: false, yaw: 0 };
   private save: SaveData;
   private earnedWindow: number[] = new Array(5).fill(0);
   private windowStart = performance.now();
@@ -90,7 +90,10 @@ export class Game {
         broomRoom ? this.runtime(broomRoom).sim : null,
       );
       const swishSim = broomRoom ? this.runtime(broomRoom).sim : null;
-      this.synth.swish(swishSim ? Math.hypot(swishSim.broomVel.x, swishSim.broomVel.y) : 0, swishSim ? swishSim.broomPushed : 0);
+      this.synth.swish(
+        swishSim ? Math.hypot(swishSim.broomVel.x, swishSim.broomVel.y) + Math.abs(swishSim.broomSpin) * swishSim.broom.width * 0.5 : 0,
+        swishSim ? swishSim.broomPushed : 0,
+      );
       this.updatePlace(false);
       this.updateHud(realDt);
       if (!store.paused.value && !document.hidden) this.autoQuality(realDt);
@@ -337,6 +340,7 @@ export class Game {
       this.input.active = here;
       this.input.x = bp.x - r.def.origin.x;
       this.input.y = bp.z - r.def.origin.z;
+      this.input.yaw = this.player.yaw;
       r.sim.step(dt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
       const events = r.sim.drainEvents();
       if (events.length === 0) continue;

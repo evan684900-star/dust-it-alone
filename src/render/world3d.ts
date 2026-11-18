@@ -251,12 +251,37 @@ export class World3D {
     return { def, sim, group, dust, bunnies, stars, pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
   }
 
+  /** Empreinte de la brosse au sol : un rectangle arrondi qui suit exactement la zone qui pousse. */
   private buildRing(): void {
-    const edge = new THREE.Mesh(new THREE.RingGeometry(0.93, 1, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }));
-    const edgeInk = new THREE.Mesh(new THREE.RingGeometry(1, 1.06, 48), new THREE.MeshBasicMaterial({ color: PAL.ink, transparent: true, opacity: 0.45, depthWrite: false }));
-    this.ringFill = new THREE.Mesh(new THREE.CircleGeometry(0.93, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.08, depthWrite: false }));
-    for (const m of [edge, edgeInk, this.ringFill]) m.rotation.x = -Math.PI / 2;
-    this.ring.add(this.ringFill, edge, edgeInk);
+    const rounded = (w: number, h: number, r: number) => {
+      const sh = new THREE.Shape();
+      sh.moveTo(-w / 2 + r, -h / 2);
+      sh.lineTo(w / 2 - r, -h / 2);
+      sh.quadraticCurveTo(w / 2, -h / 2, w / 2, -h / 2 + r);
+      sh.lineTo(w / 2, h / 2 - r);
+      sh.quadraticCurveTo(w / 2, h / 2, w / 2 - r, h / 2);
+      sh.lineTo(-w / 2 + r, h / 2);
+      sh.quadraticCurveTo(-w / 2, h / 2, -w / 2, h / 2 - r);
+      sh.lineTo(-w / 2, -h / 2 + r);
+      sh.quadraticCurveTo(-w / 2, -h / 2, -w / 2 + r, -h / 2);
+      return sh;
+    };
+    // Dimensions unitaires : on met à l'échelle selon la taille réelle de la brosse.
+    const outer = rounded(1, 1, 0.12);
+    const inner = rounded(0.9, 0.7, 0.1);
+    const border = new THREE.Shape(outer.getPoints(6));
+    border.holes.push(new THREE.Path(inner.getPoints(6).reverse()));
+    const edge = new THREE.Mesh(new THREE.ShapeGeometry(border), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+    this.ringFill = new THREE.Mesh(new THREE.ShapeGeometry(inner), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, depthWrite: false }));
+    // Petite flèche vers l'avant : le sens dans lequel la brosse pousse.
+    const arrowShape = new THREE.Shape();
+    arrowShape.moveTo(-0.07, 0.62);
+    arrowShape.lineTo(0.07, 0.62);
+    arrowShape.lineTo(0, 0.85);
+    arrowShape.closePath();
+    const arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false }));
+    for (const m of [edge, this.ringFill, arrow]) m.rotation.x = -Math.PI / 2;
+    this.ring.add(this.ringFill, edge, arrow);
     this.ring.renderOrder = 2;
     this.scene.add(this.ring);
   }
@@ -596,12 +621,14 @@ export class World3D {
     handle.quaternion.setFromUnitVectors(this.up, dir);
 
     if (sim) {
-      const R = sim.broom.radius * (broom.pressed ? 1.12 : 1);
+      // L'empreinte suit la brosse : même position, même orientation, même taille que la zone qui pousse.
+      const hw = sim.broom.width * (broom.pressed ? 1.06 : 1);
       this.ring.position.set(broom.x, broom.y + 1.2, broom.z);
-      this.ring.scale.setScalar(R);
-      (this.ringFill.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.18 : 0.08;
-    }
-  }
+      this.ring.rotation.set(0, yaw, 0);
+      // Le rectangle unitaire est dans le plan XY puis couché : X = largeur, Y (→ -Z) = épaisseur vers l'avant.
+      this.ring.scale.set(hw + 6, 1, sim.broom.depth + 6);
+      (this.ringFill.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.16 : 0.07;
+    }  }
 
   private dummy = new THREE.Object3D();
   private updateFx(dt: number): void {
