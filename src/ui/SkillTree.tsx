@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { BRANCHES, NODE_BY_ID, TREE_NODES, type TreeNode } from '../data/tree';
 import { ROOMS } from '../data/rooms';
-import { availability, cost, costForN, maxAffordable, revealed, level as lvlOf, type Availability } from '../economy/tree';
+import { availability, canRefund, cost, costForN, maxAffordable, revealed, level as lvlOf, type Availability } from '../economy/tree';
 import { formatNumber } from '../core/format';
 import { sfx } from '../audio/synth';
 import * as store from '../state/store';
@@ -176,6 +176,12 @@ export function SkillTree({ game }: { game: Game }) {
                   sfx.hover();
                 }}
                 onPointerLeave={() => setHovered(null)}
+                onContextMenu={(e) => {
+                  // Clic droit : rembourser un niveau.
+                  e.preventDefault();
+                  setSelected(n.id);
+                  game.refundNode(n.id);
+                }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (drag.current?.moved) return;
@@ -214,7 +220,7 @@ export function SkillTree({ game }: { game: Game }) {
         <span><b class="lg-big" /> grand nœud (déblocage)</span>
         <span><b class="lg-junction" /> jonction entre deux branches</span>
         <span>🌱 {hiddenCount} souvenirs encore cachés : ils poussent quand tu achètes ce qui les précède</span>
-        <span>Clic : choisir · re-clic : acheter · glisser : se déplacer · molette : zoom · Espace : recentrer</span>
+        <span>Clic : choisir · re-clic : acheter · clic droit : rembourser · glisser : se déplacer · molette : zoom · Espace : recentrer</span>
       </div>
     </div>
   );
@@ -240,6 +246,7 @@ function TreeDetail({ game, node, st, coins }: { game: Game; node: TreeNode; st:
   const ten = Math.min(10, node.maxLevel - lvl);
   const afford = maxAffordable(node, lvl, coins);
   const hold = useRef<number | null>(null);
+  const refund = canRefund(node, st.levels);
 
   // Clic maintenu sur ×1 : achats en rafale, de plus en plus vite.
   const startHold = () => {
@@ -300,6 +307,14 @@ function TreeDetail({ game, node, st, coins }: { game: Game; node: TreeNode; st:
           </div>
           {next > coins && <div class="td-missing">Il manque {formatNumber(next - coins)} 🪙</div>}
         </>
+      )}
+      {lvl > 0 && (
+        <div class="td-refund">
+          <button class="btn tree-btn refund" disabled={!refund.ok} onClick={() => game.refundNode(node.id)}>
+            ↩ Rembourser 1 niveau <small>{refund.ok ? `+${formatNumber(refund.amount)} 🪙` : ''}</small>
+          </button>
+          {!refund.ok && refund.reason === 'needed' && <div class="td-refund-why">« {refund.detail} » en a besoin : rembourse-le d'abord.</div>}
+        </div>
       )}
     </div>
   );

@@ -93,3 +93,22 @@ export function refundFork(node: TreeNode, levels: TreeLevels): { refund: number
   }
   return { refund: 0, removed: null };
 }
+
+export type RefundCheck = { ok: true; amount: number } | { ok: false; reason: 'empty' | 'needed'; detail?: string };
+
+/**
+ * Peut-on rembourser un niveau de ce nœud ? On récupère exactement le prix payé
+ * pour ce niveau. Interdit si un nœud déjà acheté plus loin dépend de ce niveau
+ * (un nœud demande son parent à 1 niveau au moins, un grand nœud le demande au max).
+ */
+export function canRefund(node: TreeNode, levels: TreeLevels): RefundCheck {
+  const lvl = level(levels, node.id);
+  if (lvl <= 0) return { ok: false, reason: 'empty' };
+  const after = lvl - 1;
+  for (const child of NODE_BY_ID.values()) {
+    if (!child.parents.includes(node.id) || level(levels, child.id) <= 0) continue;
+    const need = child.kind === 'big' ? node.maxLevel : 1;
+    if (after < need) return { ok: false, reason: 'needed', detail: child.name };
+  }
+  return { ok: true, amount: cost(node, after) };
+}

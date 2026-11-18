@@ -9,7 +9,7 @@ import { formatNumber } from './core/format';
 import { loadSave, writeSave, type SaveData } from './save/save';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
-import { availability, cost, maxAffordable, refundFork, level as treeLevel, costForN } from './economy/tree';
+import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
@@ -193,6 +193,26 @@ export class Game {
     this.applyTree();
     this.persist();
     return count;
+  }
+
+  /** Rembourse un niveau d'un nœud (on récupère exactement ce qu'il a coûté). Renvoie vrai si c'est fait. */
+  refundNode(id: string): boolean {
+    const node = NODE_BY_ID.get(id);
+    if (!node) return false;
+    const r = canRefund(node, this.save.tree);
+    if (!r.ok) {
+      this.synth.denied();
+      if (r.reason === 'needed') store.pushToast('Impossible de rembourser', `« ${r.detail} » a besoin de ce niveau : rembourse-le d'abord.`, 3000);
+      return false;
+    }
+    const lvl = treeLevel(this.save.tree, id) - 1;
+    if (lvl > 0) this.save.tree[id] = lvl;
+    else delete this.save.tree[id];
+    store.coins.value += r.amount;
+    this.synth.refund();
+    this.applyTree();
+    this.persist();
+    return true;
   }
 
   /** Ouvre / ferme l'Arbre des Souvenirs (la souris est libérée pendant ce temps). */
@@ -386,6 +406,7 @@ export class Game {
         unlock: () => this.tryUnlock(),
         earn: (n: number) => this.earn(n),
         buy: (id: string, n: number) => this.buyNode(id, n),
+        refund: (id: string) => this.refundNode(id),
         teleport: (x: number, z: number, y: number, yaw: number, pitch = -0.3) => {
           Object.assign(this.player, { x, z, y, yaw, pitch });
           (this.player as unknown as { smoothY: number }).smoothY = y;

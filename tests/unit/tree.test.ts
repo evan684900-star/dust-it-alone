@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NODE_BY_ID, TREE_NODES } from '../../src/data/tree';
-import { availability, cost, costForN, maxAffordable, niceRound, refundFork } from '../../src/economy/tree';
+import { availability, canRefund, cost, costForN, maxAffordable, niceRound, refundFork } from '../../src/economy/tree';
 import { computeModifiers } from '../../src/economy/modifiers';
 import { migrate } from '../../src/save/save';
 
@@ -88,5 +88,27 @@ describe("l'Arbre des Souvenirs", () => {
     const levels = TREE_NODES.reduce((s, n) => s + n.maxLevel, 0);
     expect(TREE_NODES.length).toBeGreaterThanOrEqual(90);
     expect(levels).toBeGreaterThanOrEqual(350);
+  });
+});
+
+describe('remboursement', () => {
+  it('rend exactement le prix du dernier niveau acheté', () => {
+    const n = node('broom-wide-1');
+    const r = canRefund(n, { 'broom-wide-1': 3 });
+    expect(r.ok && r.amount).toBe(cost(n, 2));
+  });
+  it('rien à rembourser sur un nœud pas acheté', () => {
+    const r = canRefund(node('broom-wide-1'), {});
+    expect(r.ok ? 'ok' : r.reason).toBe('empty');
+  });
+  it('bloqué si un nœud acheté plus loin en dépend', () => {
+    // Poils durs I demande Brosse large I à 1 niveau au moins.
+    const blocked = canRefund(node('broom-wide-1'), { 'broom-wide-1': 1, 'broom-grip-1': 2 });
+    expect(blocked.ok ? 'ok' : blocked.reason).toBe('needed');
+    // Avec 2 niveaux, on peut en rendre un (il en reste 1).
+    expect(canRefund(node('broom-wide-1'), { 'broom-wide-1': 2, 'broom-grip-1': 2 }).ok).toBe(true);
+    // Un grand nœud demande son parent au max : impossible de baisser le parent.
+    const giant = canRefund(node('broom-wide-3'), { 'broom-wide-1': 5, 'broom-wide-2': 5, 'broom-wide-3': 5, 'broom-giant': 1 });
+    expect(giant.ok ? 'ok' : giant.reason).toBe('needed');
   });
 });

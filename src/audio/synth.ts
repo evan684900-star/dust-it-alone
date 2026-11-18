@@ -204,6 +204,15 @@ export class Synth {
     this.tone(523.25 * 2 ** (step / 12), t + 0.06, 0.35, 'triangle', 0.09);
   }
 
+  /** Remboursement : les pièces reviennent (arpège qui descend). */
+  refund(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    [12, 7, 4, 0].forEach((n, k) => this.tone(523.25 * 2 ** (n / 12), t + k * 0.05, 0.16, 'triangle', 0.06));
+    this.tone(3136, t + 0.22, 0.05, 'square', 0.03);
+    this.tone(2637, t + 0.26, 0.08, 'square', 0.03);
+  }
+
   /** Nœud au maximum : accord doux, le nœud fleurit. */
   nodeMaxed(): void {
     if (!this.ready()) return;
