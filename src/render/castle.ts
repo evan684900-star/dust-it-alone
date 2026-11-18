@@ -467,7 +467,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   frame.rotation.y = Math.PI / 2;
   frame.position.set(W - 4, winY, H / 2);
   g.add(frame);
-  const glass = new THREE.Mesh(new THREE.CircleGeometry(60, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff4c8).multiplyScalar(3) }));
+  const glass = new THREE.Mesh(new THREE.CircleGeometry(60, 32), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xfff4c8).multiplyScalar(1.6) }));
   glass.rotation.y = -Math.PI / 2;
   glass.position.set(W - 2, winY, H / 2);
   g.add(glass);
@@ -482,7 +482,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   const beamTarget = new THREE.Vector3(W - 560, 0, H / 2 + 80);
   const beamStart = new THREE.Vector3(W - 4, winY, H / 2);
   const beamLen = beamStart.distanceTo(beamTarget);
-  for (const [rTop, rBot, op] of [[55, 150, 0.07], [40, 110, 0.06]] as const) {
+  for (const [rTop, rBot, op] of [[55, 150, 0.045], [40, 110, 0.04]] as const) {
     const cone = new THREE.Mesh(
       new THREE.CylinderGeometry(rTop, rBot, beamLen, 24, 1, true),
       new THREE.MeshBasicMaterial({ color: 0xfff1c4, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
@@ -492,7 +492,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
     g.add(cone);
     ambience.push(cone);
   }
-  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({ map: T.soft, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const pool = new THREE.Mesh(new THREE.CircleGeometry(1, 32), new THREE.MeshBasicMaterial({ map: T.soft, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
   pool.rotation.x = -Math.PI / 2;
   pool.scale.set(320, 200, 1);
   pool.position.set(beamTarget.x, 1, beamTarget.z);
@@ -530,7 +530,6 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
   const steps = Math.max(4, Math.round(Math.abs(rise) / 18));
   const stepLen = len / steps;
   const stoneMat = mat(0xb0a08c, { roughness: 0.85 });
-  const wallMat = mat(0xffffff, { map: T.stone, bumpMap: T.stone, bumpScale: 3, roughness: 0.9 });
   const torches: THREE.Vector3[] = [];
   const flames: THREE.Object3D[] = [];
 
@@ -544,22 +543,35 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
     step.position.set(k * stepLen + stepLen / 2, bottom + hgt / 2, width / 2);
     local.add(step);
   }
-  // Murs latéraux et plafond (en pente).
+  // Murs latéraux et plafond en pente : de vrais parallélogrammes, coupés pile au début
+  // et à la fin de l'escalier (ils ne dépassent plus dans les pièces).
   const ceilH = 300;
-  const slopeLen = Math.hypot(len, rise);
-  const angle = Math.atan2(rise, len);
-  for (const side of [0, width]) {
-    const wall = new THREE.Mesh(tiledPlane(slopeLen + 40, ceilH + 60, STONE_TILE), wallMat);
-    wall.position.set(len / 2, s.yAtMin + rise / 2 + ceilH / 2 - 10, side);
-    wall.rotation.set(0, side === 0 ? 0 : Math.PI, side === 0 ? angle : -angle);
+  const y0 = s.yAtMin;
+  const y1 = s.yAtMax;
+  const quad = (p: number[][], uv: number[][]) => {
+    const g = new THREE.BufferGeometry();
+    const pos = [p[0], p[1], p[2], p[0], p[2], p[3]].flat();
+    const uvs = [uv[0], uv[1], uv[2], uv[0], uv[2], uv[3]].flat();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    g.computeVertexNormals();
+    return g;
+  };
+  const sideMat = mat(0xffffff, { map: T.stone, bumpMap: T.stone, bumpScale: 3, roughness: 0.9, side: THREE.DoubleSide });
+  for (const z of [0, width]) {
+    const bottom = -40;
+    const corners = [[0, y0 + bottom, z], [len, y1 + bottom, z], [len, y1 + ceilH, z], [0, y0 + ceilH, z]];
+    // Texture « au monde » : u = distance le long de l'escalier, v = hauteur.
+    const uv = corners.map(([u, v]) => [u / STONE_TILE, v / STONE_TILE]);
+    const wall = new THREE.Mesh(quad(corners, uv), sideMat);
     wall.receiveShadow = true;
     local.add(wall);
   }
-  const ceil = new THREE.Mesh(tiledPlane(slopeLen + 40, width, 600), mat(0xffffff, { map: T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']), roughness: 0.9, side: THREE.DoubleSide }));
-  ceil.position.set(len / 2, s.yAtMin + rise / 2 + ceilH, width / 2);
-  // Ordre ZXY : on couche le plan (face vers le bas) puis on l'incline selon la pente.
-  ceil.rotation.order = 'ZXY';
-  ceil.rotation.set(Math.PI / 2, 0, angle);
+  const ceilCorners = [[0, y0 + ceilH, 0], [len, y1 + ceilH, 0], [len, y1 + ceilH, width], [0, y0 + ceilH, width]];
+  const ceil = new THREE.Mesh(
+    quad(ceilCorners, ceilCorners.map(([u, , w]) => [u / 600, w / 600])),
+    mat(0xffffff, { map: T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']), roughness: 0.9, side: THREE.DoubleSide }),
+  );
   local.add(ceil);
   // Une torche à mi-hauteur de chaque côté.
   for (const [u, side] of [[len * 0.3, 0], [len * 0.7, width]] as const) {

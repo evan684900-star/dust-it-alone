@@ -8,6 +8,9 @@ import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
 import { loadSave, writeSave, type SaveData } from './save/save';
 import * as store from './state/store';
+import { computeModifiers, type Modifiers } from './economy/modifiers';
+import { availability, cost, maxAffordable, refundFork, level as treeLevel, costForN } from './economy/tree';
+import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
 /** Seuil de propreté pour « pièce impeccable ». */
@@ -34,13 +37,13 @@ export class Game {
   private fpsAcc = { frames: 0, time: 0 };
   private last = performance.now();
   private currentRoom: RoomDef | null = null;
+  private mods!: Modifiers;
   private visibleKey = '';
 
   constructor() {
     this.save = loadSave();
     this.rooms = ROOMS.map((def, i) => {
       const sim = new RoomSim(def, ((Date.now() & 0xffff) + i * 7919) >>> 0);
-      sim.mods.valueMultiplier = def.valueMult;
       sim.fill(1);
       return { def, sim };
     });
@@ -48,6 +51,8 @@ export class Game {
     const p = this.save.player;
     const valid = p && this.nav.canStand(p.x, p.z, p.y) !== null;
     this.player = new Player(this.nav, valid && p ? { ...p } : { x: START.x, z: START.z, y: ROOMS[0].floorY, yaw: START.yaw });
+    this.mods = computeModifiers(this.save.tree, 0);
+    this.applyTree();
 
     store.coins.value = this.save.coins;
     store.totalCoins.value = this.save.totalCoins;
@@ -67,6 +72,7 @@ export class Game {
     this.world = new World3D(host);
     this.world.build(this.rooms, DOORS, STAIRS);
     this.world.setDoorState((d) => this.doorOpen(d), true);
+    this.applyTree();
     const qs = store.qualitySetting.value;
     this.autoStart = autoStartFor(this.world.gpuName());
     this.applyQuality(qs === 'auto' ? this.autoStart : qs);
@@ -91,7 +97,7 @@ export class Game {
       );
       const swishSim = broomRoom ? this.runtime(broomRoom).sim : null;
       this.synth.swish(
-        swishSim ? Math.hypot(swishSim.broomVel.x, swishSim.broomVel.y) + Math.abs(swishSim.broomSpin) * swishSim.broom.width * 0.5 : 0,
+        swishSim && this.input.pressed ? Math.hypot(swishSim.broomVel.x, swishSim.broomVel.y) + Math.abs(swishSim.broomSpin) * swishSim.broom.width * 0.5 : 0,
         swishSim ? swishSim.broomPushed : 0,
       );
       this.updatePlace(false);
@@ -106,6 +112,97 @@ export class Game {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.persist();
     });
+  }
+
+  // ───────────────────────────── Arbre des Souvenirs ─────────────────────────────
+
+  private cleanedCount(): number {
+    return Object.values(this.save.rooms).filter((r) => r.cleaned).length;
+  }
+
+  /** Recalcule et applique tous les effets de l'arbre (après un achat, une porte, une pièce impeccable…). */
+  private applyTree(): void {
+    this.mods = computeModifiers(this.save.tree, this.cleanedCount());
+    this.rooms.forEach((r, i) => {
+      const m = this.mods.room(r.def.id, r.def.valueMult);
+      r.sim.applyModifiers(m);
+      this.world?.setPanScale(i, m.panScale);
+    });
+    const pm = this.mods.player;
+    this.player.walkMult = pm.walkMult;
+    this.player.sprintMult = pm.sprintMult;
+    this.player.reachMax = pm.reachMax;
+    store.treeLevels.value = { ...this.save.tree };
+    store.unlockedRooms.value = ROOMS.filter((r) => this.isUnlocked(r.id)).map((r) => r.id);
+    this.refreshBuyable();
+  }
+
+  private treeState() {
+    return { levels: this.save.tree, roomUnlocked: (id: string) => this.isUnlocked(id) };
+  }
+
+  /** Y a-t-il au moins un nœud qu'on peut se payer ? (pastille sur le bouton de l'arbre) */
+  private refreshBuyable(): void {
+    const st = this.treeState();
+    const coins = store.coins.value;
+    store.treeBuyable.value = TREE_NODES.some((n) => {
+      const a = availability(n, st);
+      return (a.ok || (!a.ok && a.reason === 'fork')) && cost(n, treeLevel(st.levels, n.id)) <= coins;
+    });
+  }
+
+  /** Achète `n` niveaux d'un nœud (n = Infinity pour « Max »). Renvoie le nombre de niveaux achetés. */
+  buyNode(id: string, n: number): number {
+    const node = NODE_BY_ID.get(id);
+    if (!node) return 0;
+    const st = this.treeState();
+    const a = availability(node, st);
+    // Fourche : on peut changer d'avis gratuitement (l'autre choix est remboursé).
+    let refund = 0;
+    if (!a.ok && a.reason === 'fork') {
+      const other = TREE_NODES.find((x) => x.fork === node.fork && x.id !== node.id && treeLevel(st.levels, x.id) > 0)!;
+      const back = costForN(other, 0, treeLevel(st.levels, other.id));
+      if (cost(node, 0) > store.coins.value + back) {
+        this.synth.denied();
+        return 0;
+      }
+      refund = refundFork(node, this.save.tree).refund;
+      store.coins.value += refund;
+    } else if (!a.ok) {
+      this.synth.denied();
+      return 0;
+    }
+    const lvl = treeLevel(this.save.tree, id);
+    const count = Math.min(n, maxAffordable(node, lvl, store.coins.value));
+    if (count <= 0) {
+      this.synth.denied();
+      return 0;
+    }
+    const price = costForN(node, lvl, count);
+    store.coins.value -= price;
+    const newLevel = lvl + count;
+    this.save.tree[id] = newLevel;
+    if (node.kind !== 'small') this.synth.bigNode();
+    else if (newLevel >= node.maxLevel) this.synth.nodeMaxed();
+    else this.synth.buy(node.depth, newLevel);
+    if (node.kind !== 'small') store.pushToast(`${node.icon} ${node.name}`, node.effect(1), 3500);
+    if (refund > 0) store.pushToast('Fourche changée', `L'autre choix a été remboursé (${formatNumber(refund)} 🪙).`, 3000);
+    this.applyTree();
+    this.persist();
+    return count;
+  }
+
+  /** Ouvre / ferme l'Arbre des Souvenirs (la souris est libérée pendant ce temps). */
+  toggleTree(): void {
+    const open = !store.treeOpen.value;
+    if (open && store.mapOpen.value) store.mapOpen.value = false;
+    store.treeOpen.value = open;
+    this.player.clearKeys();
+    this.input.pressed = false;
+    if (open) {
+      this.refreshBuyable();
+      document.exitPointerLock?.();
+    } else this.start();
   }
 
   private runtime(def: RoomDef): RoomRuntime {
@@ -128,11 +225,12 @@ export class Game {
       // Réplique provisoire, en attendant l'histoire complète.
       setTimeout(() => {
         store.say('Plume', '… Tant de poussière. Combien de temps ai-je dormi ?', 520, true);
-        store.say('Plume', 'Le vieux balai est toujours là. Bon. Au travail !', 520, true);
+        store.say('Plume', 'Le vieux balai est toujours là. Bon. Au travail ! (maintiens le clic pour balayer)', 520, true);
       }, 900);
     }
     store.paused.value = false;
     store.mapOpen.value = false;
+    store.treeOpen.value = false;
     this.lockPointer();
   }
 
@@ -209,7 +307,7 @@ export class Game {
   }
 
   private get playing(): boolean {
-    return store.started.value && !store.paused.value && !store.mapOpen.value;
+    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value;
   }
 
   // ───────────────────────────── Commandes ─────────────────────────────
@@ -220,7 +318,7 @@ export class Game {
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === canvas;
       if (locked) lockedAt = performance.now();
-      if (!locked && store.started.value && !this.debug && !store.mapOpen.value) {
+      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value) {
         store.paused.value = true;
         this.input.pressed = false;
         this.player.clearKeys();
@@ -235,7 +333,7 @@ export class Game {
       this.player.look(e.movementX, e.movementY);
     });
     canvas.addEventListener('mousedown', (e) => {
-      if (store.started.value && (store.paused.value || store.mapOpen.value)) {
+      if (store.started.value && (store.paused.value || store.mapOpen.value || store.treeOpen.value)) {
         this.start();
         return;
       }
@@ -245,8 +343,16 @@ export class Game {
       if (e.button === 0) this.input.pressed = false;
     });
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyM' && store.started.value) {
+      if (e.code === 'KeyM' && store.started.value && !store.treeOpen.value) {
         this.toggleMap();
+        return;
+      }
+      if (e.code === 'KeyB' && store.started.value && !store.paused.value) {
+        this.toggleTree();
+        return;
+      }
+      if (e.code === 'Escape' && store.treeOpen.value) {
+        this.toggleTree();
         return;
       }
       if (!this.playing) return;
@@ -301,6 +407,7 @@ export class Game {
   toggleMap(): void {
     const open = !store.mapOpen.value;
     store.mapOpen.value = open;
+    store.treeOpen.value = false;
     this.player.clearKeys();
     this.input.pressed = false;
     if (open) document.exitPointerLock?.();
@@ -325,6 +432,7 @@ export class Game {
     store.pushToast('Porte ouverte ! 🔓', `${room.name} est accessible. La poussière y est ${room.valueMult}× plus précieuse !`, 4500);
     this.visibleKey = '';
     this.publishCastle();
+    this.applyTree();
     this.persist();
   }
 
@@ -341,6 +449,7 @@ export class Game {
       this.input.x = bp.x - r.def.origin.x;
       this.input.y = bp.z - r.def.origin.z;
       this.input.yaw = this.player.yaw;
+      this.input.pushBonus = this.player.movingForward ? this.mods.player.marchBonus : 0;
       r.sim.step(dt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
       const events = r.sim.drainEvents();
       if (events.length === 0) continue;
@@ -354,7 +463,7 @@ export class Game {
       this.earn(gained);
       // On n'entend que ce qui se passe dans la pièce où l'on est.
       if (r.def === this.currentRoom) {
-        const lvl = r.sim.combo.level;
+        const lvl = 0;
         if (counts.star) this.synth.collect('star', lvl, counts.star);
         if (counts.bunny) this.synth.collect('bunny', lvl, counts.bunny);
         if (counts.dust) this.synth.collect('dust', lvl, counts.dust);
@@ -437,9 +546,6 @@ export class Game {
     if (cur) {
       const c = cur.sim.cleanliness;
       store.cleanliness.value = c;
-      store.comboLevel.value = cur.sim.combo.level;
-      store.comboFill.value = cur.sim.combo.fill;
-      store.comboMultiplier.value = cur.sim.combo.multiplier;
       store.roomCleanedOnce.value = this.save.rooms[cur.def.id]?.cleaned === true;
     }
 
@@ -449,19 +555,21 @@ export class Game {
       const rs = this.save.rooms[r.def.id];
       if (!rs?.unlocked || rs.cleaned || r.sim.cleanliness < CLEAN_THRESHOLD) continue;
       rs.cleaned = true;
-      const bonus = Math.max(250, Math.round(r.def.price * 0.5));
+      const bonus = Math.max(250, Math.round(r.def.price * 0.5)) * this.mods.cleanBonusMult(r.def.id);
       this.earn(bonus);
       this.world.celebrate(ri);
       this.synth.fanfare();
       store.pushToast(`${r.def.name} : impeccable ! ✨`, `Bonus de ${formatNumber(bonus)} pièces. La poussière, elle, n'a pas dit son dernier mot…`, 6000);
       this.publishCastle();
+      this.applyTree();
       this.persist();
     }
 
     this.hudTimer -= dt;
-    if (this.hudTimer <= 0 && store.mapOpen.value) {
+    if (this.hudTimer <= 0) {
       this.hudTimer = 0.5;
-      this.publishCastle();
+      if (store.mapOpen.value) this.publishCastle();
+      this.refreshBuyable();
     }
 
     this.fpsAcc.frames++;

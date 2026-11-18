@@ -34,7 +34,7 @@ export interface BroomView {
   pressed: boolean;
 }
 
-interface Pan { obj: THREE.Group; bounce: number; pending: number; timer: number; textX: number; textZ: number }
+interface Pan { obj: THREE.Group; bounce: number; pending: number; timer: number; textX: number; textZ: number; base: number }
 interface Bit { x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number; vr: number; life: number }
 
 /** Tout ce qui s'affiche pour une pièce du château. */
@@ -93,6 +93,9 @@ export class World3D {
   private broom = buildBroom();
   private ring = new THREE.Group();
   private ringFill!: THREE.Mesh;
+  private ringEdge!: THREE.Mesh;
+  /** Hauteur de la brosse au-dessus du sol (levée quand on ne clique pas). */
+  private lift = 10;
   private confetti!: THREE.InstancedMesh;
   private bits: Bit[] = [];
   private time = 0;
@@ -220,7 +223,7 @@ export class World3D {
       group.add(obj);
       const dx = c.facing === 'right' ? 70 : c.facing === 'left' ? -70 : 0;
       const dz = c.facing === 'down' ? 70 : c.facing === 'up' ? -70 : 0;
-      pans.push({ obj, bounce: 0, pending: 0, timer: 0, textX: def.origin.x + c.mouth.x + dx, textZ: def.origin.z + c.mouth.y + dz });
+      pans.push({ obj, bounce: 0, pending: 0, timer: 0, textX: def.origin.x + c.mouth.x + dx, textZ: def.origin.z + c.mouth.y + dz, base: 1 });
     }
 
     // Tout ce qui ne bouge pas est fusionné (les pelles rebondissent et les flammes vacillent : on les garde à part).
@@ -280,6 +283,7 @@ export class World3D {
     arrowShape.lineTo(0, 0.85);
     arrowShape.closePath();
     const arrow = new THREE.Mesh(new THREE.ShapeGeometry(arrowShape), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false }));
+    this.ringEdge = edge;
     for (const m of [edge, this.ringFill, arrow]) m.rotation.x = -Math.PI / 2;
     this.ring.add(this.ringFill, edge, arrow);
     this.ring.renderOrder = 2;
@@ -337,6 +341,16 @@ export class World3D {
     }
   }
 
+  /** Taille des pelles d'une pièce (amélioration « Pelles géantes »), avec un petit rebond. */
+  setPanScale(roomIndex: number, scale: number): void {
+    const v = this.views[roomIndex];
+    if (!v) return;
+    for (const p of v.pans) {
+      if (Math.abs(p.base - scale) > 0.001) p.bounce = Math.max(p.bounce, 0.8);
+      p.base = scale;
+    }
+  }
+
   // ───────────────────────────── Qualité ─────────────────────────────
 
   setQuality(level: QualityLevel): void {
@@ -365,6 +379,12 @@ export class World3D {
     this.ambienceOn = q.ambienceFx;
     for (const v of this.views) for (const o of v.ambience) o.visible = q.ambienceFx;
 
+    // Les matériaux physiques et le halo lumineux éclairent plus : on compense pour ne pas éblouir.
+    r.toneMappingExposure = q.cheapMaterials ? 1.1 : 0.82;
+    this.scene.environmentIntensity = 0.35;
+    this.bloom.strength = 0.22;
+    this.bloom.threshold = 0.95;
+    this.bloom.radius = 0.4;
     this.gtao.enabled = q.gtao;
     this.bloom.enabled = q.bloom;
     this.useComposer = q.gtao || q.bloom || q.msaa > 0;
@@ -530,7 +550,8 @@ export class World3D {
       pan.bounce = Math.max(0, pan.bounce - dt * 2.5);
       const b = Math.sin(this.time * 30) * pan.bounce;
       const sx = Math.sign(pan.obj.scale.x) || 1;
-      pan.obj.scale.set(sx * (1 + b * 0.1 + pan.bounce * 0.06), 1 - b * 0.12 + pan.bounce * 0.1, 1 + b * 0.08);
+      const k = pan.base;
+      pan.obj.scale.set(sx * k * (1 + b * 0.1 + pan.bounce * 0.06), k * (1 - b * 0.12 + pan.bounce * 0.1), k * (1 + b * 0.08));
     }
   }
 
@@ -597,7 +618,9 @@ export class World3D {
     const cam = this.camera;
     const yaw = cam.rotation.y;
 
-    head.position.set(broom.x, broom.y, broom.z);
+    // Sans clic, la brosse est levée (elle ne balaie pas) ; avec le clic, elle se pose au sol.
+    this.lift += ((broom.pressed ? 0 : 10) - this.lift) * Math.min(1, dt * 14);
+    head.position.set(broom.x, broom.y + this.lift, broom.z);
     head.rotation.set(0, yaw, 0);
     const fwdX = -Math.sin(yaw);
     const fwdZ = -Math.cos(yaw);
@@ -611,7 +634,9 @@ export class World3D {
     head.rotation.x = THREE.MathUtils.clamp(along, -0.3, 0.3);
     const speed = Math.hypot(v.x, v.y);
     const squash = Math.min(0.22, speed / 7000) + (broom.pressed ? 0.12 : 0);
-    head.scale.set(1 + squash, 1 - squash, 1);
+    // La brosse grandit en vrai avec l'arbre (Brosse large, Brosse géante).
+    const widthScale = sim ? sim.broom.width / 74 : 1;
+    head.scale.set((1 + squash) * widthScale, 1 - squash, 1);
 
     const grip = this.tmpA.set(24, -42, -36).applyMatrix4(cam.matrixWorld);
     const base = this.tmpB.set(0, 34 * (1 - squash), 0);
@@ -622,12 +647,13 @@ export class World3D {
 
     if (sim) {
       // L'empreinte suit la brosse : même position, même orientation, même taille que la zone qui pousse.
-      const hw = sim.broom.width * (broom.pressed ? 1.06 : 1);
+      const hw = sim.broom.width;
       this.ring.position.set(broom.x, broom.y + 1.2, broom.z);
       this.ring.rotation.set(0, yaw, 0);
       // Le rectangle unitaire est dans le plan XY puis couché : X = largeur, Y (→ -Z) = épaisseur vers l'avant.
       this.ring.scale.set(hw + 6, 1, sim.broom.depth + 6);
-      (this.ringFill.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.16 : 0.07;
+      (this.ringFill.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.14 : 0.03;
+      (this.ringEdge.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.6 : 0.2;
     }  }
 
   private dummy = new THREE.Object3D();

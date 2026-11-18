@@ -1,7 +1,8 @@
 import { isQualitySetting, type QualitySetting } from '../render/quality';
+import { NODE_BY_ID } from '../data/tree';
 
 export const SAVE_KEY = 'dust-it-alone:save';
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface RoomSave {
   unlocked: boolean;
@@ -27,6 +28,8 @@ export interface SaveData {
   showFps: boolean;
   /** Le petit texte d'introduction a déjà été vu. */
   introSeen: boolean;
+  /** Niveaux achetés dans l'Arbre des Souvenirs. */
+  tree: Record<string, number>;
 }
 
 export function defaultSave(): SaveData {
@@ -41,6 +44,7 @@ export function defaultSave(): SaveData {
     quality: 'auto',
     showFps: false,
     introSeen: false,
+    tree: {},
   };
 }
 
@@ -79,7 +83,21 @@ export function migrate(raw: unknown): SaveData {
     quality: isQualitySetting(r.quality) ? r.quality : 'auto',
     showFps: r.showFps === true,
     introSeen: r.introSeen === true,
+    tree: cleanTree(r.tree),
   };
+}
+
+/** Garde seulement les nœuds connus, avec un niveau entier valide. */
+function cleanTree(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const node = NODE_BY_ID.get(id);
+    if (!node || typeof v !== 'number' || !Number.isFinite(v)) continue;
+    const lvl = Math.max(0, Math.min(node.maxLevel, Math.floor(v)));
+    if (lvl > 0) out[id] = lvl;
+  }
+  return out;
 }
 
 interface StorageLike {

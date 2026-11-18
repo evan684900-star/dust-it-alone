@@ -1,21 +1,23 @@
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
 import type { Rect, RoomDef } from '../data/rooms';
 import { createRng, type Rng } from '../core/rng';
-import { Combo } from '../economy/combo';
 import { ParticlePool } from './particles';
+import type { RoomModifiers } from '../economy/modifiers';
 
 export interface BroomInput {
   /** Le curseur est dans la zone de jeu. */
   active: boolean;
   x: number;
   y: number;
-  /** Clic maintenu : balayage plus puissant. */
+  /** Clic maintenu : la brosse est posée au sol et balaie. Sans clic, elle est levée et ne touche rien. */
   pressed: boolean;
   /**
    * Orientation de la brosse (le lacet du regard du joueur, en radians).
    * La brosse est perpendiculaire au regard : sa face « avant » regarde dans la même direction que lui.
    */
   yaw?: number;
+  /** Bonus de poussée venant du joueur (ex. : Marche du balayeur en avançant). */
+  pushBonus?: number;
 }
 
 export interface CollectEvent {
@@ -40,19 +42,34 @@ export interface Modifiers {
   valueMultiplier: number;
   /** Rayon d'aspiration douce autour des pelles. */
   collectorPull: number;
+  /** Force de poussée de la brosse (Coup de balai). */
+  pushPower: number;
+  bunnyValue: number;
+  starChance: number;
+  respawnMult: number;
+  /** Bonus quand un grain poussé par le balai tombe droit dans une pelle. */
+  scoopBonus: number;
+  /** Les pelles attirent doucement la poussière de toute la pièce. */
+  magnet: boolean;
 }
 
 const FRICTION: Record<DirtId, number> = { dust: 5.5, bunny: 3.2, star: 4.5 };
-const STAR_CHANCE = 0.0015;
+/** Un grain ramassé moins de 1,2 s après un coup de balai compte comme « poussé droit dans la pelle ». */
+const SCOOP_WINDOW = 1.2;
 const MAX_BROOM_SPEED = 2600;
 
 export class RoomSim {
   readonly room: RoomDef;
   readonly pool: ParticlePool;
-  readonly combo = new Combo();
   readonly rng: Rng;
   broom: BroomStats = { width: 74, depth: 24, grip: 0.85 };
-  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120 };
+  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, respawnMult: 1, scoopBonus: 0, magnet: false };
+  /** Pelles effectives (agrandies par l'arbre). */
+  collectorRects: Rect[];
+  private time = 0;
+  /** Dernier instant où le balai a touché chaque grain. */
+  private touched: Float32Array;
+  private magnetCursor = 0;
 
   /** Infos sur le balai pour le rendu et le son. */
   broomVel = { x: 0, y: 0 };
@@ -74,8 +91,40 @@ export class RoomSim {
     this.rng = createRng(seed);
     this.pool = new ParticlePool(room.capacity);
     this.stamp = new Uint32Array(this.pool.cap);
+    this.touched = new Float32Array(this.pool.cap).fill(-99);
+    this.collectorRects = room.collectors.map((c) => ({ ...c.rect }));
     this.maxDirt = DIRT_ORDER.reduce((s, id) => s + (room.capacity[id] ?? 0) * DIRT_TYPES[id].dirtWeight, 0);
     this.patchTotal = room.patches.reduce((s, p) => s + p.weight, 0);
+  }
+
+  /** Applique les effets de l'Arbre des Souvenirs à cette pièce. */
+  applyModifiers(m: RoomModifiers): void {
+    this.broom.width = m.broomWidth;
+    this.broom.grip = m.broomGrip;
+    this.mods = {
+      valueMultiplier: m.valueMultiplier,
+      collectorPull: m.panPull,
+      pushPower: m.pushPower,
+      bunnyValue: m.bunnyValue,
+      starChance: m.starChance,
+      respawnMult: m.respawnMult,
+      scoopBonus: m.scoopBonus,
+      magnet: m.panMagnet,
+    };
+    // Pelles agrandies autour de leur bouche, sans dépasser des murs.
+    this.collectorRects = this.room.collectors.map((c) => {
+      const r = c.rect;
+      const s = m.panScale;
+      const x0 = c.mouth.x + (r.x - c.mouth.x) * s;
+      const y0 = c.mouth.y + (r.y - c.mouth.y) * s;
+      const x1 = c.mouth.x + (r.x + r.w - c.mouth.x) * s;
+      const y1 = c.mouth.y + (r.y + r.h - c.mouth.y) * s;
+      const cx0 = Math.max(0, Math.min(x0, x1));
+      const cy0 = Math.max(0, Math.min(y0, y1));
+      const cx1 = Math.min(this.room.width, Math.max(x0, x1));
+      const cy1 = Math.min(this.room.height, Math.max(y0, y1));
+      return { x: cx0, y: cy0, w: cx1 - cx0, h: cy1 - cy0 };
+    });
   }
 
   /** Remplit la pièce (début de partie, ou retour après une absence). */
@@ -101,10 +150,11 @@ export class RoomSim {
   }
 
   step(dt: number, input: BroomInput): void {
+    this.time += dt;
     this.applyBroom(dt, input);
+    if (this.mods.magnet) this.applyMagnet();
     this.integrate(dt);
     this.respawn(dt);
-    this.combo.update(dt);
   }
 
   // ───────────────────────────── Balai ─────────────────────────────
@@ -155,8 +205,10 @@ export class RoomSim {
     const bvy = this.broomVel.y;
     const w = this.broomSpin;
 
-    const power = input.pressed ? 1.5 : 1;
-    const hw = (this.broom.width / 2) * (input.pressed ? 1.06 : 1);
+    // Brosse levée (pas de clic) : on suit le mouvement, mais on ne touche à rien.
+    if (!input.pressed) return;
+    const power = this.mods.pushPower * (1 + (input.pushBonus ?? 0));
+    const hw = this.broom.width / 2;
     const hd = this.broom.depth / 2;
     // Nombre d'étapes pour couvrir tout le chemin parcouru (sinon un geste rapide « saute » la poussière).
     const travel = Math.hypot(x1 - x0, y1 - y0) + Math.abs(dYaw) * hw;
@@ -191,6 +243,7 @@ export class RoomSim {
         const ln = rx * nx + ry * ny;
         if (lt > hw + r * 0.5 || lt < -hw - r * 0.5 || ln > hd + r || ln < -hd - r) continue;
         stamp[i] = id;
+        this.touched[i] = this.time;
 
         // Vitesse du point de la brosse qui touche le grain (translation + rotation).
         const px = bvx + w * ry;
@@ -214,8 +267,8 @@ export class RoomSim {
             y[i] += ny * push;
           }
           pushed++;
-        } else if (input.pressed) {
-          // Brosse immobile + clic : on « frotte » sur place, la poussière s'écarte vers l'avant.
+        } else {
+          // Brosse immobile posée au sol : on « frotte » sur place, la poussière s'écarte vers l'avant.
           const f = 1 - Math.min(1, Math.abs(lt) / (hw + r));
           const puff = (300 * (0.4 + 0.6 * f)) / def.mass;
           vx[i] += (nx * puff + tx * rng.range(-60, 60)) * dt * 8;
@@ -275,7 +328,7 @@ export class RoomSim {
       // Ramassage ?
       let collected = -1;
       for (let c = 0; c < collectors.length; c++) {
-        if (inside(collectors[c].rect, px, py)) {
+        if (inside(this.collectorRects[c], px, py)) {
           collected = c;
           break;
         }
@@ -322,23 +375,45 @@ export class RoomSim {
 
   private collect(i: number, collector: number, id: DirtId, px: number, py: number): void {
     const def = DIRT_TYPES[id];
-    this.combo.add(def.value);
-    const coins = def.value * this.combo.multiplier * this.mods.valueMultiplier;
+    const base = id === 'bunny' ? this.mods.bunnyValue : def.value;
+    const scoop = this.time - this.touched[i] < SCOOP_WINDOW ? 1 + this.mods.scoopBonus : 1;
+    const coins = base * this.mods.valueMultiplier * scoop;
     this.pool.kill(i);
     this.events.push({ collector, type: id, coins, x: px, y: py });
+  }
+
+  /** Pelle aimantée : à chaque pas, une partie de la poussière glisse doucement vers la pelle la plus proche. */
+  private applyMagnet(): void {
+    const { x, y, vx, vy, alive } = this.pool;
+    const cols = this.room.collectors;
+    const batch = Math.max(1, Math.floor(this.pool.cap / 40));
+    for (let k = 0; k < batch; k++) {
+      const i = (this.magnetCursor = (this.magnetCursor + 1) % this.pool.cap);
+      if (!alive[i]) continue;
+      let best = 0;
+      let bestD = Infinity;
+      for (let c = 0; c < cols.length; c++) {
+        const d = Math.hypot(cols[c].mouth.x - x[i], cols[c].mouth.y - y[i]);
+        if (d < bestD) { bestD = d; best = c; }
+      }
+      const m = cols[best].mouth;
+      const d = bestD || 1;
+      vx[i] += ((m.x - x[i]) / d) * 70;
+      vy[i] += ((m.y - y[i]) / d) * 70;
+    }
   }
 
   // ───────────────────────────── Réapparition ─────────────────────────────
 
   private respawn(dt: number): void {
     for (const id of DIRT_ORDER) {
-      const rate = this.room.respawn[id] ?? 0;
+      const rate = (this.room.respawn[id] ?? 0) * this.mods.respawnMult;
       if (rate <= 0) continue;
       this.respawnAcc[id] += rate * dt;
       while (this.respawnAcc[id] >= 1) {
         this.respawnAcc[id] -= 1;
         // De temps en temps, un grain doré à la place d'un grain normal ✨
-        if (id === 'dust' && this.rng.next() < STAR_CHANCE && this.spawnRandom('star')) continue;
+        if (id === 'dust' && this.rng.next() < this.mods.starChance && this.spawnRandom('star')) continue;
         this.spawnRandom(id);
       }
     }
@@ -352,7 +427,7 @@ export class RoomSim {
       const px = p.x + this.rng.gauss() * p.spread * 0.5;
       const py = p.y + this.rng.gauss() * p.spread * 0.5;
       if (px < r + 4 || py < r + 4 || px > this.room.width - r - 4 || py > this.room.height - r - 4) continue;
-      if (this.room.collectors.some((c) => inside(grow(c.rect, 60), px, py))) continue;
+      if (this.collectorRects.some((r) => inside(grow(r, 60), px, py))) continue;
       if (this.room.obstacles.some((o) => inside(grow(o.rect, r + 2), px, py))) continue;
       this.pool.spawn(id, px, py, this.rng.range(0, Math.PI * 2));
       return true;

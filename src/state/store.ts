@@ -6,9 +6,6 @@ export const coins = signal(0);
 export const totalCoins = signal(0);
 export const coinsPerSecond = signal(0);
 export const cleanliness = signal(0);
-export const comboLevel = signal(0);
-export const comboFill = signal(0);
-export const comboMultiplier = signal(1);
 export const roomName = signal('');
 export const started = signal(false);
 export const muted = signal(false);
@@ -98,3 +95,14 @@ export function nextDialogue(): void {
 export const selectedTool = signal(0);
 /** Petit tremblement sur un outil verrouillé (index), pour le retour visuel. */
 export const toolShake = signal<{ index: number; at: number } | null>(null);
+
+// ───────────────────────────── Arbre des Souvenirs ─────────────────────────────
+
+/** L'arbre de compétences est ouvert. */
+export const treeOpen = signal(false);
+/** Niveaux achetés (copie pour l'interface). */
+export const treeLevels = signal<Record<string, number>>({});
+/** Pièces ouvertes (pour les conditions des nœuds). */
+export const unlockedRooms = signal<string[]>(['attic']);
+/** Un nœud est achetable : pastille sur le bouton de l'arbre. */
+export const treeBuyable = signal(false);

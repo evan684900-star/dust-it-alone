@@ -190,6 +190,43 @@ export class Synth {
     this.tone(pitch * (0.85 + v * 0.35), t, 0.045, 'square', 0.022, 0.92);
   }
 
+  /**
+   * Achat d'un niveau dans l'arbre : « ka-tching » + une note de la gamme qui
+   * monte avec la profondeur du nœud. Plus on avance dans l'arbre, plus l'arbre « chante ».
+   */
+  buy(depth: number, lvl: number): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    // Pièces qui tintent.
+    this.tone(2637, t, 0.05, 'square', 0.035);
+    this.tone(3136, t + 0.04, 0.08, 'square', 0.03);
+    const step = PENTA[Math.min(PENTA.length - 1, Math.round(depth * 2) + (lvl % 3))];
+    this.tone(523.25 * 2 ** (step / 12), t + 0.06, 0.35, 'triangle', 0.09);
+  }
+
+  /** Nœud au maximum : accord doux, le nœud fleurit. */
+  nodeMaxed(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    [0, 4, 7, 12].forEach((n, k) => this.tone(659.25 * 2 ** (n / 12), t + k * 0.03, 0.6, 'sine', 0.05));
+    this.tone(2637, t, 0.05, 'square', 0.03);
+  }
+
+  /** Grand nœud débloqué : fanfare et cloche. */
+  bigNode(): void {
+    if (!this.ready()) return;
+    this.fanfare();
+    setTimeout(() => this.bell(), 350);
+  }
+
+  /** Ouverture de l'arbre : bruissement de feuilles. */
+  leaves(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 7; k++) this.noise(t + k * 0.035 + Math.random() * 0.03, 0.09, 2500 + Math.random() * 3500, 1800 + Math.random() * 3000, 0.035);
+    this.tone(392, t, 0.25, 'triangle', 0.05, 1.5);
+  }
+
   /** Pause : tout le son devient étouffé (comme à travers une porte). */
   setMuffled(on: boolean): void {
     if (!this.ctx) return;

@@ -3,6 +3,7 @@ import type { Game } from '../game';
 import { CLEAN_THRESHOLD } from '../game';
 import { formatNumber } from '../core/format';
 import * as store from '../state/store';
+import { SkillTree } from './SkillTree';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 
@@ -10,11 +11,12 @@ export function App({ game }: { game: Game }) {
   return (
     <>
       {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
-      {store.started.value && !store.paused.value && !store.mapOpen.value && <Crosshair />}
-      {store.started.value && !store.paused.value && !store.mapOpen.value && <DoorPrompt />}
+      {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <Crosshair />}
+      {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <DoorPrompt />}
       {store.started.value && store.dialogue.value && <DialogueBubble key={store.dialogue.value.id} line={store.dialogue.value} />}
       {store.started.value && store.mapOpen.value && <CastleMap game={game} />}
-      {store.started.value && store.paused.value && !store.mapOpen.value && <PauseScreen game={game} />}
+      {store.started.value && store.treeOpen.value && <SkillTree game={game} />}
+      {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
       {store.showFps.value && !store.debugInfo.value && <div class="fps-counter">{Math.round(store.fps.value)} FPS</div>}
@@ -49,7 +51,8 @@ function Controls() {
     <div class="controls">
       <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer</span>
       <span>🖱️ viser et balayer</span>
-      <span><kbd>clic</kbd> frotter fort</span>
+      <span><kbd>clic maintenu</kbd> balayer</span>
+      <span><kbd>B</kbd> arbre des souvenirs</span>
       <span><kbd>Maj</kbd> courir</span>
       <span><kbd>E</kbd> ouvrir une porte</span>
       <span><kbd>M</kbd> carte du château</span>
@@ -283,7 +286,6 @@ const TOOLS = [
 function Hud({ game }: { game: Game }) {
   const clean = store.cleanliness.value;
   const pct = Math.floor(clean * 100);
-  const lvl = store.comboLevel.value;
   return (
     <div class="hud">
       <div class="top-bar">
@@ -323,16 +325,9 @@ function Hud({ game }: { game: Game }) {
           ))}
         </div>
 
-        <div class={`panel combo tilt-l combo-lvl-${lvl}`}>
-          <span class="combo-label">Combo</span>
-          <span class="combo-mult">×{store.comboMultiplier.value.toString().replace('.', ',')}</span>
-          <div class="combo-bar">
-            <div class="combo-fill" style={{ width: `${store.comboFill.value * 100}%` }} />
-          </div>
-        </div>
-
-        <button class="btn btn-shop" disabled title="Arrive à la prochaine étape !">
-          🛒 Boutique <small>bientôt !</small>
+        <button class={`btn btn-shop ${store.treeBuyable.value ? 'has-buy' : ''}`} onClick={() => game.toggleTree()} title="L'Arbre des Souvenirs (B)">
+          🌳 Arbre <small>touche B</small>
+          {store.treeBuyable.value && <span class="buy-dot">!</span>}
         </button>
       </div>
     </div>

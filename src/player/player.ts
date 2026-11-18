@@ -26,6 +26,12 @@ export class Player {
   private bobPhase = 0;
   private bobAmount = 0;
   sprinting = false;
+  /** Effets de l'arbre. */
+  walkMult = 1;
+  sprintMult = 1;
+  reachMax = REACH_MAX;
+  /** Le joueur avance (pour la Marche du balayeur). */
+  movingForward = false;
 
   constructor(private nav: Navigation, start: { x: number; z: number; y: number; yaw: number; pitch?: number }) {
     this.x = start.x;
@@ -61,7 +67,7 @@ export class Player {
     let mz = 0;
     if (fwd || str) {
       const len = Math.hypot(fwd, str);
-      const sp = (this.sprinting ? SPRINT : WALK) / len;
+      const sp = ((this.sprinting ? SPRINT * this.sprintMult : WALK) * this.walkMult) / len;
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       mx = (-sin * fwd + cos * str) * sp * dt;
@@ -73,6 +79,7 @@ export class Player {
 
     this.smoothY += (this.y - this.smoothY) * Math.min(1, dt * 14);
     const moving = mx !== 0 || mz !== 0;
+    this.movingForward = fwd > 0;
     this.bobAmount += ((moving ? (this.sprinting ? 1.6 : 1) : 0) - this.bobAmount) * Math.min(1, dt * 8);
     if (moving) this.bobPhase += dt * (this.sprinting ? 13 : 9);
   }
@@ -107,9 +114,9 @@ export class Player {
   broomPoint(): { x: number; z: number; room: RoomDef | null } {
     const fx = -Math.sin(this.yaw);
     const fz = -Math.cos(this.yaw);
-    let d = REACH_MAX;
+    let d = this.reachMax;
     if (this.pitch < -0.02) d = (this.eye - this.smoothY) / Math.tan(-this.pitch);
-    d = Math.max(REACH_MIN, Math.min(REACH_MAX, d));
+    d = Math.max(REACH_MIN, Math.min(this.reachMax, d));
     let bx = this.x + fx * d;
     let bz = this.z + fz * d;
     const r = this.room();

@@ -5,10 +5,10 @@ import * as store from '../state/store';
 /**
  * Branche un son synthétique sur chaque mouvement de l'interface :
  * survol et clic des boutons, panneaux qui s'ouvrent et se ferment,
- * notifications, changement de lieu, porte verrouillée, combo…
+ * notifications, changement de lieu, porte verrouillée…
  */
 export function installUiSounds(): void {
-  const interactive = '.btn, .quality-option, .tool, .toggle, .dialogue';
+  const interactive = '.btn, .quality-option, .tool, .toggle, .dialogue, .tree-btn';
 
   // Survol : un « tic » quand on arrive sur un nouvel élément cliquable.
   let hovered: Element | null = null;
@@ -41,6 +41,10 @@ export function installUiSounds(): void {
     if (v) sfx.close();
     else sfx.open();
   });
+  watch(() => store.treeOpen.value, (v) => {
+    if (v) sfx.leaves();
+    else sfx.close();
+  });
   watch(() => store.toasts.value.length, (n, prev) => {
     if (n > prev) sfx.chime();
   });
@@ -49,9 +53,6 @@ export function installUiSounds(): void {
   });
   watch(() => store.doorPrompt.value?.name ?? '', (name) => {
     if (name) sfx.rattle();
-  });
-  watch(() => store.comboLevel.value, (lvl, prev) => {
-    if (lvl > prev) sfx.comboUp(lvl);
   });
   watch(() => store.dialogue.value?.id ?? 0, (id) => {
     if (id) sfx.open();
