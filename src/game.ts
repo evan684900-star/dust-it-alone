@@ -13,6 +13,7 @@ import { computeModifiers, type Modifiers } from './economy/modifiers';
 import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { StoryDirector, playLines } from './story/director';
+import { EventDirector, type EventKind } from './story/events';
 import { ALL_SOUVENIRS, THRONE_SOUVENIRS } from './data/story';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
@@ -41,6 +42,7 @@ export class Game {
   private last = performance.now();
   private currentRoom: RoomDef | null = null;
   private director!: StoryDirector;
+  private events!: EventDirector;
   /** Fin du jeu : la caméra tourne lentement autour de la Salle du trône. */
   private cinematicT = -1;
   private tickCount = 0;
@@ -105,6 +107,19 @@ export class Game {
       persist: () => this.persist(),
     });
     this.director.init();
+    this.events = new EventDirector({
+      rooms: this.rooms,
+      currentRoom: () => {
+        const room = this.player.room();
+        return room ? this.rooms.findIndex((r) => r.def === room) : -1;
+      },
+      player: this.player,
+      income: () => store.coinsPerSecond.value,
+      starRain: () => this.mods.events.starRain,
+      earn: (v) => this.earn(v),
+      world: this.world,
+      sound: this.synth,
+    });
     store.souvenirCount.value = this.save.souvenirs.length;
     this.bindInput();
     this.updatePlace(true);
@@ -521,6 +536,10 @@ export class Game {
           for (const s of ALL_SOUVENIRS.slice(0, n)) if (!this.save.souvenirs.includes(s.id)) this.save.souvenirs.push(s.id);
         },
         souvenirSpots: () => [...(this.director as unknown as { positions: Map<string, { x: number; y: number }> }).positions.entries()],
+        event: (kind: EventKind) => {
+          const room = this.player.room();
+          if (room) this.events.trigger(kind, this.rooms.findIndex((r) => r.def === room));
+        },
         unlockAll: () => {
           for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
           this.world.setDoorState((d) => this.doorOpen(d), true);
@@ -675,7 +694,10 @@ export class Game {
   // ───────────────────────────── Boucle ─────────────────────────────
 
   private tick(dt: number): void {
-    if (this.playing) this.player.update(dt);
+    if (this.playing) {
+      this.player.update(dt);
+      this.events.update(dt);
+    }
     const bp = this.player.broomPoint();
     this.tickCount++;
     for (let ri = 0; ri < this.rooms.length; ri++) {
@@ -698,6 +720,8 @@ export class Game {
       this.input.pushBonus = this.player.movingForward ? this.mods.player.marchBonus : 0;
       this.input.tool = TOOLS[store.selectedTool.value].id;
       r.sim.step(stepDt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
+      // Pas léger : en marchant, les pieds écartent la poussière.
+      if (this.playing && this.mods.player.feet && this.player.moving && r.def === this.player.room()) r.sim.kickFeet(this.player.x - r.def.origin.x, this.player.z - r.def.origin.z);
       // Les assistants : « en vrai » près du joueur, « en résumé » ailleurs.
       if (near) r.sim.stepHelpers(stepDt);
       else r.sim.abstractHelpers(stepDt);

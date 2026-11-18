@@ -36,6 +36,8 @@ export interface PlayerModifiers {
   reachMax: number;
   /** Bonus de poussée en avançant (Marche du balayeur). */
   marchBonus: number;
+  /** Pas léger : les pieds écartent la poussière. */
+  feet: boolean;
 }
 
 export interface Modifiers {
@@ -47,6 +49,8 @@ export interface Modifiers {
   offline: { eff: number; hours: number };
   /** Ce que garde / donne le Grand Ménage (anneau doré). */
   prestige: { startCoins: number; keepHelpers: boolean; keepRooms: number; sparkGain: number };
+  /** Événements débloqués dans l'arbre. */
+  events: { starRain: boolean };
   /** Multiplicateur du bonus « pièce impeccable » pour une pièce. */
   cleanBonusMult: (roomId: string) => number;
 }
@@ -121,7 +125,9 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number, spark
       sprintMult: 1 + A('sprint'),
       reachMax: 230 + A('reach'),
       marchBonus: A('march'),
+      feet: A('feet') > 0,
     },
+    events: { starRain: A('starRain') > 0 },
     cleanBonusMult: (roomId) => ((roomAdd.get(roomId)?.echo ?? 0) > 0 ? 2 : 1),
   };
 }

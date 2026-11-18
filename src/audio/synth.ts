@@ -236,6 +236,37 @@ export class Synth {
     this.tone(392, t, 0.25, 'triangle', 0.05, 1.5);
   }
 
+  /** Courant d'air : long souffle filtré. */
+  wind(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 6; k++) this.noise(t + k * 0.35, 1.2, 300 + k * 60, 900 + k * 120, 0.03);
+  }
+
+  /** Pot renversé : choc sourd puis débris. */
+  crash(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(110, t, 0.18, 'sine', 0.12, 0.5);
+    this.noise(t, 0.25, 1200, 5000, 0.08);
+    for (let k = 0; k < 6; k++) this.noise(t + 0.12 + k * 0.05 + Math.random() * 0.04, 0.05, 3000 + Math.random() * 3000, 2500, 0.03);
+  }
+
+  /** Pièce brillante : tintement métallique. */
+  coin(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    this.tone(1568, t, 0.12, 'square', 0.03);
+    this.tone(2093, t + 0.07, 0.4, 'triangle', 0.05);
+  }
+
+  /** Pluie d'étoiles : arpège scintillant. */
+  sparkle(): void {
+    if (!this.ready()) return;
+    const t = this.now();
+    for (let k = 0; k < 8; k++) this.tone(1046.5 * 2 ** (PENTA[k] / 12), t + k * 0.07, 0.3, 'triangle', 0.035);
+  }
+
   /** Pause : tout le son devient étouffé (comme à travers une porte). */
   setMuffled(on: boolean): void {
     if (!this.ctx) return;

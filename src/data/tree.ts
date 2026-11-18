@@ -31,7 +31,8 @@ export type StatKey =
   | 'walk' | 'sprint' | 'march'
   | 'duster' | 'sponge' | 'blower' | 'vacuumCap'
   | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours'
-  | 'startCoins' | 'keepHelpers' | 'keepRooms' | 'sparkGain';
+  | 'startCoins' | 'keepHelpers' | 'keepRooms' | 'sparkGain'
+  | 'starRain' | 'feet';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
@@ -242,7 +243,7 @@ const MEMORY: TreeNode[] = [
     effect: (per, l) => `+${per} par mouton et par niveau (+${per * l})`,
     requires: (t) => (t === 0 ? { room: 'gallery' } : undefined),
   }),
-  { id: 'star-rain', name: 'Pluie d’étoiles', icon: '🌠', branch: 'memory', kind: 'big', parents: ['star-luck-3'], maxLevel: 1, base: 3e6, growth: 1, depth: 5, side: 1.8, requires: { soon: true }, stats: [],
+  { id: 'star-rain', name: 'Pluie d’étoiles', icon: '🌠', branch: 'memory', kind: 'big', parents: ['star-luck-3'], maxLevel: 1, base: 3e6, growth: 1, depth: 5, side: 1.8, stats: [{ key: 'starRain', per: 1, mode: 'add' }],
     flavor: 'Parfois, le ciel se souvient aussi.', effect: () => 'Débloque l’événement « pluie d’étoiles »' },
   { id: 'memory-heart', name: 'Cœur de mémoire', icon: '💖', branch: 'memory', kind: 'big', parents: ['value-8'], maxLevel: 1, base: 2e10, growth: 1, depth: 9.2, side: 0,
     stats: [{ key: 'value', per: 2, mode: 'mul' }],
@@ -265,7 +266,7 @@ const PLUME: TreeNode[] = [
     effect: (per, l) => `Course (Maj) +${pct(per)} par niveau (+${pct(per * l)})`,
     requires: (t) => (t === 0 ? { room: 'hall' } : undefined),
   }),
-  { id: 'plume-feet', name: 'Pas léger', icon: '🦶', branch: 'plume', kind: 'big', parents: ['plume-speed-3'], maxLevel: 1, base: 1e6, growth: 1, depth: 4, side: 0, requires: { soon: true }, stats: [],
+  { id: 'plume-feet', name: 'Pas léger', icon: '🦶', branch: 'plume', kind: 'big', parents: ['plume-speed-3'], maxLevel: 1, base: 1e6, growth: 1, depth: 4, side: 0, stats: [{ key: 'feet', per: 1, mode: 'add' }],
     flavor: 'Même tes pieds font le ménage.', effect: () => 'En marchant, tes pieds poussent un peu la poussière' },
 ];
 

@@ -739,24 +739,46 @@ export class World3D {
     }
     for (const s of list) {
       if (this.souvenirViews.has(s.id)) continue;
-      let tex = this.emojiTex.get(s.icon);
-      if (!tex) {
-        tex = new THREE.CanvasTexture(drawEmoji(s.icon));
-        tex.colorSpace = THREE.SRGBColorSpace;
-        this.emojiTex.set(s.icon, tex);
-      }
-      this.glowTex ??= new THREE.CanvasTexture(softDot());
-      const g = new THREE.Group();
-      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd86a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      glow.scale.set(130, 130, 1);
-      const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
-      icon.scale.set(46, 46, 1);
-      g.add(glow, icon);
+      const g = this.makePickup(s.icon, 0xffd86a);
       g.position.set(s.x, 45, s.y);
-      g.userData.base = 45;
       this.views[s.roomIndex].group.add(g);
       this.souvenirViews.set(s.id, g);
     }
+  }
+
+  /** Un objet à ramasser : une icône qui flotte dans un halo. */
+  private makePickup(icon: string, glowColor: number): THREE.Group {
+    let tex = this.emojiTex.get(icon);
+    if (!tex) {
+      tex = new THREE.CanvasTexture(drawEmoji(icon));
+      tex.colorSpace = THREE.SRGBColorSpace;
+      this.emojiTex.set(icon, tex);
+    }
+    this.glowTex ??= new THREE.CanvasTexture(softDot());
+    const g = new THREE.Group();
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: glowColor, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    glow.scale.set(130, 130, 1);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+    sprite.scale.set(46, 46, 1);
+    g.add(glow, sprite);
+    g.userData.base = 45;
+    return g;
+  }
+
+  private bonusView: THREE.Group | null = null;
+
+  /** La pièce brillante (événement aléatoire), ou rien. */
+  setBonus(b: { roomIndex: number; x: number; y: number; icon: string } | null): void {
+    if (this.bonusView) {
+      this.bonusView.parent?.remove(this.bonusView);
+      this.bonusView = null;
+    }
+    if (!b) return;
+    const g = this.makePickup(b.icon, 0xfff0a0);
+    g.position.set(b.x, 30, b.y);
+    g.userData.base = 30;
+    this.views[b.roomIndex].group.add(g);
+    this.bonusView = g;
   }
 
   private ghosts: { obj: THREE.Group; life: number; total: number; mats: THREE.MeshBasicMaterial[] }[] = [];
@@ -806,6 +828,7 @@ export class World3D {
       g.position.y = g.userData.base + Math.sin(this.time * 2 + g.id) * 8;
       g.rotation.y += dt;
     }
+    if (this.bonusView) this.bonusView.position.y = this.bonusView.userData.base + Math.abs(Math.sin(this.time * 4)) * 14;
     for (let k = this.ghosts.length - 1; k >= 0; k--) {
       const gh = this.ghosts[k];
       gh.life += dt;

@@ -46,12 +46,13 @@ describe("l'Arbre des Souvenirs", () => {
     expect(availability(node('tool-duster'), st(lv, ['attic', 'gallery'])).ok).toBe(true);
   });
 
-  it('les conditions de pièce et « bientôt » sont respectées', () => {
+  it('les conditions de pièce sont respectées', () => {
     const lv = { 'broom-wide-1': 1, 'broom-push-1': 1 };
     expect(availability(node('broom-reach-1'), st(lv)).ok).toBe(false);
     expect(availability(node('broom-reach-1'), st(lv, ['attic', 'gallery'])).ok).toBe(true);
-    const soon = availability(node('plume-feet'), st({ 'plume-speed-1': 5, 'plume-speed-2': 5, 'plume-speed-3': 5 }));
-    expect(soon.ok ? 'ok' : soon.reason).toBe('soon');
+    // Plus aucun nœud « bientôt » : tout est jouable.
+    expect(TREE_NODES.some((n) => n.requires && 'soon' in n.requires)).toBe(false);
+    expect(availability(node('plume-feet'), st({ 'plume-speed-1': 5, 'plume-speed-2': 5, 'plume-speed-3': 5 })).ok).toBe(true);
   });
 
   it('une jonction demande les deux branches', () => {

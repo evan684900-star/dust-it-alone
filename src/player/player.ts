@@ -32,6 +32,8 @@ export class Player {
   reachMax = REACH_MAX;
   /** Le joueur avance (pour la Marche du balayeur). */
   movingForward = false;
+  /** Le joueur se déplace en ce moment. */
+  moving = false;
 
   constructor(private nav: Navigation, start: { x: number; z: number; y: number; yaw: number; pitch?: number }) {
     this.x = start.x;
@@ -79,6 +81,7 @@ export class Player {
 
     this.smoothY += (this.y - this.smoothY) * Math.min(1, dt * 14);
     const moving = mx !== 0 || mz !== 0;
+    this.moving = moving;
     this.movingForward = fwd > 0;
     this.bobAmount += ((moving ? (this.sprinting ? 1.6 : 1) : 0) - this.bobAmount) * Math.min(1, dt * 8);
     if (moving) this.bobPhase += dt * (this.sprinting ? 13 : 9);

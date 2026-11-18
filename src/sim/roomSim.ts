@@ -213,6 +213,7 @@ export class RoomSim {
       if (input.active && input.pressed) this.applyTool(tool, dt, input);
     }
     if (this.mods.magnet) this.applyMagnet();
+    if (this.wind.t > 0) this.applyWind(dt);
     this.integrate(dt);
     this.respawn(dt);
   }
@@ -737,6 +738,101 @@ export class RoomSim {
       const d = bestD || 1;
       vx[i] += ((m.x - x[i]) / d) * 70;
       vy[i] += ((m.y - y[i]) / d) * 70;
+    }
+  }
+
+  // ───────────────────────────── Événements ─────────────────────────────
+
+  private wind = { x: 0, y: 0, t: 0, total: 1, strength: 0 };
+
+  /** Courant d'air : pousse toute la poussière libre dans une direction pendant quelques secondes. */
+  gust(angle: number, seconds: number, strength = 260): void {
+    this.wind = { x: Math.cos(angle), y: Math.sin(angle), t: seconds, total: seconds, strength };
+  }
+
+  get windActive(): boolean {
+    return this.wind.t > 0;
+  }
+
+  private applyWind(dt: number): void {
+    const w = this.wind;
+    w.t -= dt;
+    // Le vent monte, souffle, puis retombe.
+    const k = Math.sin(Math.PI * Math.max(0, Math.min(1, 1 - w.t / w.total)));
+    const { vx, vy, alive, type } = this.pool;
+    for (let i = 0; i < this.pool.cap; i++) {
+      if (!alive[i]) continue;
+      const def = DIRT_TYPES[DIRT_ORDER[type[i]]];
+      if (def.fixed) continue;
+      // Un peu de désordre pour que tout ne bouge pas d'un bloc.
+      const jitter = 0.55 + ((i * 0.618034) % 1) * 0.9;
+      const f = (w.strength * k * jitter * dt) / Math.sqrt(def.mass);
+      vx[i] += w.x * f + Math.sin(this.time * 3 + i) * f * 0.3;
+      vy[i] += w.y * f + Math.cos(this.time * 2.6 + i) * f * 0.3;
+    }
+  }
+
+  /** Une gerbe de saleté autour d'un point (un pot renversé…). Renvoie le nombre de grains apparus. */
+  burst(cx: number, cy: number, spec: Partial<Record<DirtId, number>>, spread = 90): number {
+    let n = 0;
+    for (const [id, count] of Object.entries(spec) as [DirtId, number][]) {
+      const r = DIRT_TYPES[id].radius;
+      for (let k = 0; k < count; k++) {
+        if (!this.pool.canSpawn(id)) break;
+        const px = cx + this.rng.gauss() * spread * 0.5;
+        const py = cy + this.rng.gauss() * spread * 0.5;
+        if (px < r + 4 || py < r + 4 || px > this.room.width - r - 4 || py > this.room.height - r - 4) continue;
+        if (this.room.obstacles.some((o) => inside(grow(o.rect, r + 2), px, py))) continue;
+        const i = this.pool.spawn(id, px, py, this.rng.range(0, Math.PI * 2));
+        if (i < 0) break;
+        // Les grains jaillissent un peu vers l'extérieur.
+        const a = Math.atan2(py - cy, px - cx);
+        const v = 40 + this.rng.next() * 90;
+        this.pool.vx[i] = Math.cos(a) * v;
+        this.pool.vy[i] = Math.sin(a) * v;
+        n++;
+      }
+    }
+    return n;
+  }
+
+  /** Des grains dorés qui tombent du ciel, un peu partout. */
+  rainStars(count: number): number {
+    let n = 0;
+    for (let k = 0; k < count; k++) if (this.spawnRandom('star')) n++;
+    return n;
+  }
+
+  /** Un endroit libre au hasard (loin des meubles et des pelles). */
+  freeSpot(margin = 120): { x: number; y: number } {
+    for (let k = 0; k < 40; k++) {
+      const x = this.rng.range(margin, this.room.width - margin);
+      const y = this.rng.range(margin, this.room.height - margin);
+      if (this.room.obstacles.some((o) => inside(grow(o.rect, 60), x, y))) continue;
+      if (this.collectorRects.some((r) => inside(grow(r, 80), x, y))) continue;
+      return { x, y };
+    }
+    return { x: this.room.width / 2, y: this.room.height / 2 };
+  }
+
+  /** Pas léger : les pieds du joueur écartent doucement la poussière autour de lui. */
+  kickFeet(px: number, py: number, radius = 38): void {
+    const { x, y, vx, vy, alive, type } = this.pool;
+    const r2 = radius * radius;
+    for (let i = 0; i < this.pool.cap; i++) {
+      if (!alive[i]) continue;
+      const dx = x[i] - px;
+      const dy = y[i] - py;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > r2) continue;
+      const def = DIRT_TYPES[DIRT_ORDER[type[i]]];
+      if (def.fixed) continue;
+      const d = Math.sqrt(d2) || 1;
+      const v = (70 * (1 - d / radius)) / Math.sqrt(def.mass);
+      if (vx[i] * vx[i] + vy[i] * vy[i] < v * v) {
+        vx[i] += (dx / d) * v;
+        vy[i] += (dy / d) * v;
+      }
     }
   }
 
