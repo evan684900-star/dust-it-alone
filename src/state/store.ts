@@ -145,6 +145,8 @@ export const albumOpen = signal(false);
 export const settings = signal<Settings>({ ...DEFAULT_SETTINGS });
 /** Carnet : statistiques et succès. */
 export const journalOpen = signal(false);
+/** Panneau « Crédits » (écran titre). */
+export const creditsPanel = signal(false);
 export const achievements = signal<string[]>([]);
 /** Petite bulle d'aide contextuelle. */
 export const tip = signal<{ id: string; icon: string; text: string } | null>(null);

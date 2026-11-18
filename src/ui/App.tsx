@@ -42,6 +42,15 @@ export function App({ game }: { game: Game }) {
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
       {store.showFps.value && !store.debugInfo.value && <div class="fps-counter">{Math.round(store.fps.value)} FPS</div>}
       {store.settingsOpen.value && <SettingsPanel game={game} />}
+      {store.creditsPanel.value && (
+        <div class="settings-backdrop" onClick={() => (store.creditsPanel.value = false)}>
+          <div class="settings-card" onClick={(e) => e.stopPropagation()}>
+            <h2>🎬 Crédits</h2>
+            <CreditsList />
+            <button class="btn" onClick={() => (store.creditsPanel.value = false)}>Fermer</button>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -60,7 +69,10 @@ function TitleScreen({ game }: { game: Game }) {
         </button>
         {hasSave && <p class="save-info">🪙 {formatNumber(store.coins.value)} pièces en poche</p>}
         {store.offlineReport.value && <OfflineReport />}
-        <SettingsButton />
+        <div class="pause-row">
+          <SettingsButton />
+          <button class="btn btn-settings" onClick={() => (store.creditsPanel.value = true)}>🎬 Crédits</button>
+        </div>
         <GpuWarning />
         <Controls />
       </div>
@@ -182,13 +194,29 @@ function Credits() {
       <div class="title-card">
         <h1 class="logo"><span class="w1">Fin</span></h1>
         <p class="tagline">Élise est revenue. Mouton aussi. Et le château se souvient.</p>
-        <p class="credits-list">
-          <b>Dust It Alone</b><br />
-          Une histoire de poussière, de souvenirs et d'un petit plumeau.<br /><br />
-          Merci d'avoir joué ! 🧹✨
-        </p>
+        <CreditsList />
+        <p class="credits-list">Merci d'avoir joué ! 🧹✨</p>
         <button class="btn btn-big" onClick={() => (store.credits.value = false)}>Continuer à faire le ménage</button>
       </div>
+    </div>
+  );
+}
+
+/** Qui a fait quoi. */
+function CreditsList() {
+  return (
+    <div class="credits-list">
+      <p><b>Dust It Alone</b><br />Une histoire de poussière, de souvenirs et d'un petit plumeau.</p>
+      <dl>
+        <dt>Idée, direction et tests</dt><dd>Le créateur du jeu</dd>
+        <dt>Code, 3D, histoire et sons</dt><dd>Claude (Anthropic)</dd>
+        <dt>Musique</dt><dd>Bientôt !</dd>
+        <dt>Moteur 3D</dt><dd>three.js</dd>
+        <dt>Interface</dt><dd>Preact et Vite</dd>
+        <dt>Polices</dt><dd>Lilita One et Nunito (Google Fonts, licence OFL)</dd>
+        <dt>Sons</dt><dd>Tous synthétisés en direct avec Web Audio</dd>
+      </dl>
+      <p>Inspiré par les jeux de ménage incrémentaux comme <i>Leaf It Alone</i>.</p>
     </div>
   );
 }

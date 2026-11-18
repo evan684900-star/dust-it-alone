@@ -706,3 +706,6 @@ kbd {
 }
 .tip span { font-size: 26px; }
 .tip p { margin: 0; }
+.credits-list dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 10px 0; text-align: left; }
+.credits-list dt { font-family: var(--font-display); font-weight: normal; }
+.credits-list dd { margin: 0; }

@@ -13,7 +13,7 @@ npm run dev        # http://localhost:5173
 
 Ajoute `?debug` à l'adresse pour afficher les FPS et les raccourcis de test (`G` : +1000 pièces, `C` : tout nettoyer), et `?quality=low` pour désactiver le post-traitement.
 
-Contrôles : `ZQSD`/`WASD` pour se déplacer, la souris pour viser et balayer, clic maintenu pour frotter fort, `Maj` pour courir, `E` pour ouvrir une porte, `M` pour la carte du château, `Échap` pour la pause.
+Contrôles : `ZQSD`/`WASD` pour se déplacer, la souris pour viser, clic maintenu pour balayer, `1`…`5` pour changer d'outil, `Maj` pour courir, `E` pour ouvrir une porte / utiliser l'établi, `B` l'Arbre des Souvenirs, `M` la carte, `J` l'album, `K` le carnet, `Échap` la pause.
 
 ## Commandes
 
@@ -23,6 +23,7 @@ Contrôles : `ZQSD`/`WASD` pour se déplacer, la souris pour viser et balayer, c
 | `npm run build` | vérification TypeScript + build de production dans `dist/` |
 | `npm run preview` | servir le build localement |
 | `npm test` | tests unitaires (Vitest) |
+| `npm run e2e` | tests de bout en bout dans un vrai navigateur (Playwright) |
 | `npm run typecheck` | vérification des types |
 
 ## Déploiement
@@ -35,13 +36,13 @@ Vite · TypeScript · Three.js (3D : ombres, PBR, GTAO, bloom) · Preact + Signa
 
 ## Avancement
 
-- [x] **M0** : mise en place (Vite, TS, Three.js, Preact, tests, CI, config Vercel)
+- [x] **M0** : mise en place (Vite, TS, Three.js, Preact, tests, config Vercel)
 - [x] **Qualité graphique** : Auto + 5 niveaux, optimisé pour les puces intégrées
-- [x] **M1** : prototype 3D en première personne (balai, pelles, poussière, moutons, poussière d'étoile, combo, propreté, sons, effets)
-- [ ] **M2** : boutique, améliorations, économie
-- [x] **M3 (partie 1)** : le château — 5 pièces sur 3 étages (Combles, Galerie des portraits, Bibliothèque, Chambre royale, Grand Hall), 2 escaliers, portes verrouillées, carte
-- [ ] **M3 (partie 2)** : nouveaux outils, pièces suivantes (cuisines, chapelle, caves…)
-- [ ] **M4** : assistants et gains hors-ligne
-- [ ] **M5** : prestige, souvenirs, pièces 4 à 8
-- [ ] **M6** : polish
-- [ ] **M7** : équilibrage et lancement
+- [x] **M1** : prototype 3D en première personne (balai à hitbox rectangulaire, pelles, 9 types de saleté)
+- [x] **M2** : l'Arbre des Souvenirs (arbre de compétences géant, fourches, remboursement)
+- [x] **M3** : le château — 14 pièces sur 5 niveaux, escaliers, portes, carte ; 5 outils (balai, plumeau, éponge, aspirateur, souffleur)
+- [x] **M4** : assistants (Moutonnet, Plumette, Roulio, Biscotte) et gains hors-ligne
+- [x] **M5** : Grand Ménage (prestige, anneau doré), histoire complète (souvenirs, échos du passé, album, fin)
+- [x] **M6** : événements aléatoires, réglages complets, export/import, carnet (stats + succès), bulles d'aide, établi 3D
+- [x] **M7** : équilibrage (~19 h pour finir, simulé), image de partage, crédits, tests de bout en bout
+- [ ] **Musique** : faite à part 🎵
