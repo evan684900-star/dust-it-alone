@@ -180,7 +180,7 @@ const PICKUP: TreeNode[] = [
     flavors: ['Les pelles ont faim.', 'La poussière qui passe à côté finit dedans.', 'Un petit vent magique souffle vers la pelle.', 'Même les moutons se laissent aspirer.'],
     effect: (per, l) => `+${per} cm d’aspiration autour des pelles par niveau (+${cm(per * l)})`,
   }),
-  { id: 'pan-magnet', name: 'Pelle aimantée', icon: '🌪️', branch: 'pickup', kind: 'big', parents: ['pan-pull-3'], maxLevel: 1, base: 4e6, growth: 1, depth: 5, side: 1.9,
+  { id: 'pan-magnet', name: 'Pelle aimantée', icon: '🌪️', branch: 'pickup', kind: 'big', parents: ['pan-pull-3'], maxLevel: 1, base: 4e6, growth: 1, depth: 4.6, side: 2.4,
     stats: [{ key: 'magnet', per: 1, mode: 'add' }],
     flavor: 'Toute la poussière de la pièce glisse lentement vers les pelles.', effect: () => 'Les pelles attirent doucement la poussière de toute la pièce' },
   { id: 'pan-gold', name: 'Pelle en or', icon: '👑', branch: 'pickup', kind: 'big', parents: ['pan-size-5'], maxLevel: 1, base: 1e10, growth: 1, depth: 6, side: 0,
@@ -286,24 +286,27 @@ function roomBranch(roomId: string, index: number, total: number): TreeNode[] {
   const room = ROOMS.find((r) => r.id === roomId)!;
   const v = Math.pow(room.valueMult, 2.2);
   const short = room.name.replace(/^(La |Le |Les |L’|L')/, '');
-  const side = (index - (total - 1) / 2) * 1.05;
+  // Première pièce dans l'axe de la branche, puis les suivantes de part et d'autre (0, +1, −1, +2, −2…),
+  // pour que les sous-branches restent bien dans le secteur du Château.
+  void total;
+  const side = index === 0 ? 0 : (index % 2 === 1 ? 1 : -1) * Math.ceil(index / 2) * 1.6;
   const req = () => ({ room: roomId });
   return [
     ...chain({
       prefix: `airflow:${roomId}`, name: `Courants d’air · ${short}`, icon: '🌬️', branch: 'castle', root: 'castle-root', tiers: 3, levels: 5,
-      base: 60 * v, tierMult: 60, growth: 1.9, per: () => 0.1, key: 'respawn', mode: 'add', room: roomId, depth0: 2, side,
+      base: 60 * v, tierMult: 60, growth: 1.9, per: () => 0.1, key: 'respawn', mode: 'add', room: roomId, depth0: 3, side,
       flavors: ['Une fenêtre entrouverte, et la poussière revient… pour être ramassée.', 'Le vent apporte la poussière du dehors.', 'Une vraie tempête de poussière.'],
       effect: (per, l) => `+${pct(per)} de poussière qui retombe par niveau (+${pct(per * l)})`,
       requires: req,
     }),
     ...chain({
       prefix: `shine:${roomId}`, name: `Lustre · ${short}`, icon: '💡', branch: 'castle', root: `airflow:${roomId}-1`, tiers: 3, levels: 5,
-      base: 150 * v, tierMult: 60, growth: 2, per: () => 0.08, key: 'roomValue', mode: 'add', room: roomId, depth0: 3, side: side * 1.08,
+      base: 150 * v, tierMult: 60, growth: 2, per: () => 0.08, key: 'roomValue', mode: 'add', room: roomId, depth0: 4, side: side + 0.75,
       flavors: ['Une pièce bien éclairée, c’est une pièce dont on se souvient.', 'Le lustre brille de mille feux.', 'La pièce rayonne.'],
       effect: (per, l) => `+${pct(per)} de valeur dans la pièce par niveau (+${pct(per * l)})`,
       requires: req,
     }),
-    { id: `echo:${roomId}`, name: `Écho du lieu · ${short}`, icon: '🔔', branch: 'castle', kind: 'big', parents: [`shine:${roomId}-3`], maxLevel: 1, base: 2e6 * v, growth: 1, depth: 6, side: side * 1.15, requires: req(),
+    { id: `echo:${roomId}`, name: `Écho du lieu · ${short}`, icon: '🔔', branch: 'castle', kind: 'big', parents: [`shine:${roomId}-3`], maxLevel: 1, base: 2e6 * v, growth: 1, depth: 7, side: side + 0.4, requires: req(),
       stats: [{ key: 'echo', per: 1, mode: 'add', room: roomId }],
       flavor: 'Quand la pièce est impeccable, elle chante.', effect: () => 'Bonus « pièce impeccable » doublé' },
   ];
