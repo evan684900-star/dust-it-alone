@@ -40,10 +40,31 @@ function TitleScreen({ game }: { game: Game }) {
           {hasSave ? 'On reprend le ménage !' : 'Au boulot !'}
         </button>
         {hasSave && <p class="save-info">🪙 {formatNumber(store.coins.value)} pièces en poche</p>}
+        {store.offlineReport.value && <OfflineReport />}
         <SettingsButton />
         <GpuWarning />
         <Controls />
       </div>
+    </div>
+  );
+}
+
+function duration(s: number): string {
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  return h ? `${h} h ${String(m).padStart(2, '0')}` : `${Math.max(1, m)} min`;
+}
+
+/** « Pendant ton absence… » : ce que les assistants ont ramassé. */
+function OfflineReport() {
+  const r = store.offlineReport.value!;
+  return (
+    <div class="offline-report">
+      <strong>💤 Pendant ton absence ({duration(r.seconds)})…</strong>
+      <span>
+        tes assistants ont ramassé <b>{formatNumber(r.coins)} 🪙</b>
+        {r.counted < r.seconds && <em> (ils se sont arrêtés au bout de {duration(r.counted)} : améliore « Longue nuit » dans l'arbre)</em>}
+      </span>
     </div>
   );
 }

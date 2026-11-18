@@ -4,7 +4,7 @@ import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
 import { drawStain, drawWeb } from './canvasTextures';
 import type { RoomSim } from '../sim/roomSim';
 import { PAL } from './palette';
-import { fabric, mat } from './materials';
+import { fabric, mat, plastic as plasticLike } from './materials';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
@@ -16,6 +16,7 @@ import { buildBroom, buildDustpan, buildProp } from './props';
 import { buildDoor, buildRoomShell, buildStair, type DoorView } from './castle';
 import { Floaters } from './floaters';
 import { mergeStatic } from './merge';
+import type { Helper, HelperKind } from '../sim/helpers';
 import { QUALITY_PRESETS, type QualityLevel } from './quality';
 
 export interface ViewState {
@@ -53,6 +54,8 @@ interface RoomView {
   flames: THREE.Object3D[];
   motes?: { points: THREE.Points; seeds: Float32Array };
   visible: boolean;
+  /** Modèles 3D des assistants présents. */
+  helperViews: Map<Helper, THREE.Object3D>;
 }
 
 const DUST_COLORS = [0x9e95a6, 0xaea197, 0x938c9f, 0xb7adb9, 0xa69ca8];
@@ -299,7 +302,7 @@ export class World3D {
     group.updateMatrixWorld(true);
     // Torches : coordonnées locales → monde.
     const torches = shell.torches.map((t) => t.clone().add(new THREE.Vector3(def.origin.x, def.floorY, def.origin.z)));
-    return { def, sim, group, dust, meshes, pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
+    return { def, sim, group, dust, meshes, helperViews: new Map(), pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
   }
 
   /** Empreinte de la brosse au sol : un rectangle arrondi qui suit exactement la zone qui pousse. */
@@ -482,11 +485,11 @@ export class World3D {
 
   // ───────────────────────────── Événements ─────────────────────────────
 
-  onCollect(roomIndex: number, collector: number, coins: number, isStar: boolean, at?: { x: number; y: number }): void {
+  onCollect(roomIndex: number, collector: number, coins: number, isStar: boolean, at?: { x: number; y: number; byHelper?: boolean }): void {
     const view = this.views[roomIndex];
     if (collector < 0) {
       // Ramassé directement (outil, aspirateur) : le « +N » sort de la saleté elle-même.
-      if (at && coins >= 5) this.floaters.spawn(view.def.origin.x + at.x, view.def.floorY + 40, view.def.origin.z + at.y, coins);
+      if (at && !at.byHelper && coins >= 5) this.floaters.spawn(view.def.origin.x + at.x, view.def.floorY + 40, view.def.origin.z + at.y, coins);
       return;
     }
     const pan = view.pans[collector];
@@ -529,6 +532,7 @@ export class World3D {
     for (const v of this.views) {
       if (!v.visible) continue;
       this.updateParticles(v);
+      this.updateHelpers(v);
       this.updatePans(v, dt);
       if (v.motes && this.ambienceOn) this.updateMotes(v.motes);
     }
@@ -613,6 +617,88 @@ export class World3D {
       }
       mesh.instanceMatrix.needsUpdate = true;
     }
+  }
+
+  /** Les assistants suivent leur position dans la simulation. */
+  private updateHelpers(v: RoomView): void {
+    const alive = new Set(v.sim.helpers);
+    for (const [h, obj] of v.helperViews) {
+      if (!alive.has(h)) {
+        v.group.remove(obj);
+        v.helperViews.delete(h);
+      }
+    }
+    for (const h of v.sim.helpers) {
+      let obj = v.helperViews.get(h);
+      if (!obj) {
+        obj = this.buildHelper(h.kind);
+        v.helperViews.set(h, obj);
+        v.group.add(obj);
+      }
+      const bob = Math.sin(h.phase * (h.kind === 'plumette' ? 3 : 9));
+      const y = h.kind === 'plumette' ? 80 + bob * 12 : h.kind === 'moutonnet' ? Math.abs(bob) * 6 : 0;
+      obj.position.set(h.x, y, h.y);
+      obj.rotation.y = h.yaw;
+      if (h.kind === 'biscotte') obj.visible = true;
+    }
+  }
+
+  private helperCache = new Map<HelperKind, THREE.Object3D>();
+  private buildHelper(kind: HelperKind): THREE.Object3D {
+    const cached = this.helperCache.get(kind);
+    if (cached) return cached.clone();
+    const g = new THREE.Group();
+    if (kind === 'moutonnet') {
+      // Un mouton de poussière doré, apprivoisé, avec un petit nœud rouge.
+      const body = new THREE.Mesh(this.bunnyGeo, fabric(0xffffff, { vertexColors: true, color: 0xffe6a8 }));
+      body.scale.setScalar(24);
+      body.position.y = 22;
+      body.rotation.y = Math.PI;
+      body.castShadow = true;
+      const bow = new THREE.Mesh(new THREE.TorusGeometry(6, 2.5, 6, 12), mat(0xd8323a));
+      bow.position.set(0, 44, 6);
+      g.add(body, bow);
+    } else if (kind === 'plumette') {
+      const colors = [0xff8a6e, 0xffc93c, 0x5ec8f2, 0xc38bff];
+      for (let k = 0; k < 10; k++) {
+        const a = (k / 10) * Math.PI * 2;
+        const f = new THREE.Mesh(new THREE.ConeGeometry(4, 26, 6), fabric(colors[k % colors.length]));
+        f.position.set(Math.cos(a) * 7, 0, Math.sin(a) * 7);
+        f.rotation.set(Math.sin(a) * 0.9, 0, -Math.cos(a) * 0.9);
+        g.add(f);
+      }
+      const eyeL = new THREE.Mesh(new THREE.SphereGeometry(3, 8, 6), new THREE.MeshBasicMaterial({ color: 0x2b1a2e }));
+      const eyeR = eyeL.clone();
+      eyeL.position.set(-4, 4, -9);
+      eyeR.position.set(4, 4, -9);
+      g.add(eyeL, eyeR);
+    } else if (kind === 'roulio') {
+      const shell = new THREE.Mesh(new THREE.CylinderGeometry(24, 26, 12, 24), plasticLike(0xe8e4dc));
+      shell.position.y = 8;
+      shell.castShadow = true;
+      const top = new THREE.Mesh(new THREE.SphereGeometry(10, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), plasticLike(0x5ec8f2));
+      top.position.y = 14;
+      const led = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x7bff7b).multiplyScalar(2) }));
+      led.position.set(0, 12, -24);
+      g.add(shell, top, led);
+    } else {
+      // Biscotte : un chat roux un peu transparent (un petit fantôme).
+      const fur = new THREE.MeshStandardMaterial({ color: 0xe8904a, roughness: 0.9, transparent: true, opacity: 0.85 });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(12, 34, 4, 10).rotateX(Math.PI / 2), fur);
+      body.position.y = 20;
+      const head = new THREE.Mesh(new THREE.SphereGeometry(12, 12, 10), fur);
+      head.position.set(0, 30, -26);
+      for (const sx of [-1, 1]) {
+        const ear = new THREE.Mesh(new THREE.ConeGeometry(4, 9, 6), fur);
+        ear.position.set(sx * 6, 42, -27);
+        g.add(ear);
+      }
+      const tail = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 3.5, 34, 6).rotateX(-0.9), fur);
+      tail.position.set(0, 32, 26);
+      g.add(body, head, tail);
+    }
+    this.helperCache.set(kind, g);
+    return g.clone();
   }
 
   private updatePans(v: RoomView, dt: number): void {

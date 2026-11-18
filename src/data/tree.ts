@@ -28,7 +28,8 @@ export type StatKey =
   | 'value' | 'bunnyValue' | 'starChance' | 'starValue' | 'scoop' | 'places'
   | 'respawn' | 'roomValue' | 'echo'
   | 'walk' | 'sprint' | 'march'
-  | 'duster' | 'sponge' | 'blower' | 'vacuumCap';
+  | 'duster' | 'sponge' | 'blower' | 'vacuumCap'
+  | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
@@ -287,8 +288,34 @@ const JUNCTIONS: TreeNode[] = [
 // ───────────────────────────── 🐑 Assistants (plus tard) ─────────────────────────────
 
 const HELPERS: TreeNode[] = [
-  { id: 'helpers-root', name: '???', icon: '🐑', branch: 'helpers', kind: 'big', parents: [], maxLevel: 1, base: 1, growth: 1, depth: 1.5, requires: { soon: true }, stats: [],
-    flavor: 'On entend des petits bêlements derrière les murs…', effect: () => 'Bientôt : les assistants' },
+  { id: 'helper-moutonnet', name: 'Moutonnet', icon: '🐑', branch: 'helpers', kind: 'small', parents: [], maxLevel: 5, base: 4000, growth: 3.2, depth: 1.6, requires: { room: 'gallery' },
+    stats: [{ key: 'moutonnet', per: 1, mode: 'add' }],
+    flavor: 'Un mouton de poussière qui a changé de camp. Il pousse la poussière vers les pelles, dans toutes les pièces ouvertes.',
+    effect: (l) => `${l} Moutonnet${l > 1 ? 's' : ''} par pièce` },
+  ...chain({
+    prefix: 'helper-speed', name: 'Assistants zélés', icon: '⚡', branch: 'helpers', root: 'helper-moutonnet', tiers: 3, levels: 5,
+    base: 30000, tierMult: 60, growth: 2, per: () => 0.1, key: 'helperSpeed', mode: 'add', depth0: 2.6, side: 0,
+    flavors: ['Un peu de musique, et tout le monde travaille plus vite.', 'Une petite prime en poussière d’étoile.', 'Ils ne s’arrêtent même plus pour bêler.'],
+    effect: (per, l) => `Assistants +${pct(per)} plus rapides par niveau (+${pct(per * l)})`,
+  }),
+  { id: 'helper-plumette', name: 'Plumette', icon: '🪶', branch: 'helpers', kind: 'small', parents: ['helper-moutonnet'], maxLevel: 3, base: 60000, growth: 4, depth: 2.6, side: 1.2, requires: { room: 'library' },
+    stats: [{ key: 'plumette', per: 1, mode: 'add' }],
+    flavor: 'Un petit plumeau volant qui adore les toiles d’araignée.', effect: (l) => `${l} Plumette${l > 1 ? 's' : ''} par pièce (toiles d’araignée)` },
+  { id: 'helper-roulio', name: 'Roulio', icon: '🤖', branch: 'helpers', kind: 'small', parents: ['helper-moutonnet'], maxLevel: 3, base: 3e7, growth: 5, depth: 2.6, side: -1.2, requires: { room: 'hall' },
+    stats: [{ key: 'roulio', per: 1, mode: 'add' }],
+    flavor: 'Un petit robot aspirateur trouvé dans un placard. Il ne s’arrête jamais.', effect: (l) => `${l} Roulio${l > 1 ? 's' : ''} par pièce` },
+  { id: 'helper-biscotte', name: 'Biscotte', icon: '🐈', branch: 'helpers', kind: 'big', parents: ['helper-roulio'], maxLevel: 1, base: 2e9, growth: 1, depth: 3.7, side: -1.6, requires: { room: 'courtyard' },
+    stats: [{ key: 'biscotte', per: 1, mode: 'add' }],
+    flavor: 'Le chat d’Élise, devenu un peu fantôme. De temps en temps, il traverse la pièce en courant.', effect: () => 'Biscotte traverse les pièces en balayant tout sur son passage' },
+  ...chain({
+    prefix: 'helper-dream', name: 'Rêve de Plume', icon: '💤', branch: 'helpers', root: 'helper-moutonnet', tiers: 2, levels: 3,
+    base: 80000, tierMult: 200, growth: 2.5, per: () => 0.1, key: 'offlineEff', mode: 'add', depth0: 3, side: 1.7,
+    flavors: ['Même quand tu dors, le château travaille.', 'Les assistants n’ont plus besoin de toi.'],
+    effect: (per, l) => `Gains pendant ton absence +${pct(per)} par niveau (+${pct(per * l)})`,
+  }),
+  { id: 'helper-night', name: 'Longue nuit', icon: '🌙', branch: 'helpers', kind: 'big', parents: ['helper-dream-2'], maxLevel: 1, base: 5e9, growth: 1, depth: 5, side: 1.9,
+    stats: [{ key: 'offlineHours', per: 16, mode: 'add' }],
+    flavor: 'Une nuit qui dure… très longtemps.', effect: () => 'Gains pendant l’absence jusqu’à 24 h (au lieu de 8 h)' },
 ];
 
 // ───────────────────────────── 🏰 Château ─────────────────────────────

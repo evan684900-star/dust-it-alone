@@ -606,3 +606,6 @@ kbd {
 .vac-bar div { height: 100%; background: var(--sky); transition: width 0.2s; }
 .vacuum-gauge.full { background: #fbe0d8; animation: shake 0.4s 3; }
 .vacuum-gauge small { font-size: 12px; }
+.offline-report { margin-top: 14px; padding: 10px 14px; border: 3px solid var(--ink); border-radius: 14px; background: #e4f0ff; display: flex; flex-direction: column; gap: 4px; font-weight: 800; animation: toast-in 0.5s cubic-bezier(0.2, 1.8, 0.4, 1) both; }
+.offline-report strong { font: 20px var(--font-display); font-weight: normal; }
+.offline-report em { font-size: 12px; opacity: 0.8; }

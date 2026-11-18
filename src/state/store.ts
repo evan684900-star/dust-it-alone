@@ -113,3 +113,6 @@ export const unlockedTools = signal<boolean[]>([true, false, false, false, false
 export const toolHint = signal('');
 /** Réservoir de l'aspirateur (affiché quand on l'a en main). */
 export const vacuum = signal<{ load: number; cap: number } | null>(null);
+
+/** Gains pendant l'absence (fenêtre « Pendant ton absence… »). */
+export const offlineReport = signal<{ seconds: number; counted: number; coins: number } | null>(null);

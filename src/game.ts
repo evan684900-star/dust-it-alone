@@ -60,6 +60,7 @@ export class Game {
     this.player = new Player(this.nav, valid && p ? { ...p } : { x: START.x, z: START.z, y: ROOMS[0].floorY, yaw: START.yaw });
     this.mods = computeModifiers(this.save.tree, 0);
     this.applyTree();
+    this.offlineGains();
 
     store.coins.value = this.save.coins;
     store.totalCoins.value = this.save.totalCoins;
@@ -121,6 +122,30 @@ export class Game {
     });
   }
 
+  /**
+   * Pendant ton absence, les assistants ont continué (à vitesse réduite) :
+   * dans chaque pièce ouverte, ils ramassent au plus ce qui retombe.
+   */
+  private offlineGains(): void {
+    const away = (Date.now() - this.save.savedAt) / 1000;
+    if (away < 60) return;
+    const { eff, hours } = this.mods.offline;
+    const t = Math.min(away, hours * 3600);
+    let coins = 0;
+    for (const r of this.rooms) {
+      if (!this.isUnlocked(r.def.id)) continue;
+      const rate = r.sim.helperRate();
+      if (rate <= 0) continue;
+      const respawn = Object.values(r.def.respawn).reduce((a, b) => a + (b ?? 0), 0) * r.sim.mods.respawnMult;
+      const grains = Math.min(rate, respawn) * t * eff;
+      coins += grains * r.sim.baseValue('dust') * r.sim.mods.valueMultiplier * 1.3;
+    }
+    if (coins < 1) return;
+    store.coins.value += coins;
+    store.totalCoins.value += coins;
+    store.offlineReport.value = { seconds: away, counted: t, coins };
+  }
+
   // ───────────────────────────── Arbre des Souvenirs ─────────────────────────────
 
   private cleanedCount(): number {
@@ -133,6 +158,7 @@ export class Game {
     this.rooms.forEach((r, i) => {
       const m = this.mods.room(r.def.id, r.def.valueMult);
       r.sim.applyModifiers(m);
+      r.sim.setHelpers(this.mods.helpers);
       this.world?.setPanScale(i, m.panScale);
     });
     const pm = this.mods.player;
@@ -527,6 +553,9 @@ export class Game {
       this.input.pushBonus = this.player.movingForward ? this.mods.player.marchBonus : 0;
       this.input.tool = TOOLS[store.selectedTool.value].id;
       r.sim.step(stepDt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
+      // Les assistants : « en vrai » près du joueur, « en résumé » ailleurs.
+      if (near) r.sim.stepHelpers(stepDt);
+      else r.sim.abstractHelpers(stepDt);
       const events = r.sim.drainEvents();
       if (events.length === 0) continue;
       let gained = 0;

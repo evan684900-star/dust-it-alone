@@ -1,5 +1,6 @@
 import { TREE_NODES, type StatKey } from '../data/tree';
 import type { TreeLevels } from './tree';
+import type { HelperTeam } from '../sim/helpers';
 
 /** Effets de l'arbre sur une pièce (appliqués à sa simulation). */
 export interface RoomModifiers {
@@ -40,6 +41,10 @@ export interface PlayerModifiers {
 export interface Modifiers {
   room: (roomId: string, roomValue: number) => RoomModifiers;
   player: PlayerModifiers;
+  /** L'équipe d'assistants (la même dans chaque pièce ouverte). */
+  helpers: HelperTeam;
+  /** Gains hors-ligne : efficacité (0,5 = moitié) et durée max (heures). */
+  offline: { eff: number; hours: number };
   /** Multiplicateur du bonus « pièce impeccable » pour une pièce. */
   cleanBonusMult: (roomId: string) => number;
 }
@@ -94,6 +99,14 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number): Modi
 
   return {
     room,
+    helpers: {
+      moutonnet: A('moutonnet'),
+      plumette: A('plumette'),
+      roulio: A('roulio'),
+      biscotte: A('biscotte'),
+      speed: 1 + A('helperSpeed'),
+    },
+    offline: { eff: 0.5 + A('offlineEff'), hours: 8 + A('offlineHours') },
     player: {
       walkMult: 1 + A('walk'),
       sprintMult: 1 + A('sprint'),

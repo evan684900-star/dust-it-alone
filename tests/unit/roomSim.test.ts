@@ -165,3 +165,34 @@ describe('outils', () => {
     expect(sim.pool.x[i]).toBeGreaterThan(1000);
   });
 });
+
+describe('assistants', () => {
+  const team = { moutonnet: 2, plumette: 1, roulio: 1, biscotte: 1, speed: 1 };
+  it("l'équipe s'installe dans la pièce", () => {
+    const sim = new RoomSim(ROOMS[0], 31);
+    sim.setHelpers(team);
+    expect(sim.helpers.map((h) => h.kind).sort()).toEqual(['biscotte', 'moutonnet', 'moutonnet', 'plumette', 'roulio']);
+    sim.setHelpers({ ...team, moutonnet: 1 });
+    expect(sim.helpers.filter((h) => h.kind === 'moutonnet')).toHaveLength(1);
+  });
+  it('en vrai, ils ramassent de la poussière tout seuls', () => {
+    const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 32);
+    sim.fill(1);
+    sim.setHelpers(team);
+    let coins = 0;
+    for (let t = 0; t < 60 * 30; t++) {
+      sim.step(1 / 60, { active: false, x: 0, y: 0, pressed: false });
+      sim.stepHelpers(1 / 60);
+      coins += sim.drainEvents().reduce((s, e) => s + e.coins, 0);
+    }
+    expect(coins).toBeGreaterThan(20);
+  });
+  it('en résumé (pièce lointaine), ils ramassent à leur rythme moyen', () => {
+    const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 33);
+    sim.fill(1);
+    sim.setHelpers({ moutonnet: 1, plumette: 0, roulio: 0, biscotte: 0, speed: 1 });
+    sim.abstractHelpers(10);
+    const n = sim.drainEvents().length;
+    expect(n).toBe(30); // 3 grains/s × 10 s
+  });
+});

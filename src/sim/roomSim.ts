@@ -3,6 +3,7 @@ import type { Rect, RoomDef } from '../data/rooms';
 import { createRng, type Rng } from '../core/rng';
 import { ParticlePool } from './particles';
 import type { RoomModifiers } from '../economy/modifiers';
+import { HELPER_RATE, Helper, NO_HELPERS, type HelperKind, type HelperTeam } from './helpers';
 
 export interface BroomInput {
   /** Le curseur est dans la zone de jeu. */
@@ -25,6 +26,8 @@ export interface BroomInput {
 export interface CollectEvent {
   /** Pelle qui a ramassé (−1 = ramassé directement : outil, aspirateur). */
   collector: number;
+  /** Ramassé par un assistant (pas de « +N » à l'écran, pour ne pas surcharger). */
+  byHelper?: boolean;
   type: DirtId;
   coins: number;
   x: number;
@@ -32,6 +35,17 @@ export interface CollectEvent {
 }
 
 /** La brosse est un rectangle posé au sol (pas un cercle) : largeur × épaisseur. */
+/** Mémoire d'un balai entre deux pas (position précédente, vitesses lissées). */
+export interface BroomState {
+  prev: { x: number; y: number; yaw: number; has: boolean };
+  vel: { x: number; y: number };
+  spin: number;
+  pushed: number;
+}
+export function newBroomState(): BroomState {
+  return { prev: { x: 0, y: 0, yaw: 0, has: false }, vel: { x: 0, y: 0 }, spin: 0, pushed: 0 };
+}
+
 export interface BroomStats {
   /** Largeur de la brosse (cm), le long des poils. */
   width: number;
@@ -83,13 +97,19 @@ export class RoomSim {
   private touched: Float32Array;
   private magnetCursor = 0;
 
+  /** État du balai du joueur (les assistants ont chacun le leur). */
+  readonly player: BroomState = newBroomState();
   /** Infos sur le balai pour le rendu et le son. */
-  broomVel = { x: 0, y: 0 };
-  broomPushed = 0;
+  get broomVel(): { x: number; y: number } {
+    return this.player.vel;
+  }
+  get broomSpin(): number {
+    return this.player.spin;
+  }
+  get broomPushed(): number {
+    return this.player.pushed;
+  }
 
-  private prev = { x: 0, y: 0, yaw: 0, has: false };
-  /** Vitesse de rotation de la brosse (rad/s), lissée. */
-  broomSpin = 0;
   /** Numéro de passage : chaque particule n'est poussée qu'une fois par pas de simulation. */
   private stamp: Uint32Array;
   private stampId = 0;
@@ -207,27 +227,27 @@ export class RoomSim {
    * - de côté, elle glisse et n'entraîne presque rien ;
    * - en tournant la tête, le bout de la brosse va plus vite que le centre.
    */
-  private applyBroom(dt: number, input: BroomInput): void {
-    this.broomPushed = 0;
+  applyBroom(dt: number, input: BroomInput, st: BroomState = this.player, width: number = this.broom.width, depth: number = this.broom.depth, grip: number = this.broom.grip): void {
+    st.pushed = 0;
     if (!input.active) {
-      this.prev.has = false;
-      this.broomVel.x *= 0.8;
-      this.broomVel.y *= 0.8;
-      this.broomSpin *= 0.8;
+      st.prev.has = false;
+      st.vel.x *= 0.8;
+      st.vel.y *= 0.8;
+      st.spin *= 0.8;
       return;
     }
     const yaw1 = input.yaw ?? 0;
-    const x0 = this.prev.has ? this.prev.x : input.x;
-    const y0 = this.prev.has ? this.prev.y : input.y;
-    const yaw0 = this.prev.has ? this.prev.yaw : yaw1;
+    const x0 = st.prev.has ? st.prev.x : input.x;
+    const y0 = st.prev.has ? st.prev.y : input.y;
+    const yaw0 = st.prev.has ? st.prev.yaw : yaw1;
     const x1 = input.x;
     const y1 = input.y;
     let dYaw = yaw1 - yaw0;
     dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw));
-    this.prev.x = x1;
-    this.prev.y = y1;
-    this.prev.yaw = yaw1;
-    this.prev.has = true;
+    st.prev.x = x1;
+    st.prev.y = y1;
+    st.prev.yaw = yaw1;
+    st.prev.has = true;
 
     // Vitesses lissées (évite les à-coups de la souris).
     let mvx = (x1 - x0) / dt;
@@ -237,19 +257,19 @@ export class RoomSim {
       mvx *= MAX_BROOM_SPEED / ms;
       mvy *= MAX_BROOM_SPEED / ms;
     }
-    this.broomVel.x += (mvx - this.broomVel.x) * 0.55;
-    this.broomVel.y += (mvy - this.broomVel.y) * 0.55;
+    st.vel.x += (mvx - st.vel.x) * 0.55;
+    st.vel.y += (mvy - st.vel.y) * 0.55;
     const spin = Math.max(-30, Math.min(30, dYaw / dt));
-    this.broomSpin += (spin - this.broomSpin) * 0.55;
-    const bvx = this.broomVel.x;
-    const bvy = this.broomVel.y;
-    const w = this.broomSpin;
+    st.spin += (spin - st.spin) * 0.55;
+    const bvx = st.vel.x;
+    const bvy = st.vel.y;
+    const w = st.spin;
 
     // Brosse levée (pas de clic) : on suit le mouvement, mais on ne touche à rien.
     if (!input.pressed) return;
     const power = this.mods.pushPower * (1 + (input.pushBonus ?? 0));
-    const hw = this.broom.width / 2;
-    const hd = this.broom.depth / 2;
+    const hw = width / 2;
+    const hd = depth / 2;
     // Nombre d'étapes pour couvrir tout le chemin parcouru (sinon un geste rapide « saute » la poussière).
     const travel = Math.hypot(x1 - x0, y1 - y0) + Math.abs(dYaw) * hw;
     const steps = Math.max(1, Math.min(10, Math.ceil(travel / (hd * 1.4))));
@@ -297,7 +317,7 @@ export class RoomSim {
           // De face : poussée franche. De côté : les poils glissent (un peu d'entraînement seulement).
           const tgtX = nx * vn * 1.05 + tx * vt * 0.3 + rng.range(-30, 30);
           const tgtY = ny * vn * 1.05 + ty * vt * 0.3 + rng.range(-30, 30);
-          const k = Math.min(1, (this.broom.grip * power) / def.mass);
+          const k = Math.min(1, (grip * power) / def.mass);
           vx[i] += (tgtX - vx[i]) * k;
           vy[i] += (tgtY - vy[i]) * k;
           // Le grain ne reste pas « dans » la brosse : il est repoussé contre sa face avant (ou arrière).
@@ -318,7 +338,186 @@ export class RoomSim {
         }
       }
     }
-    this.broomPushed = pushed;
+    st.pushed = pushed;
+  }
+
+  // ───────────────────────────── Assistants ─────────────────────────────
+
+  /** Assistants présents dans la pièce. */
+  helpers: Helper[] = [];
+  private team: HelperTeam = NO_HELPERS;
+  private helperAcc = 0;
+  private webAcc = 0;
+
+  /** Met l'équipe à jour (on garde ceux qui sont déjà là, on ajoute ou retire les autres). */
+  setHelpers(team: HelperTeam): void {
+    this.team = team;
+    const want: [HelperKind, number][] = [['moutonnet', team.moutonnet], ['plumette', team.plumette], ['roulio', team.roulio], ['biscotte', team.biscotte]];
+    const next: Helper[] = [];
+    for (const [kind, n] of want) {
+      const have = this.helpers.filter((h) => h.kind === kind);
+      for (let k = 0; k < n; k++) next.push(have[k] ?? new Helper(kind, this.room.width * (0.3 + 0.4 * this.rng.next()), this.room.height * (0.3 + 0.4 * this.rng.next())));
+    }
+    this.helpers = next;
+  }
+
+  /** Point de départ d'un grain libre au hasard (pour qu'un assistant aille le chercher). */
+  private randomDirt(fixedOnly?: DirtId): { x: number; y: number } | null {
+    const { x, y, alive, type } = this.pool;
+    const range = fixedOnly ? this.pool.ranges[fixedOnly] : { start: 0, count: this.pool.cap };
+    if (range.count === 0) return null;
+    for (let k = 0; k < 24; k++) {
+      const i = range.start + Math.floor(this.rng.next() * range.count);
+      if (!alive[i]) continue;
+      const def = DIRT_TYPES[DIRT_ORDER[type[i]]];
+      if (!fixedOnly && def.fixed) continue;
+      return { x: x[i], y: y[i] };
+    }
+    return null;
+  }
+
+  private nearestPan(px: number, py: number): { x: number; y: number } {
+    let best = this.room.collectors[0]?.mouth ?? { x: px, y: py };
+    let bd = Infinity;
+    for (const c of this.room.collectors) {
+      const d = Math.hypot(c.mouth.x - px, c.mouth.y - py);
+      if (d < bd) { bd = d; best = c.mouth; }
+    }
+    return best;
+  }
+
+  /** Assistants « en vrai » (pièce proche du joueur) : ils bougent et poussent vraiment la poussière. */
+  stepHelpers(dt: number): void {
+    const sp = this.team.speed;
+    const W = this.room.width;
+    const H = this.room.height;
+    for (const h of this.helpers) {
+      h.phase += dt;
+      switch (h.kind) {
+        case 'moutonnet': {
+          if (h.state === 'seek') {
+            if (h.timer <= 0) {
+              const t = this.randomDirt();
+              if (t) { h.tx = t.x; h.ty = t.y; }
+              h.timer = 6;
+            }
+            h.timer -= dt;
+            if (h.moveToward(150 * sp, dt) < 30) {
+              const p = this.nearestPan(h.x, h.y);
+              h.tx = p.x; h.ty = p.y;
+              h.state = 'push';
+            }
+          } else {
+            // Il pousse la poussière devant lui jusqu'à la pelle.
+            const left = h.moveToward(130 * sp, dt);
+            const fx = -Math.sin(h.yaw);
+            const fy = -Math.cos(h.yaw);
+            this.applyBroom(dt, { active: true, pressed: true, x: h.x + fx * 26, y: h.y + fy * 26, yaw: h.yaw }, h.broom, 56, 22, 0.8);
+            if (left < 110) { h.state = 'seek'; h.timer = 0; h.broom.prev.has = false; }
+          }
+          break;
+        }
+        case 'plumette': {
+          if (h.timer <= 0) {
+            const t = this.randomDirt('web') ?? { x: W * this.rng.next(), y: H * this.rng.next() };
+            h.tx = t.x; h.ty = t.y;
+            h.timer = 8;
+          }
+          h.timer -= dt;
+          if (h.moveToward(170 * sp, dt) < 40) this.dustWebsAround(h.x, h.y, dt * 0.7 * sp);
+          break;
+        }
+        case 'roulio': {
+          if (h.timer <= 0 || Math.hypot(h.tx - h.x, h.ty - h.y) < 20) {
+            const t = this.randomDirt() ?? { x: W * this.rng.next(), y: H * this.rng.next() };
+            h.tx = t.x; h.ty = t.y;
+            h.timer = 7;
+          }
+          h.timer -= dt;
+          h.moveToward(120 * sp, dt);
+          this.vacuumAround(h.x, h.y, 42, dt);
+          break;
+        }
+        case 'biscotte': {
+          h.timer -= dt;
+          if (h.state !== 'dash') {
+            if (h.timer <= 0) {
+              // Le chat se réveille et traverse la pièce en courant : grand coup de balai gratuit !
+              h.state = 'dash';
+              const p = this.nearestPan(W - h.x, H - h.y);
+              h.tx = p.x; h.ty = p.y;
+              h.broom.prev.has = false;
+            }
+          } else {
+            const left = h.moveToward(700 * sp, dt);
+            const fx = -Math.sin(h.yaw);
+            const fy = -Math.cos(h.yaw);
+            this.applyBroom(dt, { active: true, pressed: true, x: h.x + fx * 40, y: h.y + fy * 40, yaw: h.yaw }, h.broom, 150, 30, 1);
+            if (left < 140) { h.state = 'rest'; h.timer = 25 + this.rng.next() * 25; }
+          }
+          break;
+        }
+      }
+      h.x = Math.max(20, Math.min(W - 20, h.x));
+      h.y = Math.max(20, Math.min(H - 20, h.y));
+    }
+  }
+
+  private dustWebsAround(px: number, py: number, damage: number): void {
+    const r = this.pool.ranges.web;
+    for (let i = r.start; i < r.start + r.count; i++) {
+      if (!this.pool.alive[i]) continue;
+      if (Math.hypot(this.pool.x[i] - px, this.pool.y[i] - py) > 60) continue;
+      this.pool.hp[i] -= damage;
+      if (this.pool.hp[i] <= 0) this.collectDirect(i, 'web', true);
+    }
+  }
+
+  private vacuumAround(px: number, py: number, R: number, dt: number): void {
+    const { x, y, alive, type } = this.pool;
+    let budget = Math.max(1, Math.round(12 * dt * 60 * this.team.speed));
+    for (let i = 0; i < this.pool.cap && budget > 0; i++) {
+      if (!alive[i]) continue;
+      const dx = x[i] - px;
+      const dy = y[i] - py;
+      if (dx > R || dx < -R || dy > R || dy < -R || dx * dx + dy * dy > R * R) continue;
+      const id = DIRT_ORDER[type[i]];
+      if (DIRT_TYPES[id].fixed) continue;
+      this.collectDirect(i, id, true);
+      budget--;
+    }
+  }
+
+  /**
+   * Assistants « en résumé » (pièce lointaine) : pas de déplacement, ils ramassent
+   * simplement à leur rythme moyen. Beaucoup plus léger à calculer.
+   */
+  abstractHelpers(dt: number): void {
+    const t = this.team;
+    const rate = (t.moutonnet * HELPER_RATE.moutonnet + t.roulio * HELPER_RATE.roulio + t.biscotte * HELPER_RATE.biscotte) * t.speed;
+    this.helperAcc += rate * dt;
+    this.webAcc += t.plumette * HELPER_RATE.plumette * t.speed * dt;
+    const { alive, type } = this.pool;
+    let guard = 200;
+    while (this.helperAcc >= 1 && guard-- > 0) {
+      const i = Math.floor(this.rng.next() * this.pool.cap);
+      if (!alive[i]) { if (this.pool.weightedDirt() === 0) { this.helperAcc = 0; break; } continue; }
+      const id = DIRT_ORDER[type[i]];
+      if (DIRT_TYPES[id].fixed) continue;
+      this.collectDirect(i, id, true);
+      this.helperAcc -= 1;
+    }
+    while (this.webAcc >= 1) {
+      this.webAcc -= 1;
+      const r = this.pool.ranges.web;
+      for (let i = r.start; i < r.start + r.count; i++) if (alive[i]) { this.collectDirect(i, 'web', true); break; }
+    }
+  }
+
+  /** Grains par seconde que l'équipe ramasse dans une pièce (pour le hors-ligne). */
+  helperRate(): number {
+    const t = this.team;
+    return (t.moutonnet * HELPER_RATE.moutonnet + t.roulio * HELPER_RATE.roulio + t.biscotte * HELPER_RATE.biscotte) * t.speed;
   }
 
   // ───────────────────────────── Autres outils ─────────────────────────────
@@ -328,9 +527,9 @@ export class RoomSim {
 
   /** Suit le déplacement de l'outil (l'éponge a besoin de savoir combien on frotte). */
   private trackTool(_dt: number, input: BroomInput): void {
-    this.broomVel.x *= 0.8;
-    this.broomVel.y *= 0.8;
-    this.prev.has = false;
+    this.player.vel.x *= 0.8;
+    this.player.vel.y *= 0.8;
+    this.player.prev.has = false;
     if (!input.active) {
       this.toolPrev.has = false;
       this.toolMove = 0;
@@ -350,12 +549,12 @@ export class RoomSim {
   }
 
   /** Retire directement un grain (outil, aspirateur) : il rapporte sur place, sans pelle. */
-  private collectDirect(i: number, id: DirtId): void {
+  private collectDirect(i: number, id: DirtId, byHelper = false): void {
     const coins = this.baseValue(id) * this.mods.valueMultiplier;
     const px = this.pool.x[i];
     const py = this.pool.y[i];
     this.pool.kill(i);
-    this.events.push({ collector: -1, type: id, coins, x: px, y: py });
+    this.events.push({ collector: -1, type: id, coins, x: px, y: py, byHelper });
   }
 
   private applyTool(tool: ToolId, dt: number, input: BroomInput): void {
