@@ -18,7 +18,7 @@
 5. [Mécaniques détaillées](#5-mécaniques-détaillées)
 6. [La carte : un grand château](#6-la-carte--un-grand-château)
 7. [Économie et équilibrage](#7-économie-et-équilibrage)
-8. [La boutique : l'Atelier de Plume](#8-la-boutique--latelier-de-plume)
+8. [La boutique : l'Arbre des Souvenirs](#8-la-boutique--larbre-des-souvenirs-arbre-de-compétences)
 9. [Prestige : le Grand Ménage](#9-prestige--le-grand-ménage)
 10. [Histoire et souvenirs](#10-histoire-et-souvenirs)
 11. [Contrôles](#11-contrôles)
@@ -247,141 +247,175 @@ Un **simulateur** (script Node, `tools/simulate.ts`) qui joue une partie « bot 
 
 ---
 
-## 8. La boutique : l'Atelier de Plume
+## 8. La boutique : l'Arbre des Souvenirs (arbre de compétences)
 
-> Statut : **plan validable**, pas encore codé. Les chiffres sont des points de départ, à ajuster avec le simulateur (§7.4).
-> La monnaie s'appelle encore « pièces » 🪙 (elle deviendra peut-être « éclats de mémoire » ✨, cf. histoire). Le plan marche pareil dans les deux cas.
+> Statut : **plan à valider**, pas encore codé. Les chiffres sont des points de départ, à ajuster avec le simulateur (§7.4).
+> La monnaie s'appelle encore « pièces » 🪙 (peut-être bientôt « éclats de mémoire » ✨). Le plan marche pareil dans les deux cas.
 
 ### 8.1 Le principe
-- **Cohérent avec l'histoire** : la boutique n'a pas de marchand. C'est **l'Atelier de Plume** : il utilise la mémoire récupérée (les pièces) pour **enchanter ses outils** et le château.
-- **Deux façons d'y accéder** :
-  1. la touche **`B`**, n'importe où dans le château (pratique) ;
-  2. **l'Établi de Plume**, un vrai meuble en 3D contre le mur sud des Combles (`E` pour l'utiliser). C'est là qu'il « fabrique » ses améliorations : un établi, des outils accrochés et un bocal de poussière d'étoile qui brille.
-- **Le jeu continue pendant les achats** : la poussière retombe et les assistants travaillent. La souris est libérée et le son est légèrement étouffé, comme pour la carte.
-- **Les portes ne sont pas dans la boutique** : elles s'ouvrent toujours sur place avec `E`. La boutique sert à devenir plus fort, et les portes à avancer dans le château.
+- **Pas de magasin classique, mais un arbre de compétences** : *l'Arbre des Souvenirs*.
+- **Cohérent avec l'histoire** : chaque souvenir rendu au château fait **pousser l'arbre de Plume**. Chaque nœud est un savoir-faire oublié des anciens serviteurs du château (« l'art de balayer large », « le secret des pelles aimantées »…) que Plume retrouve en payant avec la mémoire récoltée.
+- **Ouverture** avec **`B`** n'importe où (le bouton 🛒 du HUD devient 🌳 *Arbre*). On peut aussi utiliser **l'Établi de Plume**, un meuble en 3D dans les Combles avec un petit arbre sculpté qui s'illumine, et la touche `E`.
+- **Le jeu continue pendant ce temps** : la poussière retombe et les assistants travaillent. La souris est libérée et le son légèrement étouffé, comme pour la carte.
+- **Les portes ne sont pas dans l'arbre** : elles s'ouvrent toujours sur place avec `E`. En revanche, **ouvrir une pièce fait pousser une nouvelle branche** (voir 🏰 Château) : **l'arbre grandit avec le château**.
 
-### 8.2 L'écran
+### 8.2 La forme de l'arbre
 ```
-┌────────────────────────────────────────────────────────────────────────────┐
-│ 🛠️ L'Atelier de Plume                                   🪙 12,4 k  (+340/s) │
-├───────────────┬──────────────────────────────────────┬─────────────────────┤
-│ 🧹 Balai    ● │ ┌──────────┐ ┌──────────┐ ┌──────────┐│ BROSSE LARGE  niv. 4│
-│ 🗑️ Ramassage  │ │  [img]   │ │  [img]   │ │  [img]   ││ ┌─────────────────┐ │
-│ ✨ Valeur   ● │ │ Brosse   │ │ Poils    │ │ Manche   ││ │ [aperçu 3D de la│ │
-│ 🏰 Château    │ │ large    │ │ durs     │ │ télesco. ││ │  brosse qui     │ │
-│ 👟 Plume      │ │ niv. 4   │ │ niv. 1   │ │ 🔒       ││ │  grandit]       │ │
-│ 🐑 Assistants │ │ 180 🪙 ✓ │ │ 320 🪙   │ │ Galerie  ││ └─────────────────┘ │
-│   (bientôt)   │ └──────────┘ └──────────┘ └──────────┘│ Largeur :           │
-│               │ ┌──────────┐ ┌──────────┐             │  106 cm → 114 cm    │
-│               │ │ Aspira-  │ │ Plumeau  │             │                     │
-│               │ │ teur 🔒  │ │ 🔒       │             │ [ ×1 ][ ×10 ][ Max ]│
-│               │ └──────────┘ └──────────┘             │  180 🪙   2,9 k  …  │
-└───────────────┴──────────────────────────────────────┴─────────────────────┘
+                                   🧹 BALAI
+                         Brosse géante ◆   ◆ Brosse de précision     ← fourche (au choix)
+                                      ╲   ╱
+                    🪶 ◆─ 🧽 ◆─ 🌀 ◆   Brosse large II ●
+                    (outils)    ╲      │
+                     Coup de balai ●  Poils durs ●
+                              ╲       │
+                    Manche télesc. ● Brosse large I ●
+                                  ╲   │
+  👟 PLUME                          ╲ │                         🗑️ RAMASSAGE
+  Pas léger ◆─ Souffle ●─ Chaussons ●─( 🌳 PLUME )─● Pelles I ─● Aspiration ─● Pelles II ─◆ Pelle aimantée
+                                    ╱ │ ╲                  ╲
+                                   ╱  │  ╲                  ◇ Coup de pelle  (jonction Balai + Ramassage)
+              🏰 CHÂTEAU          ╱   │   ╲          ✨ MÉMOIRE
+        (une branche par pièce   ╱    │    ╲   Poussière précieuse I ● ─ Combo tenace ● ─ …
+         ouverte : Combles,     ●     ●     ●        … ─ Chance dorée ● ─ ◆ Combo légendaire ─ ◆ Pluie d'étoiles
+         Galerie, Bibliothèque…)
+                                         🐑 ASSISTANTS : « ??? » (branche cachée jusqu'au jalon M4)
 ```
-- **À gauche**, les catégories. Une pastille **●** signale « quelque chose est achetable ici ».
-- **Au centre**, des cartes d'objets. Une carte **achetable** brille doucement, une carte **trop chère** est grisée avec le montant manquant, et une carte **verrouillée** 🔒 affiche ce qui la débloque (« Ouvre la Galerie »).
-- **À droite**, le détail de l'objet sélectionné : **avant → après en chiffres** (« 106 cm → 114 cm »), un **aperçu** quand c'est visuel (la brosse qui s'élargit) et les boutons **×1 / ×10 / Max**.
-- **Achat rapide** : clic sur une carte = ×1, clic maintenu = achats en rafale (de plus en plus vite), molette ou flèches pour se déplacer.
-- **Badge « Nouveau ! »** sur les objets qui viennent de se débloquer.
-- **Dans le HUD**, le bouton 🛒 affiche une pastille et la touche `B` quand un achat devient possible, et une notification apparaît la première fois qu'un nouvel objet se débloque.
+- Au **centre**, la racine : **Plume**. **6 branches** partent tout autour en étoile : Balai (en haut), Ramassage (à droite), Mémoire (en bas à droite), Château (en bas à gauche), Plume (à gauche) et Assistants (cachée au départ).
+- **Trois sortes de nœuds** :
+  - **●** les **petits nœuds** : une amélioration chiffrée, de 3 à 5 niveaux (un anneau autour du nœud se remplit niveau après niveau) ;
+  - **◆** les **grands nœuds** : un déblocage (nouvel outil, nouvelle mécanique). Ils coûtent cher, n'ont qu'un niveau et demandent que le nœud d'avant soit **au max** ;
+  - **◇** les **jonctions** : des nœuds placés **entre deux branches**, qui demandent les deux. Ils récompensent ceux qui font grandir l'arbre de tous les côtés.
+- **Règle de déblocage** : un nœud devient achetable dès que **son parent a au moins 1 niveau** (ou est au max pour un grand nœud). Certains demandent aussi une **condition de jeu**, par exemple « Ouvre la Bibliothèque ».
+- **Les fourches** (1 ou 2 dans tout l'arbre, pas plus, pour rester cosy) : il faut **choisir** entre deux grands nœuds. Le choix se change **gratuitement** à tout moment depuis l'arbre, pour pouvoir expérimenter sans regret.
 
-### 8.3 Les objets
+### 8.3 Les nœuds
 
-Formule de prix : **`prix(n) = base × croissance^n`**, arrondi à 2 chiffres significatifs (180 et pas 183,7). « n » est le niveau actuel. Le bouton **Max** utilise la somme géométrique pour acheter d'un coup tout ce qu'on peut payer.
+Prix d'un niveau : **`prix = base × croissance^niveau`**, arrondi à 2 chiffres significatifs. Plus un nœud est **loin de la racine**, plus sa base est élevée, ce qui donne une progression naturelle du centre vers l'extérieur.
 
-#### 🧹 Balai
-| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
+#### 🧹 Balai (en haut)
+| Nœud | Type | Effet | Niv. | Base | Croiss. | Condition |
+|---|---|---|---|---|---|---|
+| Brosse large I | ● | +8 cm de largeur (la brosse **grandit à l'écran**) | 5 | 25 | ×1,5 | — |
+| Poils durs | ● | +0,05 de prise (les moutons lourds suivent mieux) | 5 | 120 | ×1,6 | — |
+| Brosse large II | ● | +10 cm de largeur | 5 | 900 | ×1,6 | — |
+| Brosse géante | ◆ fourche A | +60 cm de largeur, mais −0,1 de prise | 1 | 25 000 | — | Brosse large II max |
+| Brosse de précision | ◆ fourche B | +0,25 de prise, et le combo monte 20 % plus vite | 1 | 25 000 | — | Brosse large II max |
+| Manche télescopique | ● | +25 cm de portée | 3 | 400 | ×2,2 | Galerie ouverte |
+| Coup de balai | ● | clic maintenu : poussée de ×1,5 à ×2,5 | 5 | 600 | ×1,8 | — |
+| 🪶 Plumeau | ◆ | débloque l'outil (toiles d'araignée) | 1 | 4 000 | — | Bibliothèque ouverte |
+| 🧽 Éponge | ◆ | débloque l'outil (taches) | 1 | 30 000 | — | Chambre ouverte |
+| 🌀 Aspirateur | ◆ | débloque l'outil (aspire directement, avec réservoir) | 1 | 150 000 | — | Grand Hall ouvert |
+
+#### 🗑️ Ramassage (à droite)
+| Nœud | Type | Effet | Niv. | Base | Croiss. | Condition |
+|---|---|---|---|---|---|---|
+| Pelles géantes I | ● | +15 % de taille de toutes les pelles (on les voit grossir) | 5 | 40 | ×1,55 | — |
+| Aspiration magique | ● | +30 cm de rayon d'aspiration douce autour des pelles | 5 | 200 | ×1,6 | — |
+| Pelles géantes II | ● | +15 % de taille | 5 | 1 500 | ×1,6 | — |
+| Pelle aimantée | ◆ | les pelles attirent doucement la poussière de **toute** la pièce | 1 | 60 000 | — | Pelles géantes II max |
+
+#### ✨ Mémoire (en bas à droite : la valeur)
+| Nœud | Type | Effet | Niv. | Base | Croiss. | Condition |
+|---|---|---|---|---|---|---|
+| Poussière précieuse I | ● | ×1,25 sur la valeur de toute la poussière | 5 | 100 | ×1,9 | — |
+| Combo tenace | ● | le combo met +0,2 s à redescendre, et redescend 10 % moins vite | 5 | 300 | ×1,7 | — |
+| Poussière précieuse II | ● | ×1,3 sur la valeur | 5 | 3 000 | ×2 | — |
+| Chance dorée | ● | +0,1 % de poussière d'étoile | 5 | 800 | ×1,8 | — |
+| Moutons dodus | ● | les moutons valent +4 | 5 | 1 200 | ×1,7 | Galerie ouverte |
+| Combo légendaire | ◆ | ajoute les paliers ×3,5 et ×4 | 1 | 40 000 | — | Combo tenace max |
+| Pluie d'étoiles | ◆ | débloque l'événement « pluie de poussière d'étoile » | 1 | 120 000 | — | Chance dorée max |
+
+#### 🏰 Château (en bas à gauche) : **une branche pousse à chaque pièce ouverte**
+Chaque pièce a sa **petite branche** de 3 nœuds. Les prix sont multipliés par la valeur de la pièce : ×1 pour les Combles, ×5 pour le Grand Hall.
+| Nœud | Type | Effet | Niv. | Base | Croiss. |
 |---|---|---|---|---|---|
-| **Brosse large** | +8 cm de largeur (74 → 234 cm). La brosse **grandit à l'écran** | 20 | 25 | ×1,45 | départ |
-| **Poils durs** | +0,05 de prise (les grains collent mieux à la brosse, les moutons lourds suivent) | 8 | 60 | ×1,6 | départ |
-| **Manche télescopique** | +20 cm de portée (230 → 330 cm) | 5 | 400 | ×2,2 | Galerie ouverte |
-| **Coup de balai** | Clic maintenu : la poussée passe de ×1,5 à ×2,5 | 5 | 250 | ×1,9 | 1★ aux Combles |
-| *Outil* **Plumeau** 🪶 | débloque l'outil (toiles d'araignée) | 1 | 1 500 | — | Bibliothèque ouverte |
-| *Outil* **Éponge** 🧽 | débloque l'outil (taches) | 1 | 8 000 | — | Chambre ouverte |
-| *Outil* **Aspirateur** 🌀 | débloque l'outil (aspire directement, réservoir) | 1 | 40 000 | — | Grand Hall ouvert |
+| Courants d'air | ● | +15 % de poussière qui retombe dans la pièce (= plus de revenus) | 5 | 60 × valeur | ×1,6 |
+| Pelle en plus | ● | ajoute une pelle à un emplacement prévu de la pièce | 2 | 400 × valeur | ×3 |
+| Écho du lieu | ◆ | le bonus « pièce impeccable » est doublé, et la pièce brille un peu | 1 | 5 000 × valeur | — |
 
-#### 🗑️ Ramassage
-| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
-|---|---|---|---|---|---|
-| **Pelles géantes** | +15 % de taille de toutes les pelles | 10 | 40 | ×1,55 | départ |
-| **Aspiration magique** | +20 cm de rayon d'aspiration douce autour des pelles (120 → 320) | 10 | 80 | ×1,6 | départ |
-| **Pelle en plus** *(par pièce)* | ajoute une pelle à un emplacement prévu de la pièce actuelle | 2 par pièce | 30 % du prix de la pièce | ×3 | pièce ouverte |
+#### 👟 Plume (à gauche)
+| Nœud | Type | Effet | Niv. | Base | Croiss. | Condition |
+|---|---|---|---|---|---|---|
+| Chaussons de feutre | ● | +8 % de vitesse de marche et de course | 5 | 200 | ×1,9 | — |
+| Souffle du vent | ● | `Maj` : course 25 % plus rapide | 3 | 3 000 | ×2,5 | Grand Hall ouvert |
+| Pas léger | ◆ | tes **pieds** poussent aussi un peu la poussière en marchant | 1 | 20 000 | — | Chaussons max |
 
-#### ✨ Valeur
-| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
-|---|---|---|---|---|---|
-| **Poussière précieuse** | ×1,25 sur la valeur de toute la poussière (cumulatif) | 25 | 100 | ×1,9 | départ |
-| **Combo tenace** | le combo met +0,2 s à redescendre et redescend 10 % moins vite | 10 | 150 | ×1,7 | premier combo ×2 |
-| **Combo légendaire** | ajoute un palier de combo : ×3,5 puis ×4 | 2 | 5 000 | ×8 | Combo tenace niv. 5 |
-| **Chance dorée** | +0,05 % de poussière d'étoile (0,15 % → 0,65 %) | 10 | 300 | ×1,8 | 1re étoile ramassée |
-| **Moutons dodus** | les moutons valent +2 (5 → 25) | 10 | 200 | ×1,7 | Galerie ouverte |
+#### ◇ Jonctions (entre deux branches)
+| Nœud | Entre | Effet | Prix |
+|---|---|---|---|
+| Coup de pelle | Balai + Ramassage | la poussière poussée **directement** dans une pelle par le balai vaut +25 % | 8 000 |
+| Mémoire des lieux | Mémoire + Château | +5 % de valeur partout pour chaque pièce impeccable | 15 000 |
+| Marche du balayeur | Plume + Balai | balayer en marchant vers l'avant pousse 20 % plus fort | 6 000 |
 
-#### 🏰 Château *(par pièce : chaque pièce a ses propres niveaux)*
-| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
-|---|---|---|---|---|---|
-| **Courants d'air** | +15 % de poussière qui retombe dans la pièce (= plus de revenus) | 10 | 50 × valeur de la pièce | ×1,6 | pièce ouverte |
-| **Tapis magique** | +10 % de valeur de la poussière de cette pièce | 10 | 120 × valeur de la pièce | ×1,7 | pièce impeccable 1★ |
+#### 🐑 Assistants (6e branche, cachée « ??? » jusqu'au jalon M4)
+Moutonnet, Plumette, Roulio, Biscotte (le chat) : un nœud pour recruter chacun, puis des nœuds vitesse, rayon et intelligence.
 
-#### 👟 Plume
-| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
-|---|---|---|---|---|---|
-| **Chaussons de feutre** | +8 % de vitesse de marche et de course | 5 | 200 | ×2 | départ |
-| **Souffle du vent** | `Maj` : course 25 % plus rapide | 3 | 2 000 | ×3 | Grand Hall ouvert |
+#### ✨ L'anneau doré (prestige, plus tard)
+Au **Grand Ménage** (prestige), l'arbre perd ses feuilles : tous les nœuds payés en pièces repartent à zéro. Un **anneau doré** apparaît alors **tout autour** de l'arbre, avec des nœuds payés en **Étincelles** qui restent pour toujours (voir §9). On garde **un seul arbre** pour tout, et l'arbre grandit encore à chaque saison.
 
-#### 🐑 Assistants *(jalon M4, visibles mais verrouillés d'ici là)*
-Moutonnet, Plumette, Roulio, Biscotte (le chat) : recruter, puis améliorer vitesse, rayon et intelligence. Silhouettes visibles, avec le texte « Bientôt… ».
-
-### 8.4 Rythme visé (avec les nouveaux prix de portes)
-Avec la boutique, les portes reprennent leurs vrais prix : **Galerie 500, Bibliothèque 6 000, Chambre 40 000, Grand Hall 250 000**.
-
-| Moment | Objectif |
-|---|---|
-| 0:20 | 1er achat (Brosse large niv. 1, 25 🪙) |
-| 2:00 | 4 à 6 achats déjà faits, on sent le balai grandir |
-| 4–6 min | Galerie ouverte |
-| ~15 min | Bibliothèque |
-| ~35 min | Chambre royale |
-| ~60 min | Grand Hall |
-
-Règle de confort : **il y a presque toujours un achat à moins d'une minute de revenus**.
+### 8.4 L'écran de l'arbre
+- **Plein écran**, l'arbre dessiné en **SVG**, donc net et léger, même sur ton i3.
+- **Navigation** : clic-glisser pour se déplacer, molette pour zoomer, `Espace` pour recentrer sur Plume, et les flèches du clavier pour sauter de nœud en nœud.
+- **États des nœuds** :
+  - 🌑 verrouillé : sombre, silhouette floue ;
+  - ✨ achetable : contour qui **pulse** doucement ;
+  - 🟢 en cours : l'**anneau des niveaux** se remplit (3/5) ;
+  - 🌼 au max : le nœud **fleurit**, avec une petite fleur dorée.
+- **Les liens** entre les nœuds sont sombres au début. Ils s'**allument** quand on achète, et de petits grains de poussière dorée **remontent la sève** le long des chemins achetés.
+- **Panneau de détail** au survol ou au clic : le nom, une phrase d'ambiance (« *L'art oublié de Gustave, balayeur en chef du Roi.* »), l'effet **avant → après** (« 106 cm → 114 cm »), le prix et les boutons **×1 / Max**. Un **clic maintenu** achète en rafale.
+- **En haut**, le compteur de pièces et le revenu par seconde. **En bas**, une petite légende (● ◆ ◇).
+- **Dans le HUD**, le bouton 🌳 affiche une pastille quand un nœud devient achetable, et une notification « *Un nouveau souvenir peut pousser !* » apparaît la première fois.
 
 ### 8.5 Sons et effets (synthétiques)
 | Moment | Son | Effet visuel |
 |---|---|---|
-| Ouvrir / fermer l'Atelier | glissando + petit tintement d'outils | le panneau arrive en rebondissant |
-| Changer d'onglet | « swoosh » court | les cartes glissent |
-| Survol d'une carte | « tic » (déjà fait) | la carte se soulève et penche |
-| **Achat** | « ka-tching » : arpège de pièces qui monte, plus aigu à chaque niveau | la carte saute, des pièces 🪙 s'envolent du compteur vers la carte, le niveau compte |
-| Achat en rafale | arpège qui accélère | petits sauts répétés |
-| **Niveau max** | mini-fanfare | la carte devient dorée avec « MAX ✨ » |
-| Trop cher | « bonk » (déjà fait) | la carte tremble et le montant manquant clignote |
-| Nouvel objet débloqué | carillon (déjà fait) | badge « Nouveau ! » et notification |
+| Ouvrir / fermer l'arbre | bruissement de feuilles + glissando | l'arbre « pousse » depuis le centre en 0,5 s |
+| Survol d'un nœud | « tic » dont la **note dépend de la branche** | le nœud grossit un peu |
+| **Achat d'un niveau** | « ka-tching » + une **note de la gamme qui monte avec la profondeur du nœud** : l'arbre joue **une mélodie** à mesure qu'on avance | l'anneau se remplit, des pièces s'envolent vers le nœud |
+| Achat en rafale | arpège qui accélère | |
+| **Nœud au max** | accord doux | le nœud **fleurit** 🌼 |
+| **Grand nœud** ◆ | fanfare + cloche | éclosion lumineuse, et le lien suivant s'allume avec un « whoosh » |
+| Trop cher / verrouillé | « bonk » (déjà fait) | le nœud tremble, le montant manquant clignote |
+| Nouvelle branche (pièce ouverte) | carillon | la branche pousse en direct dans l'arbre |
 
-Dans le monde : quand on achète **Brosse large**, la brosse grandit **en vrai**, avec son empreinte rectangulaire. Avec **Pelles géantes**, les pelles grossissent, en rebondissant.
+Dans le monde, les effets se voient aussi : la brosse **s'élargit en vrai** avec son empreinte au sol, et les pelles grossissent en rebondissant.
 
-### 8.6 Comment on le code (technique)
-- `src/data/shop.ts` : la liste des objets (`id`, catégorie, nom, description, `base`, `growth`, `maxLevel`, condition de déblocage, effet). On change les chiffres sans toucher au code.
-- `src/economy/shop.ts` : `cost(item, level)`, `costForN(item, level, n)` (somme géométrique), `maxAffordable(item, level, coins)`, `isUnlocked(item, state)`.
-- `src/economy/modifiers.ts` : à partir des niveaux achetés, il calcule les **modificateurs** de chaque pièce (largeur et prise de la brosse, taille des pelles, aspiration, valeur, réapparition, combo, chance d'étoile) et du joueur (vitesse, portée). C'est une seule fonction pure, testable, appliquée à chaque achat.
-- **Sauvegarde** : `upgrades: Record<string, number>` (niveaux), et `upgrades["airflow:gallery"]` pour les objets par pièce. La migration v2 → v3 met tout à 0.
-- **Interface** : `src/ui/Shop.tsx` (onglets, cartes, détail, ×1/×10/Max), ouverte avec `B` ou l'Établi.
-- **Tests** : formules de prix, somme géométrique et Max, déblocages, calcul des modificateurs, migration de sauvegarde, et un test du simulateur qui vérifie qu'on atteint chaque porte dans les temps visés (§8.4).
+### 8.6 Rythme visé (les portes reprennent leurs vrais prix)
+**Galerie 500, Bibliothèque 6 000, Chambre 40 000, Grand Hall 250 000.**
+| Moment | Objectif |
+|---|---|
+| 0:20 | 1er nœud (Brosse large I, 25 🪙) |
+| 2:00 | 5 à 8 niveaux achetés, et les 3 premières branches déjà entamées |
+| 4–6 min | Galerie ouverte, la branche 🏰 Galerie pousse |
+| ~15 min | Bibliothèque, et le 🪶 Plumeau en vue |
+| ~35 min | Chambre royale |
+| ~60 min | Grand Hall, et les premiers grands nœuds ◆ |
 
-### 8.7 Étapes
-1. Données, formules, modificateurs et sauvegarde, avec leurs tests.
-2. L'écran de l'Atelier (`B`), avec les onglets Balai, Ramassage, Valeur et Plume.
-3. Les effets visibles dans le monde (brosse qui grandit, pelles plus grosses) et les sons d'achat.
-4. Les objets par pièce (Château) et l'Établi en 3D dans les Combles.
-5. Équilibrage avec le simulateur, et nouveaux prix des portes.
+Règle de confort : **il y a presque toujours un nœud achetable à moins d'une minute de revenus**.
+
+### 8.7 Comment on le code (technique)
+- `src/data/tree.ts` : la liste des nœuds (`id`, branche, parent(s), type ●/◆/◇, niveaux, `base`, `growth`, condition, effet, phrase d'ambiance). La **position** de chaque nœud est calculée automatiquement : angle de la branche + distance à la racine. On n'a donc rien à placer à la main, et les branches des nouvelles pièces se rangent toutes seules.
+- `src/economy/tree.ts` : `cost(node, niveau)`, `costForN` (somme géométrique), `maxAffordable`, `canBuy(node, état)` (parent, fourche, condition de jeu).
+- `src/economy/modifiers.ts` : une **fonction pure** qui transforme les niveaux achetés en modificateurs pour chaque pièce (brosse, pelles, aspiration, valeur, réapparition, combo, étoiles) et pour le joueur (vitesse, portée). Elle est appliquée à chaque achat.
+- **Sauvegarde** v3 : `tree: Record<nodeId, niveau>` et `forks: Record<forkId, choix>`. La migration depuis la v2 met tout à 0.
+- **Interface** : `src/ui/SkillTree.tsx` (SVG, déplacement et zoom, panneau de détail).
+- **Tests** : formules de prix, Max, règles de déblocage (parent, fourche, jonction, condition de pièce), modificateurs, migration, et un test du simulateur qui vérifie le rythme de §8.6.
+
+### 8.8 Étapes
+1. Données de l'arbre, formules, règles et modificateurs, avec leurs tests.
+2. L'écran de l'arbre en SVG, avec les branches Balai, Ramassage, Mémoire et Plume.
+3. Les effets visibles dans le monde et les sons (y compris la mélodie des achats).
+4. Les branches 🏰 Château (une par pièce) et les jonctions ◇, puis les fourches.
+5. L'Établi en 3D dans les Combles, puis l'équilibrage avec le simulateur et les nouveaux prix des portes.
 
 ## 9. Prestige : le Grand Ménage
 
-- **Débloqué** quand on a atteint la Pièce 5 (la Cave) pour la première fois.
+- **Débloqué** quand on a ouvert le Grand Hall pour la première fois.
 - **Narration :** les saisons passent, le château se re-salit, mais Plume a gagné en expérience.
-- **On perd :** pièces, améliorations, assistants, pièces débloquées (sauf ce que l'arbre permanent garde).
+- **On perd :** pièces, nœuds de l'Arbre des Souvenirs payés en pièces, assistants, pièces débloquées (sauf ce que l'anneau doré garde).
 - **On garde :** Étincelles, souvenirs, étoiles de pièce, succès, statistiques.
 
-### Arbre des Étincelles (permanent)
+### L'anneau doré de l'Arbre des Souvenirs (permanent, payé en Étincelles)
 
 | Branche | Exemples de nœuds |
 |---|---|
