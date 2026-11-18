@@ -509,6 +509,7 @@ export class Game {
         { id: 'map', icon: '🗺️', text: 'Le château est immense, même pour moi. Appuie sur M pour voir la carte, comme ça on ne se perd pas.', when: () => unlocked() >= 2, done: () => this.mapOpened },
         { id: 'souvenir', icon: '✨', text: 'Tu as vu ? Quelque chose brille par terre ! Plus une pièce est propre, plus elle révèle de souvenirs. Va vite le ramasser !', when: () => (sim()?.cleanliness ?? 0) >= 0.27 && this.save.souvenirs.length === 0, done: () => this.save.souvenirs.length > 0 },
         { id: 'album', icon: '📜', text: 'Ton premier souvenir ! Ça m’émeut, j’en ai la poussière aux yeux. Appuie sur J pour le relire dans l’album.', when: () => this.save.souvenirs.length > 0, done: () => this.albumOpened },
+        { id: 'airflow', icon: '🌬️', text: 'Wouah, plus un grain par terre ! Ici, la poussière ne reviendra plus toute seule… Si tu veux qu’elle retombe (et gagner encore des pièces), achète « Courants d’air » pour cette pièce dans l’Arbre.', when: () => (sim()?.cleanliness ?? 0) >= 0.92 && (sim()?.mods.respawnMult ?? 1) === 0 },
         { id: 'sprint', icon: '💨', text: 'Tu marches drôlement lentement… Maintiens Maj pour courir !', when: () => unlocked() >= 3 },
         {
           id: 'tool',

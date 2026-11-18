@@ -77,8 +77,11 @@ describe("l'Arbre des Souvenirs", () => {
     expect(g.broomGrip).toBeCloseTo(0.85 - 0.1);
     expect(g.valueMultiplier).toBeCloseTo(2 * 1.1 * 1.1);
     expect(g.panScale).toBeCloseTo(1.16);
-    expect(g.respawnMult).toBeCloseTo(1.2);
-    expect(m.room('attic', 1).respawnMult).toBe(1);
+    // 2 niveaux de Courants d'air : la poussière revient (×1), +10 %.
+    expect(g.respawnMult).toBeCloseTo(1.1);
+    // Sans Courants d'air, la poussière ne revient pas.
+    expect(m.room('attic', 1).respawnMult).toBe(0);
+    expect(computeModifiers({ 'airflow:attic-1': 1 }, 0).room('attic', 1).respawnMult).toBeCloseTo(1);
   });
 
   it('la sauvegarde ne garde que des nœuds connus et des niveaux valides', () => {

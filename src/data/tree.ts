@@ -379,8 +379,8 @@ function roomBranch(roomId: string, index: number, total: number): TreeNode[] {
     ...chain({
       prefix: `airflow:${roomId}`, name: `Courants d’air · ${short}`, icon: '🌬️', branch: 'castle', root: 'castle-root', tiers: 3, levels: 5,
       base: 60 * v, tierMult: 60, growth: 1.9, per: () => 0.1, key: 'respawn', mode: 'add', room: roomId, depth0: d0, side,
-      flavors: ['Une fenêtre entrouverte, et la poussière revient… pour être ramassée.', 'Le vent apporte la poussière du dehors.', 'Une vraie tempête de poussière.'],
-      effect: (per, l) => `+${pct(per)} de poussière qui retombe par niveau (+${pct(per * l)})`,
+      flavors: ['Sans courant d’air, une pièce propre le reste pour toujours. Entrouvre une fenêtre, et la poussière revient… pour être ramassée.', 'Le vent apporte la poussière du dehors.', 'Une vraie tempête de poussière.'],
+      effect: (per, l) => `La poussière revient dans cette pièce, puis +${pct(per)} par niveau (+${pct(per * l)})`,
       requires: req,
     }),
     ...chain({

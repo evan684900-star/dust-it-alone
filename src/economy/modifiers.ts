@@ -95,7 +95,8 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number, spark
       bunnyValue: 5 + A('bunnyValue'),
       starChance: 0.0015 + A('starChance'),
       starValue: M('starValue'),
-      respawnMult: 1 + (r.respawn ?? 0),
+      // La poussière ne revient dans une pièce qu'avec ses « Courants d'air » (1er niveau = ×1, puis +10 % par niveau).
+      respawnMult: (r.respawn ?? 0) > 0 ? 0.9 + (r.respawn ?? 0) : 0,
       scoopBonus: A('scoop'),
       duster: 1 + A('duster'),
       sponge: 1 + A('sponge'),
