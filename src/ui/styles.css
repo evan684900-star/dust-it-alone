@@ -594,3 +594,6 @@ kbd {
 .lg-junction { transform: rotate(45deg) scale(0.75); border-style: dashed !important; }
 .tree-ring { fill: none; stroke: rgba(255, 243, 214, 0.06); stroke-width: 3; stroke-dasharray: 10 18; }
 .tree-branch-label { font-size: 46px; stroke-width: 10px; }
+/* Un nouveau nœud apparaît en poussant depuis son parent. */
+.node-pop { animation: node-grow 0.6s cubic-bezier(0.2, 1.8, 0.4, 1) both; transform-box: fill-box; transform-origin: center; }
+@keyframes node-grow { from { transform: scale(0); opacity: 0; } }

@@ -65,7 +65,17 @@ export function SkillTree({ game }: { game: Game }) {
     };
   }, []);
 
-  const focus = NODE_BY_ID.get(hovered ?? selected)!;
+  // Seuls les nœuds achetés ou achetables maintenant sont visibles : les autres « poussent » plus tard.
+  const visible = new Set(
+    TREE_NODES.filter((n) => {
+      if ((levels[n.id] ?? 0) > 0) return true;
+      const av = availability(n, st);
+      return av.ok || (!av.ok && av.reason === 'fork');
+    }).map((n) => n.id),
+  );
+  const hiddenCount = TREE_NODES.length - visible.size;
+  const focusId = [hovered, selected].find((id) => id && visible.has(id)) ?? [...visible][0] ?? 'broom-wide-1';
+  const focus = NODE_BY_ID.get(focusId)!;
   const rootActive = TREE_NODES.some((n) => (levels[n.id] ?? 0) > 0);
 
   return (
@@ -116,7 +126,7 @@ export function SkillTree({ game }: { game: Game }) {
           {/* Anneaux de profondeur : plus on s'éloigne de Plume, plus c'est cher */}
           {[2, 4, 6, 8].map((d) => <circle key={d} r={d * RING} class="tree-ring" />)}
           {/* Étiquettes des branches */}
-          {(Object.keys(BRANCHES) as (keyof typeof BRANCHES)[]).map((b) => {
+          {(Object.keys(BRANCHES) as (keyof typeof BRANCHES)[]).filter((b) => TREE_NODES.some((n) => n.branch === b && visible.has(n.id))).map((b) => {
             const a = (BRANCHES[b].angle * Math.PI) / 180;
             const r = b === 'helpers' ? 330 : 1480;
             const ang = a;
@@ -128,9 +138,9 @@ export function SkillTree({ game }: { game: Game }) {
           })}
 
           {/* Liens (la « sève » coule le long des chemins achetés) */}
-          {TREE_NODES.map((n) => {
+          {TREE_NODES.filter((n) => visible.has(n.id)).map((n) => {
             const p = POS.get(n.id)!;
-            const parents = n.parents.length ? n.parents : ['__root'];
+            const parents = (n.parents.length ? n.parents : ['__root']).filter((pid) => pid === '__root' || visible.has(pid));
             const lvl = levels[n.id] ?? 0;
             const av = availability(n, st);
             return parents.map((pid) => {
@@ -147,8 +157,8 @@ export function SkillTree({ game }: { game: Game }) {
             <text class="tree-root-name" y={34}>Plume</text>
           </g>
 
-          {/* Nœuds */}
-          {TREE_NODES.map((n) => {
+          {/* Nœuds (les nouveaux arrivent en « poussant ») */}
+          {TREE_NODES.filter((n) => visible.has(n.id)).map((n) => {
             const p = POS.get(n.id)!;
             const lvl = levels[n.id] ?? 0;
             const av = availability(n, st);
@@ -173,6 +183,7 @@ export function SkillTree({ game }: { game: Game }) {
                   else setSelected(n.id);
                 }}
               >
+                <g class="node-pop">
                 {n.kind === 'small' ? (
                   <circle r={R} class="shape" style={{ '--c': color } as never} />
                 ) : (
@@ -189,6 +200,7 @@ export function SkillTree({ game }: { game: Game }) {
                 <text class="tree-icon" y={9}>{state === 'hidden' ? '?' : n.icon}</text>
                 {state === 'maxed' && <text class="tree-flower" x={R * 0.7} y={-R * 0.7}>🌼</text>}
                 {n.requires && 'soon' in n.requires && <text class="tree-soon" y={R + 26}>bientôt</text>}
+                </g>
               </g>
             );
           })}
@@ -201,6 +213,7 @@ export function SkillTree({ game }: { game: Game }) {
         <span><b class="lg-small" /> petit nœud (plusieurs niveaux)</span>
         <span><b class="lg-big" /> grand nœud (déblocage)</span>
         <span><b class="lg-junction" /> jonction entre deux branches</span>
+        <span>🌱 {hiddenCount} souvenirs encore cachés : ils poussent quand tu achètes ce qui les précède</span>
         <span>Clic : choisir · re-clic : acheter · glisser : se déplacer · molette : zoom · Espace : recentrer</span>
       </div>
     </div>
