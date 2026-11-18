@@ -41,7 +41,8 @@ export class Game {
     this.rooms = ROOMS.map((def, i) => {
       const sim = new RoomSim(def, ((Date.now() & 0xffff) + i * 7919) >>> 0);
       sim.mods.valueMultiplier = def.valueMult;
-      sim.fill(1);
+      // Une pièce déjà nettoyée le reste : la poussière ne revient plus toute seule.
+      if (this.save.rooms[def.id]?.cleaned !== true) sim.fill(1);
       return { def, sim };
     });
     this.nav = new Navigation(ROOMS, DOORS, STAIRS, (id) => this.isUnlocked(id));

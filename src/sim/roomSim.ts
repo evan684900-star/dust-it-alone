@@ -43,7 +43,6 @@ export interface Modifiers {
 }
 
 const FRICTION: Record<DirtId, number> = { dust: 5.5, bunny: 3.2, star: 4.5 };
-const STAR_CHANCE = 0.0015;
 const MAX_BROOM_SPEED = 2600;
 
 export class RoomSim {
@@ -64,7 +63,6 @@ export class RoomSim {
   /** Numéro de passage : chaque particule n'est poussée qu'une fois par pas de simulation. */
   private stamp: Uint32Array;
   private stampId = 0;
-  private respawnAcc: Record<DirtId, number> = { dust: 0, bunny: 0, star: 0 };
   private events: CollectEvent[] = [];
   private readonly maxDirt: number;
   private readonly patchTotal: number;
@@ -103,7 +101,6 @@ export class RoomSim {
   step(dt: number, input: BroomInput): void {
     this.applyBroom(dt, input);
     this.integrate(dt);
-    this.respawn(dt);
     this.combo.update(dt);
   }
 
@@ -326,22 +323,6 @@ export class RoomSim {
     const coins = def.value * this.combo.multiplier * this.mods.valueMultiplier;
     this.pool.kill(i);
     this.events.push({ collector, type: id, coins, x: px, y: py });
-  }
-
-  // ───────────────────────────── Réapparition ─────────────────────────────
-
-  private respawn(dt: number): void {
-    for (const id of DIRT_ORDER) {
-      const rate = this.room.respawn[id] ?? 0;
-      if (rate <= 0) continue;
-      this.respawnAcc[id] += rate * dt;
-      while (this.respawnAcc[id] >= 1) {
-        this.respawnAcc[id] -= 1;
-        // De temps en temps, un grain doré à la place d'un grain normal ✨
-        if (id === 'dust' && this.rng.next() < STAR_CHANCE && this.spawnRandom('star')) continue;
-        this.spawnRandom(id);
-      }
-    }
   }
 
   private spawnRandom(id: DirtId): boolean {

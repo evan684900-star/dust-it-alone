@@ -40,7 +40,6 @@ export interface RoomDef {
   price: number;
   collectors: Collector[];
   capacity: Partial<Record<DirtId, number>>;
-  respawn: Partial<Record<DirtId, number>>;
   patches: DirtPatch[];
   obstacles: Prop[];
   /** Direction de la lumière principale (soleil par une fenêtre), du ciel vers le sol. */
@@ -112,7 +111,6 @@ export const ROOMS: RoomDef[] = [
       { id: 'pan-right', rect: { x: 1530, y: 380, w: 70, h: 140 }, mouth: { x: 1580, y: 450 }, facing: 'left' },
     ],
     capacity: { dust: 6000, bunny: 90, star: 12 },
-    respawn: { dust: 14, bunny: 0.25, star: 0 },
     patches: [
       { x: 400, y: 220, spread: 170, weight: 3 },
       { x: 1150, y: 250, spread: 200, weight: 3 },
@@ -142,7 +140,6 @@ export const ROOMS: RoomDef[] = [
     price: 300,
     collectors: [pan('g-n1', 'down', 450, 0), pan('g-n2', 'down', 1850, 0), pan('g-s1', 'up', 450, 650), pan('g-s2', 'up', 1850, 650)],
     capacity: { dust: 4500, bunny: 70, star: 10 },
-    respawn: { dust: 12, bunny: 0.2 },
     patches: scatter(2400, 650, 10, 7),
     obstacles: [
       { kind: 'bench', rect: { x: 700, y: 280, w: 160, h: 70 } },
@@ -165,7 +162,6 @@ export const ROOMS: RoomDef[] = [
     price: 1500,
     collectors: [pan('l-w', 'right', 0, 650), pan('l-e', 'left', 1300, 650)],
     capacity: { dust: 4500, bunny: 80, star: 10 },
-    respawn: { dust: 12, bunny: 0.25 },
     patches: scatter(1300, 1300, 9, 13),
     obstacles: [
       { kind: 'bookshelf', rect: { x: 40, y: 40, w: 420, h: 70 } },
@@ -192,7 +188,6 @@ export const ROOMS: RoomDef[] = [
     price: 4000,
     collectors: [pan('b-w', 'right', 0, 520), pan('b-e', 'left', 1300, 520)],
     capacity: { dust: 4000, bunny: 70, star: 10 },
-    respawn: { dust: 11, bunny: 0.22 },
     patches: scatter(1300, 1000, 8, 21),
     obstacles: [
       { kind: 'bed', rect: { x: 480, y: 620, w: 340, h: 340 } },
@@ -215,7 +210,6 @@ export const ROOMS: RoomDef[] = [
     price: 12000,
     collectors: [pan('h-w1', 'right', 0, 700), pan('h-w2', 'right', 0, 1700), pan('h-n', 'down', 1400, 0), pan('h-s', 'up', 1400, 2400)],
     capacity: { dust: 7000, bunny: 120, star: 16 },
-    respawn: { dust: 18, bunny: 0.35 },
     patches: scatter(2800, 2400, 14, 5),
     obstacles: [
       { kind: 'pillar', rect: { x: 700, y: 600, w: 110, h: 110 } },
