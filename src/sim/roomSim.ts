@@ -46,6 +46,7 @@ export interface Modifiers {
   pushPower: number;
   bunnyValue: number;
   starChance: number;
+  starValue: number;
   respawnMult: number;
   /** Bonus quand un grain poussé par le balai tombe droit dans une pelle. */
   scoopBonus: number;
@@ -63,7 +64,7 @@ export class RoomSim {
   readonly pool: ParticlePool;
   readonly rng: Rng;
   broom: BroomStats = { width: 74, depth: 24, grip: 0.85 };
-  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, respawnMult: 1, scoopBonus: 0, magnet: false };
+  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, starValue: 1, respawnMult: 1, scoopBonus: 0, magnet: false };
   /** Pelles effectives (agrandies par l'arbre). */
   collectorRects: Rect[];
   private time = 0;
@@ -107,6 +108,7 @@ export class RoomSim {
       pushPower: m.pushPower,
       bunnyValue: m.bunnyValue,
       starChance: m.starChance,
+      starValue: m.starValue,
       respawnMult: m.respawnMult,
       scoopBonus: m.scoopBonus,
       magnet: m.panMagnet,
@@ -375,7 +377,7 @@ export class RoomSim {
 
   private collect(i: number, collector: number, id: DirtId, px: number, py: number): void {
     const def = DIRT_TYPES[id];
-    const base = id === 'bunny' ? this.mods.bunnyValue : def.value;
+    const base = id === 'bunny' ? this.mods.bunnyValue : id === 'star' ? def.value * this.mods.starValue : def.value;
     const scoop = this.time - this.touched[i] < SCOOP_WINDOW ? 1 + this.mods.scoopBonus : 1;
     const coins = base * this.mods.valueMultiplier * scoop;
     this.pool.kill(i);

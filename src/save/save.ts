@@ -87,11 +87,24 @@ export function migrate(raw: unknown): SaveData {
   };
 }
 
+/** Nœuds renommés quand l'arbre est devenu gigantesque (les paliers « I » gardent les anciens niveaux). */
+const RENAMED: Record<string, string> = {
+  'broom-grip': 'broom-grip-1',
+  'broom-push': 'broom-push-1',
+  'broom-reach': 'broom-reach-1',
+  'pan-pull': 'pan-pull-1',
+  'star-luck': 'star-luck-1',
+  'bunny-fat': 'bunny-fat-1',
+  'plume-speed': 'plume-speed-1',
+  'plume-sprint': 'plume-sprint-1',
+};
+
 /** Garde seulement les nœuds connus, avec un niveau entier valide. */
 function cleanTree(raw: unknown): Record<string, number> {
   const out: Record<string, number> = {};
   if (!raw || typeof raw !== 'object') return out;
-  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+  for (const [rawId, v] of Object.entries(raw as Record<string, unknown>)) {
+    const id = RENAMED[rawId] ?? (/^(airflow|shine):[a-z]+$/.test(rawId) ? `${rawId}-1` : rawId);
     const node = NODE_BY_ID.get(id);
     if (!node || typeof v !== 'number' || !Number.isFinite(v)) continue;
     const lvl = Math.max(0, Math.min(node.maxLevel, Math.floor(v)));

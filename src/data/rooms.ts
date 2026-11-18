@@ -95,7 +95,8 @@ function scatter(w: number, h: number, n: number, seed: number): DirtPatch[] {
   return out;
 }
 
-export const ROOMS: RoomDef[] = [
+/** Plans « de base » des pièces ; le château réel est agrandi par CASTLE_SCALE (voir plus bas). */
+const RAW_ROOMS: RoomDef[] = [
   {
     id: 'attic',
     name: 'Les Combles du donjon',
@@ -139,7 +140,7 @@ export const ROOMS: RoomDef[] = [
     width: 2400,
     height: 650,
     valueMult: 2,
-    price: 500,
+    price: 3000,
     collectors: [pan('g-n1', 'down', 450, 0), pan('g-n2', 'down', 1850, 0), pan('g-s1', 'up', 450, 650), pan('g-s2', 'up', 1850, 650)],
     capacity: { dust: 4500, bunny: 70, star: 10 },
     respawn: { dust: 12, bunny: 0.2 },
@@ -162,7 +163,7 @@ export const ROOMS: RoomDef[] = [
     width: 1300,
     height: 1300,
     valueMult: 3,
-    price: 6000,
+    price: 90000,
     collectors: [pan('l-w', 'right', 0, 650), pan('l-e', 'left', 1300, 650)],
     capacity: { dust: 4500, bunny: 80, star: 10 },
     respawn: { dust: 12, bunny: 0.25 },
@@ -189,7 +190,7 @@ export const ROOMS: RoomDef[] = [
     width: 1300,
     height: 1000,
     valueMult: 4,
-    price: 40000,
+    price: 4000000,
     collectors: [pan('b-w', 'right', 0, 520), pan('b-e', 'left', 1300, 520)],
     capacity: { dust: 4000, bunny: 70, star: 10 },
     respawn: { dust: 11, bunny: 0.22 },
@@ -212,7 +213,7 @@ export const ROOMS: RoomDef[] = [
     width: 2800,
     height: 2400,
     valueMult: 5,
-    price: 250000,
+    price: 120000000,
     collectors: [pan('h-w1', 'right', 0, 700), pan('h-w2', 'right', 0, 1700), pan('h-n', 'down', 1400, 0), pan('h-s', 'up', 1400, 2400)],
     capacity: { dust: 7000, bunny: 120, star: 16 },
     respawn: { dust: 18, bunny: 0.35 },
@@ -231,7 +232,7 @@ export const ROOMS: RoomDef[] = [
 ];
 
 /** Portes du château. Les ouvertures font 140 cm (300 cm pour le grand escalier). */
-export const DOORS: DoorDef[] = [
+const RAW_DOORS: DoorDef[] = [
   // Combles → escalier du donjon (toujours ouverte).
   { id: 'attic-stair', room: null, axis: 'x', at: 0, from: 140, to: 280, floorY: 400, height: 230 },
   // Escalier du donjon → Galerie.
@@ -245,13 +246,79 @@ export const DOORS: DoorDef[] = [
   { id: 'hall-east', room: null, axis: 'x', at: -4000, from: 25, to: 325, floorY: -400, height: 340 },
 ];
 
-export const STAIRS: StairDef[] = [
+const RAW_STAIRS: StairDef[] = [
   { id: 'keep-stair', name: "L'Escalier du donjon", rect: { x: -800, y: 140, w: 800, h: 140 }, axis: 'x', yAtMin: 0, yAtMax: 400 },
   { id: 'grand-stair', name: "L'Escalier d'honneur", rect: { x: -4000, y: 25, w: 800, h: 300 }, axis: 'x', yAtMin: -400, yAtMax: 0 },
 ];
 
+// ───────────────────────────── Agrandissement du château ─────────────────────────────
+
+/**
+ * Le château entier est agrandi de ce facteur : pièces, couloirs et escaliers.
+ * Les ouvertures de portes, les meubles et les pelles gardent leur taille réelle ;
+ * seules leurs positions s'écartent. Ce qui touche un mur reste collé à ce mur.
+ */
+export const CASTLE_SCALE = 1.5;
+const S = CASTLE_SCALE;
+/** Plus de surface = plus de poussière (un peu moins que la surface, pour les performances). */
+const DUST_SCALE = 1.45;
+
+/** Nouvelle position d'un rectangle dans une pièce agrandie, en restant collé aux murs qu'il touche. */
+function placeRect(r: Rect, W: number, H: number): Rect {
+  const W2 = W * S;
+  const H2 = H * S;
+  const near = 90;
+  let x = (r.x + r.w / 2) * S - r.w / 2;
+  let y = (r.y + r.h / 2) * S - r.h / 2;
+  if (r.x <= near) x = r.x;
+  else if (W - (r.x + r.w) <= near) x = W2 - (W - r.x);
+  if (r.y <= near) y = r.y;
+  else if (H - (r.y + r.h) <= near) y = H2 - (H - r.y);
+  return { x, y, w: r.w, h: r.h };
+}
+
+function scaleRoom(r: RoomDef): RoomDef {
+  const W = r.width;
+  const H = r.height;
+  return {
+    ...r,
+    origin: { x: r.origin.x * S, z: r.origin.z * S },
+    width: W * S,
+    height: H * S,
+    collectors: r.collectors.map((c) => {
+      const rect = placeRect(c.rect, W, H);
+      return { ...c, rect, mouth: { x: c.mouth.x - c.rect.x + rect.x, y: c.mouth.y - c.rect.y + rect.y } };
+    }),
+    obstacles: r.obstacles.map((o) => ({ ...o, rect: placeRect(o.rect, W, H) })),
+    patches: r.patches.map((p) => ({ x: p.x * S, y: p.y * S, spread: p.spread * S, weight: p.weight })),
+    capacity: Object.fromEntries(Object.entries(r.capacity).map(([k, v]) => [k, Math.round((v ?? 0) * (k === 'star' ? 1 : DUST_SCALE))])),
+    respawn: Object.fromEntries(Object.entries(r.respawn).map(([k, v]) => [k, (v ?? 0) * DUST_SCALE])),
+  };
+}
+
+function scaleDoor(d: DoorDef): DoorDef {
+  // Le mur s'éloigne, le centre de l'ouverture aussi ; la largeur de l'ouverture ne change pas.
+  const half = (d.to - d.from) / 2;
+  const center = ((d.from + d.to) / 2) * S;
+  return { ...d, at: d.at * S, from: center - half, to: center + half };
+}
+
+function scaleStair(st: StairDef): StairDef {
+  const { x, y, w, h } = st.rect;
+  if (st.axis === 'x') {
+    const cz = (y + h / 2) * S;
+    return { ...st, rect: { x: x * S, y: cz - h / 2, w: w * S, h } };
+  }
+  const cx = (x + w / 2) * S;
+  return { ...st, rect: { x: cx - w / 2, y: y * S, w, h: h * S } };
+}
+
+export const ROOMS: RoomDef[] = RAW_ROOMS.map(scaleRoom);
+export const DOORS: DoorDef[] = RAW_DOORS.map(scaleDoor);
+export const STAIRS: StairDef[] = RAW_STAIRS.map(scaleStair);
+
 /** Position de départ du joueur (au milieu des combles, face à la pelle de gauche). */
-export const START = { x: 800, z: 450, yaw: Math.PI / 2 };
+export const START = { x: 800 * S, z: 450 * S, yaw: Math.PI / 2 };
 
 export function roomById(id: string): RoomDef | undefined {
   return ROOMS.find((r) => r.id === id);

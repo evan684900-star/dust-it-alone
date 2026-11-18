@@ -382,6 +382,7 @@ export class Game {
         press: (down: boolean) => (this.input.pressed = down),
         unlock: () => this.tryUnlock(),
         earn: (n: number) => this.earn(n),
+        buy: (id: string, n: number) => this.buyNode(id, n),
         teleport: (x: number, z: number, y: number, yaw: number, pitch = -0.3) => {
           Object.assign(this.player, { x, z, y, yaw, pitch });
           (this.player as unknown as { smoothY: number }).smoothY = y;

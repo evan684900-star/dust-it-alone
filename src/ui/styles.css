@@ -398,8 +398,8 @@ kbd {
 .map-room.locked { fill: #6b5a6e; stroke-dasharray: 60 40; }
 .map-stair { fill: #d9c7a8; stroke: var(--ink); stroke-width: 18; opacity: 0.85; }
 .map-clean { fill: var(--sky); opacity: 0.7; }
-.map-label { font-family: var(--font-display); font-size: 210px; text-anchor: middle; fill: var(--ink); }
-.map-sub { font-family: var(--font-body); font-weight: 900; font-size: 150px; text-anchor: middle; fill: var(--ink); opacity: 0.8; }
+.map-label { font-family: var(--font-display); font-size: 300px; text-anchor: middle; fill: var(--ink); }
+.map-sub { font-family: var(--font-body); font-weight: 900; font-size: 210px; text-anchor: middle; fill: var(--ink); opacity: 0.8; }
 .map-me { fill: var(--tomato); stroke: var(--ink); stroke-width: 22; stroke-linejoin: round; }
 .map-me-halo { fill: rgba(255, 90, 78, 0.25); }
 .map-help { font-weight: 800; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -592,3 +592,5 @@ kbd {
 .lg-small { border-radius: 50%; }
 .lg-big { transform: rotate(45deg); }
 .lg-junction { transform: rotate(45deg) scale(0.75); border-style: dashed !important; }
+.tree-ring { fill: none; stroke: rgba(255, 243, 214, 0.06); stroke-width: 3; stroke-dasharray: 10 18; }
+.tree-branch-label { font-size: 46px; stroke-width: 10px; }

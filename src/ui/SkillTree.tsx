@@ -43,20 +43,20 @@ export function SkillTree({ game }: { game: Game }) {
   const st = { levels, roomUnlocked: (id: string) => unlocked.includes(id) };
   const [selected, setSelected] = useState<string>('broom-wide-1');
   const [hovered, setHovered] = useState<string | null>(null);
-  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+  const [view, setView] = useState({ x: 0, y: 0, k: 0.6 });
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Molette : zoom autour du curseur.
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    setView((v) => ({ ...v, k: Math.max(0.45, Math.min(2.2, v.k * (e.deltaY > 0 ? 0.9 : 1.1))) }));
+    setView((v) => ({ ...v, k: Math.max(0.25, Math.min(2.2, v.k * (e.deltaY > 0 ? 0.9 : 1.1))) }));
   };
   useEffect(() => {
     const el = svgRef.current;
     el?.addEventListener('wheel', onWheel, { passive: false });
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Space') setView({ x: 0, y: 0, k: 1 });
+      if (e.code === 'Space') setView({ x: 0, y: 0, k: 0.6 });
     };
     window.addEventListener('keydown', onKey);
     return () => {
@@ -102,12 +102,14 @@ export function SkillTree({ game }: { game: Game }) {
           </radialGradient>
         </defs>
         <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
-          <circle r={620} fill="url(#tree-glow)" />
+          <circle r={1500} fill="url(#tree-glow)" />
+          {/* Anneaux de profondeur : plus on s'éloigne de Plume, plus c'est cher */}
+          {[2, 4, 6, 8].map((d) => <circle key={d} r={d * RING} class="tree-ring" />)}
           {/* Étiquettes des branches */}
           {(Object.keys(BRANCHES) as (keyof typeof BRANCHES)[]).map((b) => {
             const a = (BRANCHES[b].angle * Math.PI) / 180;
-            const r = b === 'helpers' ? 330 : 560;
-            const ang = b === 'helpers' ? (252 * Math.PI) / 180 : a;
+            const r = b === 'helpers' ? 330 : 1480;
+            const ang = a;
             return (
               <text key={b} class="tree-branch-label" x={Math.sin(ang) * r} y={-Math.cos(ang) * r} fill={BRANCHES[b].color}>
                 {BRANCHES[b].icon} {BRANCHES[b].name}

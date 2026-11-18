@@ -1,5 +1,5 @@
+import { TREE_NODES, type StatKey } from '../data/tree';
 import type { TreeLevels } from './tree';
-import { level } from './tree';
 
 /** Effets de l'arbre sur une pièce (appliqués à sa simulation). */
 export interface RoomModifiers {
@@ -15,11 +15,10 @@ export interface RoomModifiers {
   panMagnet: boolean;
   /** Multiplicateur de valeur (inclut la valeur propre de la pièce). */
   valueMultiplier: number;
-  /** Valeur d'un mouton de poussière. */
   bunnyValue: number;
-  /** Probabilité qu'un grain qui retombe soit de la poussière d'étoile. */
   starChance: number;
-  /** Multiplicateur de poussière qui retombe. */
+  /** Multiplicateur de valeur des étoiles. */
+  starValue: number;
   respawnMult: number;
   /** Bonus de valeur quand la poussière poussée par le balai tombe droit dans une pelle. */
   scoopBonus: number;
@@ -42,37 +41,56 @@ export interface Modifiers {
 
 /**
  * Transforme les niveaux de l'Arbre des Souvenirs en effets de jeu.
- * Fonction pure : facile à tester, appliquée à chaque achat.
+ * Chaque nœud décrit ses effets (`stats`) : on additionne (`add`) ou on
+ * multiplie (`mul`) selon le niveau acheté. Fonction pure, facile à tester.
  */
 export function computeModifiers(levels: TreeLevels, cleanedRooms: number): Modifiers {
-  const L = (id: string) => level(levels, id);
-  const giant = L('broom-giant') > 0;
-  const precise = L('broom-precise') > 0;
-  const memoryOfPlaces = L('junction-places') > 0 ? 1 + 0.05 * cleanedRooms : 1;
-  const globalValue = Math.pow(1.25, L('value-1')) * Math.pow(1.3, L('value-2')) * memoryOfPlaces;
+  const add: Partial<Record<StatKey, number>> = {};
+  const mul: Partial<Record<StatKey, number>> = {};
+  const roomAdd = new Map<string, Partial<Record<StatKey, number>>>();
+  for (const n of TREE_NODES) {
+    const l = levels[n.id] ?? 0;
+    if (l <= 0) continue;
+    for (const s of n.stats) {
+      if (s.room) {
+        const ra = roomAdd.get(s.room) ?? {};
+        ra[s.key] = (ra[s.key] ?? 0) + s.per * l;
+        roomAdd.set(s.room, ra);
+      } else if (s.mode === 'add') add[s.key] = (add[s.key] ?? 0) + s.per * l;
+      else mul[s.key] = (mul[s.key] ?? 1) * Math.pow(s.per, l);
+    }
+  }
+  const A = (k: StatKey) => add[k] ?? 0;
+  const M = (k: StatKey) => mul[k] ?? 1;
+  const places = 1 + A('places') * cleanedRooms;
+  const globalValue = M('value') * places;
 
-  const room = (roomId: string, roomValue: number): RoomModifiers => ({
-    broomWidth: 74 + 8 * L('broom-wide-1') + 10 * L('broom-wide-2') + (giant ? 60 : 0),
-    broomGrip: Math.max(0.3, 0.85 + 0.05 * L('broom-grip') - (giant ? 0.1 : 0) + (precise ? 0.3 : 0)),
-    pushPower: 1 + 0.15 * L('broom-push'),
-    panScale: 1 + 0.15 * (L('pan-size-1') + L('pan-size-2')),
-    panPull: 120 + 30 * L('pan-pull'),
-    panMagnet: L('pan-magnet') > 0,
-    valueMultiplier: roomValue * globalValue * (1 + 0.1 * L(`shine:${roomId}`)),
-    bunnyValue: 5 + 4 * L('bunny-fat'),
-    starChance: 0.0015 + 0.001 * L('star-luck'),
-    respawnMult: 1 + 0.15 * L(`airflow:${roomId}`),
-    scoopBonus: L('junction-scoop') > 0 ? 0.25 : 0,
-  });
+  const room = (roomId: string, roomValue: number): RoomModifiers => {
+    const r = roomAdd.get(roomId) ?? {};
+    return {
+      broomWidth: 74 + A('broomWidth'),
+      broomGrip: Math.max(0.3, 0.85 + A('broomGrip')),
+      pushPower: 1 + A('pushPower'),
+      panScale: 1 + A('panScale'),
+      panPull: 120 + A('panPull'),
+      panMagnet: A('magnet') > 0,
+      valueMultiplier: roomValue * globalValue * (1 + (r.roomValue ?? 0)),
+      bunnyValue: 5 + A('bunnyValue'),
+      starChance: 0.0015 + A('starChance'),
+      starValue: M('starValue'),
+      respawnMult: 1 + (r.respawn ?? 0),
+      scoopBonus: A('scoop'),
+    };
+  };
 
   return {
     room,
     player: {
-      walkMult: 1 + 0.08 * L('plume-speed'),
-      sprintMult: 1 + 0.25 * L('plume-sprint'),
-      reachMax: 230 + 25 * L('broom-reach'),
-      marchBonus: L('junction-march') > 0 ? 0.2 : 0,
+      walkMult: 1 + A('walk'),
+      sprintMult: 1 + A('sprint'),
+      reachMax: 230 + A('reach'),
+      marchBonus: A('march'),
     },
-    cleanBonusMult: (roomId) => (L(`echo:${roomId}`) > 0 ? 2 : 1),
+    cleanBonusMult: (roomId) => ((roomAdd.get(roomId)?.echo ?? 0) > 0 ? 2 : 1),
   };
 }

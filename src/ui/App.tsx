@@ -4,6 +4,7 @@ import { CLEAN_THRESHOLD } from '../game';
 import { formatNumber } from '../core/format';
 import * as store from '../state/store';
 import { SkillTree } from './SkillTree';
+import { STAIRS } from '../data/rooms';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 
@@ -179,8 +180,9 @@ function CastleMap({ game }: { game: Game }) {
         <h2>🗺️ Le château</h2>
         <svg class="castle-map" viewBox={`${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}`}>
           {/* Escaliers */}
-          <rect x={-800} y={140} width={800} height={140} class="map-stair" />
-          <rect x={-4000} y={25} width={800} height={300} class="map-stair" />
+          {STAIRS.map((st) => (
+            <rect key={st.id} x={st.rect.x} y={st.rect.y} width={st.rect.w} height={st.rect.h} class="map-stair" />
+          ))}
           {rooms.map((r) => (
             <g key={r.id}>
               <rect x={r.x} y={r.z} width={r.w} height={r.h} rx={40} class={`map-room ${r.unlocked ? '' : 'locked'}`} style={{ fill: r.unlocked ? levelColor[r.level] : undefined }} />
@@ -188,7 +190,7 @@ function CastleMap({ game }: { game: Game }) {
               <text x={r.x + r.w / 2} y={r.z + r.h / 2 - 40} class="map-label">
                 {r.unlocked ? (SHORT_NAMES[r.id] ?? r.name) : '🔒 ' + formatNumber(r.price) + ' 🪙'}
               </text>
-              <text x={r.x + r.w / 2} y={r.z + r.h / 2 + 160} class="map-sub">
+              <text x={r.x + r.w / 2} y={r.z + r.h / 2 + 230} class="map-sub">
                 {r.unlocked ? `${LEVEL_NAMES[r.level] ?? ''} · ${Math.floor(r.clean * 100)} %${r.cleaned ? ' ⭐' : ''}` : '???'}
               </text>
             </g>

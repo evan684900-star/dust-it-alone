@@ -842,6 +842,12 @@ Chaque jalon se termine par **une version jouable déployée sur Vercel**.
 | Carte | **Un grand château** de 14 pièces sur 5 niveaux, reliées par des portes, couloirs et escaliers (voir §6) |
 | Thème / nom | Château + souvenirs, *Dust It Alone* (par défaut, modifiable) |
 | Stack | Vite + TypeScript + **Three.js** + Preact |
+| Boutique | **Arbre de compétences géant** (l'Arbre des Souvenirs) : ~100 nœuds, 380+ niveaux, paliers I à VIII (voir §8) |
+| Durée | **≥ 10 h** vérifiées par le simulateur de progression (`tools/pacing.ts`, test `tests/balance`) : environ 13 h pour tout acheter |
+| Taille des pièces | Château agrandi ×1,5 (`CASTLE_SCALE`), pièces 2,25× plus grandes en surface |
+| Balai | Il ne balaie **que clic maintenu** (brosse levée sinon) ; hitbox rectangulaire |
+| Combo | **Supprimé** |
+| Prix des améliorations | Multiplicateur global `COST_SCALE` (1,6) dans `src/data/tree.ts` |
 
 ### Questions encore ouvertes
 1. Langues : français seul au début, ou français + anglais dès la v1 ?
