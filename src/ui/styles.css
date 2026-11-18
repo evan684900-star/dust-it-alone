@@ -609,3 +609,21 @@ kbd {
 .offline-report { margin-top: 14px; padding: 10px 14px; border: 3px solid var(--ink); border-radius: 14px; background: #e4f0ff; display: flex; flex-direction: column; gap: 4px; font-weight: 800; animation: toast-in 0.5s cubic-bezier(0.2, 1.8, 0.4, 1) both; }
 .offline-report strong { font: 20px var(--font-display); font-weight: normal; }
 .offline-report em { font-size: 12px; opacity: 0.8; }
+
+/* ───────── Grand Ménage ───────── */
+.tree-coins.sparks { background: #fff1c4; }
+.tree-coins.sparks small { color: #9a6a10; }
+.btn-prestige { background: linear-gradient(135deg, #ffe58a, #ffb84a); font-size: 18px; }
+.btn-prestige small { display: block; font: 13px var(--font-body); font-weight: 900; }
+.btn-prestige:not(:disabled) { animation: pulse 1.5s ease-in-out infinite; }
+.tree-ring-btn { font-size: 15px; background: #fff1c4; }
+.tree-gold-ring { fill: none; stroke: #ffd86a; stroke-width: 10; stroke-dasharray: 30 24; opacity: 0.55; filter: drop-shadow(0 0 12px rgba(255, 216, 106, 0.7)); }
+.tree-node.gold .shape, .tree-node:is(.small, .big) .shape { transition: fill 0.2s; }
+.prestige-card { width: min(620px, calc(100vw - 32px)); }
+.prestige-story { font-style: italic; font-weight: 700; color: #5a4060; }
+.prestige-gain { font: 28px var(--font-display); text-align: center; margin: 10px 0; color: #b5780f; }
+.prestige-gain small { display: block; font: 14px var(--font-body); font-weight: 800; color: var(--ink); }
+.prestige-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; font-weight: 800; }
+.prestige-cols div { background: #f3e3c3; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 12px; }
+.prestige-cols ul { margin: 6px 0 0; padding-left: 18px; }
+.prestige-buttons { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }

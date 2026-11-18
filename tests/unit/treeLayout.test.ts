@@ -11,7 +11,7 @@ function pos(n: (typeof TREE_NODES)[number]) {
 describe("disposition de l'arbre", () => {
   it('chaque nœud (hors jonctions) reste dans le secteur de sa branche', () => {
     for (const n of TREE_NODES) {
-      if (n.kind === 'junction' || n.branch === 'helpers') continue;
+      if (n.kind === 'junction' || n.branch === 'helpers' || n.branch === 'gold') continue;
       const p = pos(n);
       // Angle du nœud vu depuis la racine, comparé à l'angle de sa branche.
       const ang = (Math.atan2(p.x, -p.y) * 180) / Math.PI;

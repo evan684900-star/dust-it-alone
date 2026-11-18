@@ -10,7 +10,7 @@ import { formatNumber } from './core/format';
 import { loadSave, writeSave, type SaveData } from './save/save';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
-import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN } from './economy/tree';
+import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
@@ -58,11 +58,13 @@ export class Game {
     const p = this.save.player;
     const valid = p && this.nav.canStand(p.x, p.z, p.y) !== null;
     this.player = new Player(this.nav, valid && p ? { ...p } : { x: START.x, z: START.z, y: ROOMS[0].floorY, yaw: START.yaw });
-    this.mods = computeModifiers(this.save.tree, 0);
+    this.mods = computeModifiers(this.save.tree, 0, this.save.sparks);
     this.applyTree();
     this.offlineGains();
 
     store.coins.value = this.save.coins;
+    store.sparks.value = this.save.sparks;
+    store.prestiges.value = this.save.prestiges;
     store.totalCoins.value = this.save.totalCoins;
     store.muted.value = this.save.muted;
     store.showFps.value = this.save.showFps;
@@ -154,7 +156,7 @@ export class Game {
 
   /** Recalcule et applique tous les effets de l'arbre (après un achat, une porte, une pièce impeccable…). */
   private applyTree(): void {
-    this.mods = computeModifiers(this.save.tree, this.cleanedCount());
+    this.mods = computeModifiers(this.save.tree, this.cleanedCount(), this.save.sparks);
     this.rooms.forEach((r, i) => {
       const m = this.mods.room(r.def.id, r.def.valueMult);
       r.sim.applyModifiers(m);
@@ -177,12 +179,70 @@ export class Game {
   /** Y a-t-il au moins un nœud qu'on peut se payer ? (pastille sur le bouton de l'arbre) */
   private refreshBuyable(): void {
     const st = this.treeState();
-    const coins = store.coins.value;
     store.treeBuyable.value = TREE_NODES.some((n) => {
       const a = availability(n, st);
-      return (a.ok || (!a.ok && a.reason === 'fork')) && cost(n, treeLevel(st.levels, n.id)) <= coins;
+      return (a.ok || (!a.ok && a.reason === 'fork')) && cost(n, treeLevel(st.levels, n.id)) <= this.wallet(n);
     });
   }
+
+  /** Ce qu'on a en poche pour un nœud : des pièces, ou des Étincelles (anneau doré). */
+  private wallet(n: { currency?: 'sparks' }): number {
+    return n.currency === 'sparks' ? this.save.sparks : store.coins.value;
+  }
+  private pay(n: { currency?: 'sparks' }, amount: number): void {
+    if (n.currency === 'sparks') {
+      this.save.sparks -= amount;
+      store.sparks.value = this.save.sparks;
+    } else store.coins.value -= amount;
+  }
+
+  /** Étincelles que rapporterait un Grand Ménage maintenant. */
+  prestigeGain(): number {
+    return sparksFor(this.save.runCoins, this.mods.prestige.sparkGain);
+  }
+
+  /** Le Grand Ménage est-il possible ? (Grand Hall ouvert au moins une fois, et au moins 1 Étincelle à gagner) */
+  prestigeReady(): boolean {
+    return (this.isUnlocked('hall') || this.save.prestiges > 0) && this.prestigeGain() >= 1;
+  }
+
+  /**
+   * Le Grand Ménage : la saison passe, le château se rendort. On garde les Étincelles,
+   * l'anneau doré, les souvenirs et les réglages ; tout le reste repart de zéro.
+   */
+  grandMenage(): void {
+    if (!this.prestigeReady()) return;
+    const gain = this.prestigeGain();
+    const p = this.mods.prestige;
+    const keepIds = new Set(TREE_NODES.filter((n) => n.currency === 'sparks' || (p.keepHelpers && n.branch === 'helpers')).map((n) => n.id));
+    const tree: Record<string, number> = {};
+    for (const [id, l] of Object.entries(this.save.tree)) if (keepIds.has(id)) tree[id] = l;
+    const rooms: SaveData['rooms'] = {};
+    ROOMS.forEach((r, i) => {
+      // Les pièces gardées restent ouvertes ; les étoiles « impeccable » sont gardées partout.
+      const cleaned = this.save.rooms[r.id]?.cleaned === true;
+      if (i <= p.keepRooms) rooms[r.id] = { unlocked: true, cleaned };
+      else if (cleaned) rooms[r.id] = { unlocked: false, cleaned };
+    });
+    const next: SaveData = {
+      ...this.save,
+      coins: p.startCoins,
+      runCoins: 0,
+      tree,
+      rooms,
+      player: null,
+      sparks: this.save.sparks + gain,
+      prestiges: this.save.prestiges + 1,
+      savedAt: Date.now(),
+    };
+    this.prestiging = true;
+    writeSave(next);
+    store.pushToast('✨ Grand Ménage !', `+${gain} Étincelles. Une nouvelle saison commence…`, 4000);
+    this.synth.bigNode();
+    setTimeout(() => location.reload(), 1600);
+  }
+  /** Pendant le Grand Ménage, on ne sauvegarde plus l'ancienne partie par-dessus la nouvelle. */
+  private prestiging = false;
 
   /** Achète `n` niveaux d'un nœud (n = Infinity pour « Max »). Renvoie le nombre de niveaux achetés. */
   buyNode(id: string, n: number): number {
@@ -195,24 +255,24 @@ export class Game {
     if (!a.ok && a.reason === 'fork') {
       const other = TREE_NODES.find((x) => x.fork === node.fork && x.id !== node.id && treeLevel(st.levels, x.id) > 0)!;
       const back = costForN(other, 0, treeLevel(st.levels, other.id));
-      if (cost(node, 0) > store.coins.value + back) {
+      if (cost(node, 0) > this.wallet(node) + back) {
         this.synth.denied();
         return 0;
       }
       refund = refundFork(node, this.save.tree).refund;
-      store.coins.value += refund;
+      this.pay(node, -refund);
     } else if (!a.ok) {
       this.synth.denied();
       return 0;
     }
     const lvl = treeLevel(this.save.tree, id);
-    const count = Math.min(n, maxAffordable(node, lvl, store.coins.value));
+    const count = Math.min(n, maxAffordable(node, lvl, this.wallet(node)));
     if (count <= 0) {
       this.synth.denied();
       return 0;
     }
     const price = costForN(node, lvl, count);
-    store.coins.value -= price;
+    this.pay(node, price);
     const newLevel = lvl + count;
     this.save.tree[id] = newLevel;
     if (node.kind !== 'small') this.synth.bigNode();
@@ -238,7 +298,7 @@ export class Game {
     const lvl = treeLevel(this.save.tree, id) - 1;
     if (lvl > 0) this.save.tree[id] = lvl;
     else delete this.save.tree[id];
-    store.coins.value += r.amount;
+    this.pay(node, -r.amount);
     this.synth.refund();
     this.applyTree();
     this.persist();
@@ -578,6 +638,7 @@ export class Game {
   }
 
   private earn(amount: number): void {
+    this.save.runCoins += amount;
     store.coins.value += amount;
     store.totalCoins.value += amount;
     this.earnedWindow[this.earnedWindow.length - 1] += amount;
@@ -680,6 +741,8 @@ export class Game {
       this.hudTimer = 0.5;
       if (store.mapOpen.value) this.publishCastle();
       this.refreshBuyable();
+      store.prestigeGain.value = this.prestigeGain();
+      store.prestigeReady.value = this.prestigeReady();
     }
 
     this.fpsAcc.frames++;
@@ -698,6 +761,7 @@ export class Game {
   }
 
   private persist(): void {
+    if (this.prestiging) return;
     const p = this.player;
     // Poussière restante de chaque pièce ouverte.
     for (const r of this.rooms) {

@@ -18,6 +18,7 @@ export function App({ game }: { game: Game }) {
       {store.started.value && store.dialogue.value && <DialogueBubble key={store.dialogue.value.id} line={store.dialogue.value} />}
       {store.started.value && store.mapOpen.value && <CastleMap game={game} />}
       {store.started.value && store.treeOpen.value && <SkillTree game={game} />}
+      {store.prestigeConfirm.value && <PrestigeConfirm game={game} />}
       {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
@@ -65,6 +66,48 @@ function OfflineReport() {
         tes assistants ont ramassé <b>{formatNumber(r.coins)} 🪙</b>
         {r.counted < r.seconds && <em> (ils se sont arrêtés au bout de {duration(r.counted)} : améliore « Longue nuit » dans l'arbre)</em>}
       </span>
+    </div>
+  );
+}
+
+/** Confirmation du Grand Ménage : ce qu'on garde, ce qui repart à zéro. */
+function PrestigeConfirm({ game }: { game: Game }) {
+  const close = () => (store.prestigeConfirm.value = false);
+  return (
+    <div class="settings-backdrop" onClick={close}>
+      <div class="settings-card prestige-card" onClick={(e) => e.stopPropagation()}>
+        <h2>✨ Le Grand Ménage</h2>
+        <p class="prestige-story">
+          Les saisons passent. Le château se rendort, la poussière retombe partout… mais Plume, lui, n'oublie rien.
+        </p>
+        <div class="prestige-gain">
+          +{formatNumber(store.prestigeGain.value)} Étincelles <small>(chacune : +1 % de valeur pour toujours)</small>
+        </div>
+        <div class="prestige-cols">
+          <div>
+            <strong>Repart de zéro</strong>
+            <ul>
+              <li>🪙 Pièces</li>
+              <li>🌳 Nœuds payés en pièces</li>
+              <li>🚪 Pièces du château (sauf les combles)</li>
+              <li>🧹 La poussière revient partout</li>
+            </ul>
+          </div>
+          <div>
+            <strong>Tu gardes</strong>
+            <ul>
+              <li>✨ Étincelles et anneau doré</li>
+              <li>⭐ Pièces impeccables</li>
+              <li>📜 Souvenirs et histoire</li>
+              <li>⚙️ Réglages</li>
+            </ul>
+          </div>
+        </div>
+        <div class="prestige-buttons">
+          <button class="btn" onClick={close}>Pas maintenant</button>
+          <button class="btn btn-prestige" onClick={() => { close(); game.grandMenage(); }}>✨ Lancer le Grand Ménage</button>
+        </div>
+      </div>
     </div>
   );
 }

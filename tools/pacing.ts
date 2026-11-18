@@ -45,7 +45,7 @@ export function simulate(maxHours = 40): PacingResult {
   const st = { levels, roomUnlocked: (id: string) => unlocked.has(id) };
   const roomIds = new Set(ROOMS.map((r) => r.id));
   const nodesToBuy = TREE_NODES.filter(
-    (n) => !(n.requires && 'soon' in n.requires) && !(n.requires && 'room' in n.requires && !roomIds.has(n.requires.room)) && n.id !== 'broom-precise',
+    (n) => n.currency !== 'sparks' && !(n.requires && 'soon' in n.requires) && !(n.requires && 'room' in n.requires && !roomIds.has(n.requires.room)) && n.id !== 'broom-precise',
   );
   let mods = computeModifiers(levels, 0);
   const incomeByHour: number[] = [];

@@ -112,3 +112,8 @@ export function canRefund(node: TreeNode, levels: TreeLevels): RefundCheck {
   }
   return { ok: true, amount: cost(node, after) };
 }
+
+/** Étincelles gagnées au Grand Ménage : racine cubique des pièces gagnées depuis le dernier (en millions). */
+export function sparksFor(runCoins: number, gainMult = 1): number {
+  return Math.floor(Math.cbrt(Math.max(0, runCoins) / 1e6) * gainMult);
+}

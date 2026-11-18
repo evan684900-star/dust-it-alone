@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { NODE_BY_ID, TREE_NODES } from '../../src/data/tree';
-import { availability, canRefund, cost, costForN, maxAffordable, niceRound, refundFork } from '../../src/economy/tree';
+import { availability, canRefund, cost, costForN, maxAffordable, niceRound, refundFork, sparksFor } from '../../src/economy/tree';
 import { computeModifiers } from '../../src/economy/modifiers';
 import { migrate } from '../../src/save/save';
 
@@ -116,5 +116,32 @@ describe('remboursement', () => {
     // Un grand nœud demande son parent au max : impossible de baisser le parent.
     const giant = canRefund(node('broom-wide-3'), { 'broom-wide-1': 5, 'broom-wide-2': 5, 'broom-wide-3': 5, 'broom-giant': 1 });
     expect(giant.ok ? 'ok' : giant.reason).toBe('needed');
+  });
+});
+
+describe('Grand Ménage', () => {
+  it('les Étincelles suivent la racine cubique des pièces gagnées (en millions)', () => {
+    expect(sparksFor(0)).toBe(0);
+    expect(sparksFor(999_999)).toBe(0);
+    expect(sparksFor(1e9)).toBe(10);
+    expect(sparksFor(1e12)).toBe(100);
+    expect(sparksFor(1e12, 1.3)).toBe(130);
+  });
+  it('chaque Étincelle gardée donne +1 % de valeur', () => {
+    const m = computeModifiers({}, 0, 50);
+    expect(m.room('attic', 1).valueMultiplier).toBeCloseTo(1.5);
+  });
+  it("l'anneau doré se paie en Étincelles et donne ses effets", () => {
+    const ring = TREE_NODES.filter((n) => n.branch === 'gold');
+    expect(ring.length).toBe(8);
+    expect(ring.every((n) => n.currency === 'sparks')).toBe(true);
+    const m = computeModifiers({ 'gold-start': 2, 'gold-rooms': 3, 'gold-helpers': 1 }, 0);
+    expect(m.prestige.startCoins).toBe(10000);
+    expect(m.prestige.keepRooms).toBe(3);
+    expect(m.prestige.keepHelpers).toBe(true);
+  });
+  it('la sauvegarde garde les Étincelles', () => {
+    const d = migrate({ sparks: 42, prestiges: 2, runCoins: 1e9 });
+    expect([d.sparks, d.prestiges, d.runCoins]).toEqual([42, 2, 1e9]);
   });
 });

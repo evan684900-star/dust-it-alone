@@ -45,6 +45,8 @@ export interface Modifiers {
   helpers: HelperTeam;
   /** Gains hors-ligne : efficacité (0,5 = moitié) et durée max (heures). */
   offline: { eff: number; hours: number };
+  /** Ce que garde / donne le Grand Ménage (anneau doré). */
+  prestige: { startCoins: number; keepHelpers: boolean; keepRooms: number; sparkGain: number };
   /** Multiplicateur du bonus « pièce impeccable » pour une pièce. */
   cleanBonusMult: (roomId: string) => number;
 }
@@ -54,7 +56,7 @@ export interface Modifiers {
  * Chaque nœud décrit ses effets (`stats`) : on additionne (`add`) ou on
  * multiplie (`mul`) selon le niveau acheté. Fonction pure, facile à tester.
  */
-export function computeModifiers(levels: TreeLevels, cleanedRooms: number): Modifiers {
+export function computeModifiers(levels: TreeLevels, cleanedRooms: number, sparks = 0): Modifiers {
   const add: Partial<Record<StatKey, number>> = {};
   const mul: Partial<Record<StatKey, number>> = {};
   const roomAdd = new Map<string, Partial<Record<StatKey, number>>>();
@@ -73,7 +75,8 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number): Modi
   const A = (k: StatKey) => add[k] ?? 0;
   const M = (k: StatKey) => mul[k] ?? 1;
   const places = 1 + A('places') * cleanedRooms;
-  const globalValue = M('value') * places;
+  // Chaque Étincelle gardée (non dépensée) donne +1 % de valeur.
+  const globalValue = M('value') * places * (1 + 0.01 * sparks);
 
   const room = (roomId: string, roomValue: number): RoomModifiers => {
     const r = roomAdd.get(roomId) ?? {};
@@ -107,6 +110,12 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number): Modi
       speed: 1 + A('helperSpeed'),
     },
     offline: { eff: 0.5 + A('offlineEff'), hours: 8 + A('offlineHours') },
+    prestige: {
+      startCoins: A('startCoins') > 0 ? Math.pow(10, 2 + A('startCoins')) : 0,
+      keepHelpers: A('keepHelpers') > 0,
+      keepRooms: A('keepRooms'),
+      sparkGain: 1 + A('sparkGain'),
+    },
     player: {
       walkMult: 1 + A('walk'),
       sprintMult: 1 + A('sprint'),

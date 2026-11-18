@@ -1,7 +1,7 @@
 import { ROOMS } from './rooms';
 
 /** Les branches de l'Arbre des Souvenirs (angle en degrés, 0 = en haut, sens horaire). */
-export type BranchId = 'broom' | 'pickup' | 'memory' | 'castle' | 'plume' | 'helpers';
+export type BranchId = 'broom' | 'pickup' | 'memory' | 'castle' | 'plume' | 'helpers' | 'gold';
 
 export const BRANCHES: Record<BranchId, { name: string; icon: string; angle: number; color: string }> = {
   broom: { name: 'Balai', icon: '🧹', angle: 0, color: '#ffc93c' },
@@ -10,6 +10,7 @@ export const BRANCHES: Record<BranchId, { name: string; icon: string; angle: num
   castle: { name: 'Château', icon: '🏰', angle: 216, color: '#7bd651' },
   plume: { name: 'Plume', icon: '👟', angle: 288, color: '#ff8a6e' },
   helpers: { name: 'Assistants', icon: '🐑', angle: 252, color: '#b8a99a' },
+  gold: { name: 'Anneau doré', icon: '✨', angle: 0, color: '#ffd86a' },
 };
 
 /** ● petit nœud (plusieurs niveaux), ◆ grand nœud (déblocage), ◇ jonction entre deux branches. */
@@ -29,7 +30,8 @@ export type StatKey =
   | 'respawn' | 'roomValue' | 'echo'
   | 'walk' | 'sprint' | 'march'
   | 'duster' | 'sponge' | 'blower' | 'vacuumCap'
-  | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours';
+  | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours'
+  | 'startCoins' | 'keepHelpers' | 'keepRooms' | 'sparkGain';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
@@ -55,6 +57,8 @@ export interface TreeNode {
   requires?: Requirement;
   /** Les deux nœuds d'une fourche s'excluent : on en choisit un seul. */
   fork?: string;
+  /** Monnaie du nœud : pièces (par défaut) ou Étincelles (anneau doré, gardé au Grand Ménage). */
+  currency?: 'sparks';
 }
 
 const pct = (v: number) => `${Math.round(v * 100)} %`;
@@ -318,6 +322,40 @@ const HELPERS: TreeNode[] = [
     flavor: 'Une nuit qui dure… très longtemps.', effect: () => 'Gains pendant l’absence jusqu’à 24 h (au lieu de 8 h)' },
 ];
 
+// ───────────────────────────── ✨ Anneau doré (prestige) ─────────────────────────────
+
+/** Rayon de l'anneau doré (en anneaux de profondeur) : il entoure tout l'arbre. */
+export const GOLD_RING_DEPTH = 22;
+
+const goldNode = (k: number, n: Omit<TreeNode, 'branch' | 'depth' | 'angle' | 'currency' | 'parents' | 'growth'> & { growth?: number }): TreeNode => ({
+  growth: 1.7,
+  ...n,
+  branch: 'gold',
+  parents: [],
+  depth: GOLD_RING_DEPTH,
+  angle: (k / 8) * 360,
+  currency: 'sparks',
+});
+
+const GOLD: TreeNode[] = [
+  goldNode(0, { id: 'gold-value', name: 'Fortune', icon: '💰', kind: 'small', maxLevel: 10, base: 2, stats: [{ key: 'value', per: 1.25, mode: 'mul' }],
+    flavor: 'Chaque saison, le château se souvient un peu mieux de toi.', effect: (l) => `Valeur de tout ×1,25 par niveau (×${Math.pow(1.25, l).toFixed(2).replace('.', ',')})` }),
+  goldNode(1, { id: 'gold-broom', name: 'Main experte', icon: '🖐️', kind: 'small', maxLevel: 5, base: 3, stats: [{ key: 'broomWidth', per: 20, mode: 'add' }, { key: 'pushPower', per: 0.1, mode: 'add' }],
+    flavor: 'Tes gestes sont devenus ceux d’un maître balayeur.', effect: (l) => `+20 cm de brosse et +10 % de force par niveau (+${20 * l} cm)` }),
+  goldNode(2, { id: 'gold-start', name: 'Pécule', icon: '🏦', kind: 'small', maxLevel: 6, base: 4, growth: 1.8, stats: [{ key: 'startCoins', per: 1, mode: 'add' }],
+    flavor: 'Une petite réserve cachée sous une latte du plancher.', effect: (l) => (l ? `Chaque saison commence avec ${['', '1 000', '10 000', '100 000', '1 M', '10 M', '100 M'][l]} pièces` : 'Commence chaque saison avec des pièces') }),
+  goldNode(3, { id: 'gold-helpers', name: 'Bonne famille', icon: '🐑', kind: 'big', maxLevel: 1, base: 15, stats: [{ key: 'keepHelpers', per: 1, mode: 'add' }],
+    flavor: 'Les assistants ne partent plus : ils t’attendent à chaque saison.', effect: () => 'Les assistants sont gardés au Grand Ménage' }),
+  goldNode(4, { id: 'gold-rooms', name: 'Maison accueillante', icon: '🏠', kind: 'small', maxLevel: 4, base: 6, growth: 2, stats: [{ key: 'keepRooms', per: 1, mode: 'add' }],
+    flavor: 'Certaines portes restent ouvertes, quoi qu’il arrive.', effect: (l) => (l ? `Les ${l + 1} premières pièces restent ouvertes` : 'Garde des pièces ouvertes au Grand Ménage') }),
+  goldNode(5, { id: 'gold-speed', name: 'Pas de velours', icon: '🥿', kind: 'small', maxLevel: 5, base: 2, stats: [{ key: 'walk', per: 0.08, mode: 'add' }, { key: 'sprint', per: 0.08, mode: 'add' }],
+    flavor: 'Tu connais le château par cœur.', effect: (l) => `+8 % de vitesse par niveau (+${8 * l} %)` }),
+  goldNode(6, { id: 'gold-sparks', name: 'Étincelles brillantes', icon: '✨', kind: 'small', maxLevel: 5, base: 5, growth: 2, stats: [{ key: 'sparkGain', per: 0.15, mode: 'add' }],
+    flavor: 'Chaque souvenir brille un peu plus fort.', effect: (l) => `+15 % d’Étincelles au Grand Ménage par niveau (+${15 * l} %)` }),
+  goldNode(7, { id: 'gold-dream', name: 'Rêveur', icon: '🌙', kind: 'small', maxLevel: 4, base: 3, stats: [{ key: 'offlineEff', per: 0.12, mode: 'add' }],
+    flavor: 'Même absent, tu fais le ménage en rêve.', effect: (l) => `Gains pendant l’absence +12 % par niveau (+${12 * l} %)` }),
+];
+
 // ───────────────────────────── 🏰 Château ─────────────────────────────
 
 /** Branche d'une pièce : prix multipliés selon la valeur de la pièce. */
@@ -372,5 +410,5 @@ export const COST_SCALE = 1.6;
 export const TREE_NODES: TreeNode[] = [...BROOM, ...PICKUP, ...MEMORY, ...PLUME, ...JUNCTIONS, ...HELPERS, ...CASTLE].map((n) => ({
   ...n,
   base: n.base * COST_SCALE,
-}));
+})).concat(GOLD);
 export const NODE_BY_ID = new Map(TREE_NODES.map((n) => [n.id, n]));

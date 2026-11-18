@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'preact/hooks';
 import type { Game } from '../game';
-import { BRANCHES, NODE_BY_ID, TREE_NODES, type TreeNode } from '../data/tree';
+import { BRANCHES, GOLD_RING_DEPTH, NODE_BY_ID, TREE_NODES, type TreeNode } from '../data/tree';
 import { ROOMS } from '../data/rooms';
 import { availability, canRefund, cost, costForN, maxAffordable, revealed, level as lvlOf, type Availability } from '../economy/tree';
 import { formatNumber } from '../core/format';
@@ -44,13 +44,14 @@ export function SkillTree({ game }: { game: Game }) {
   const [selected, setSelected] = useState<string>('broom-wide-1');
   const [hovered, setHovered] = useState<string | null>(null);
   const [view, setView] = useState({ x: 0, y: 0, k: 0.6 });
+  void GOLD_RING_DEPTH;
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
   // Molette : zoom autour du curseur.
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
-    setView((v) => ({ ...v, k: Math.max(0.25, Math.min(2.2, v.k * (e.deltaY > 0 ? 0.9 : 1.1))) }));
+    setView((v) => ({ ...v, k: Math.max(0.12, Math.min(2.2, v.k * (e.deltaY > 0 ? 0.9 : 1.1))) }));
   };
   useEffect(() => {
     const el = svgRef.current;
@@ -66,8 +67,11 @@ export function SkillTree({ game }: { game: Game }) {
   }, []);
 
   // Seuls les nœuds achetés ou achetables maintenant sont visibles : les autres « poussent » plus tard.
+  const goldOn = store.sparks.value > 0 || store.prestiges.value > 0;
+  const wallet = (n: TreeNode) => (n.currency === 'sparks' ? store.sparks.value : coins);
   const visible = new Set(
     TREE_NODES.filter((n) => {
+      if (n.branch === 'gold') return goldOn;
       if ((levels[n.id] ?? 0) > 0) return true;
       const av = availability(n, st);
       return av.ok || (!av.ok && av.reason === 'fork');
@@ -83,6 +87,17 @@ export function SkillTree({ game }: { game: Game }) {
       <div class="tree-header">
         <h2>🌳 L'Arbre des Souvenirs</h2>
         <div class="tree-coins">🪙 {formatNumber(coins)} <small>+{formatNumber(store.coinsPerSecond.value)}/s</small></div>
+        {goldOn && <div class="tree-coins sparks">✨ {formatNumber(store.sparks.value)} <small>+{store.sparks.value} % de valeur</small></div>}
+        {goldOn && (
+          <button class="btn tree-ring-btn" onClick={() => setView({ x: 0, y: 0, k: 0.17 })}>
+            Voir l'anneau doré
+          </button>
+        )}
+        {(store.prestigeReady.value || store.prestiges.value > 0) && (
+          <button class="btn btn-prestige" disabled={!store.prestigeReady.value} onClick={() => (store.prestigeConfirm.value = true)}>
+            ✨ Grand Ménage <small>+{formatNumber(store.prestigeGain.value)} Étincelles</small>
+          </button>
+        )}
         <button class="btn tree-close" onClick={() => game.toggleTree()}>Fermer (B)</button>
       </div>
 
@@ -125,6 +140,7 @@ export function SkillTree({ game }: { game: Game }) {
           <circle r={1500} fill="url(#tree-glow)" />
           {/* Anneaux de profondeur : plus on s'éloigne de Plume, plus c'est cher */}
           {[2, 4, 6, 8].map((d) => <circle key={d} r={d * RING} class="tree-ring" />)}
+          {goldOn && <circle r={GOLD_RING_DEPTH * RING} class="tree-gold-ring" />}
           {/* Étiquettes des branches */}
           {(Object.keys(BRANCHES) as (keyof typeof BRANCHES)[]).filter((b) => TREE_NODES.some((n) => n.branch === b && visible.has(n.id))).map((b) => {
             const a = (BRANCHES[b].angle * Math.PI) / 180;
@@ -140,7 +156,7 @@ export function SkillTree({ game }: { game: Game }) {
           {/* Liens (la « sève » coule le long des chemins achetés) */}
           {TREE_NODES.filter((n) => visible.has(n.id)).map((n) => {
             const p = POS.get(n.id)!;
-            const parents = (n.parents.length ? n.parents : ['__root']).filter((pid) => pid === '__root' || visible.has(pid));
+            const parents = (n.parents.length ? n.parents : n.branch === 'gold' ? [] : ['__root']).filter((pid) => pid === '__root' || visible.has(pid));
             const lvl = levels[n.id] ?? 0;
             const av = availability(n, st);
             return parents.map((pid) => {
@@ -162,7 +178,7 @@ export function SkillTree({ game }: { game: Game }) {
             const p = POS.get(n.id)!;
             const lvl = levels[n.id] ?? 0;
             const av = availability(n, st);
-            const state = stateOf(n, av, lvl, coins, revealed(n, st));
+            const state = stateOf(n, av, lvl, wallet(n), revealed(n, st));
             const color = BRANCHES[n.branch].color;
             const R = n.kind === 'big' ? 34 : n.kind === 'junction' ? 26 : 28;
             const isSel = n.id === selected;
@@ -213,7 +229,7 @@ export function SkillTree({ game }: { game: Game }) {
         </g>
       </svg>
 
-      <TreeDetail game={game} node={focus} st={st} coins={coins} />
+      <TreeDetail game={game} node={focus} st={st} coins={focus.currency === 'sparks' ? store.sparks.value : coins} />
 
       <div class="tree-legend">
         <span><b class="lg-small" /> petit nœud (plusieurs niveaux)</span>
@@ -246,6 +262,7 @@ function TreeDetail({ game, node, st, coins }: { game: Game; node: TreeNode; st:
   const ten = Math.min(10, node.maxLevel - lvl);
   const afford = maxAffordable(node, lvl, coins);
   const hold = useRef<number | null>(null);
+  const unit = node.currency === 'sparks' ? '✨' : '🪙';
   const refund = canRefund(node, st.levels);
 
   // Clic maintenu sur ×1 : achats en rafale, de plus en plus vite.
@@ -292,26 +309,26 @@ function TreeDetail({ game, node, st, coins }: { game: Game; node: TreeNode; st:
           {!av.ok && <div class="td-locked soft">🔄 {reasonText(av)}</div>}
           <div class="td-buy">
             <button class={`btn tree-btn ${next <= coins ? 'ok' : ''}`} onPointerDown={startHold} onPointerUp={stopHold} onPointerLeave={stopHold}>
-              ×1 <small>{formatNumber(next)} 🪙</small>
+              ×1 <small>{formatNumber(next)} {unit}</small>
             </button>
             {ten > 1 && (
               <button class={`btn tree-btn ${costForN(node, lvl, ten) <= coins ? 'ok' : ''}`} onClick={() => game.buyNode(node.id, ten)}>
-                ×{ten} <small>{formatNumber(costForN(node, lvl, ten))} 🪙</small>
+                ×{ten} <small>{formatNumber(costForN(node, lvl, ten))} {unit}</small>
               </button>
             )}
             {node.maxLevel > 1 && (
               <button class={`btn tree-btn ${afford > 0 ? 'ok' : ''}`} onClick={() => game.buyNode(node.id, Infinity)}>
-                Max <small>{afford > 0 ? `${afford} niv. · ${formatNumber(costForN(node, lvl, afford))} 🪙` : '—'}</small>
+                Max <small>{afford > 0 ? `${afford} niv. · ${formatNumber(costForN(node, lvl, afford))} ${unit}` : '—'}</small>
               </button>
             )}
           </div>
-          {next > coins && <div class="td-missing">Il manque {formatNumber(next - coins)} 🪙</div>}
+          {next > coins && <div class="td-missing">Il manque {formatNumber(next - coins)} {unit}</div>}
         </>
       )}
       {lvl > 0 && (
         <div class="td-refund">
           <button class="btn tree-btn refund" disabled={!refund.ok} onClick={() => game.refundNode(node.id)}>
-            ↩ Rembourser 1 niveau <small>{refund.ok ? `+${formatNumber(refund.amount)} 🪙` : ''}</small>
+            ↩ Rembourser 1 niveau <small>{refund.ok ? `+${formatNumber(refund.amount)} ${unit}` : ''}</small>
           </button>
           {!refund.ok && refund.reason === 'needed' && <div class="td-refund-why">« {refund.detail} » en a besoin : rembourse-le d'abord.</div>}
         </div>

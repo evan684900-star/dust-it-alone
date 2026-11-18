@@ -33,6 +33,10 @@ export interface SaveData {
   introSeen: boolean;
   /** Niveaux achetés dans l'Arbre des Souvenirs. */
   tree: Record<string, number>;
+  /** Grand Ménage : Étincelles en poche, nombre de Grands Ménages, pièces gagnées depuis le dernier. */
+  sparks: number;
+  prestiges: number;
+  runCoins: number;
 }
 
 export function defaultSave(): SaveData {
@@ -48,6 +52,9 @@ export function defaultSave(): SaveData {
     showFps: false,
     introSeen: false,
     tree: {},
+    sparks: 0,
+    prestiges: 0,
+    runCoins: 0,
   };
 }
 
@@ -102,6 +109,10 @@ export function migrate(raw: unknown): SaveData {
     showFps: r.showFps === true,
     introSeen: r.introSeen === true,
     tree: cleanTree(r.tree),
+    sparks: Math.floor(num(r.sparks, 0)),
+    prestiges: Math.floor(num(r.prestiges, 0)),
+    // Anciennes sauvegardes : on part du total gagné.
+    runCoins: num(r.runCoins, num(r.totalCoins, 0)),
   };
 }
 

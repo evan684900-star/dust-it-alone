@@ -116,3 +116,13 @@ export const vacuum = signal<{ load: number; cap: number } | null>(null);
 
 /** Gains pendant l'absence (fenêtre « Pendant ton absence… »). */
 export const offlineReport = signal<{ seconds: number; counted: number; coins: number } | null>(null);
+
+// ───────────────────────────── Grand Ménage (prestige) ─────────────────────────────
+
+export const sparks = signal(0);
+export const prestiges = signal(0);
+/** Étincelles que rapporterait un Grand Ménage maintenant. */
+export const prestigeGain = signal(0);
+export const prestigeReady = signal(false);
+/** Fenêtre de confirmation du Grand Ménage. */
+export const prestigeConfirm = signal(false);
