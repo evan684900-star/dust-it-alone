@@ -18,7 +18,7 @@
 5. [Mécaniques détaillées](#5-mécaniques-détaillées)
 6. [La carte : un grand château](#6-la-carte--un-grand-château)
 7. [Économie et équilibrage](#7-économie-et-équilibrage)
-8. [Arbre d'améliorations](#8-arbre-daméliorations)
+8. [La boutique : l'Atelier de Plume](#8-la-boutique--latelier-de-plume)
 9. [Prestige : le Grand Ménage](#9-prestige--le-grand-ménage)
 10. [Histoire et souvenirs](#10-histoire-et-souvenirs)
 11. [Contrôles](#11-contrôles)
@@ -247,44 +247,132 @@ Un **simulateur** (script Node, `tools/simulate.ts`) qui joue une partie « bot 
 
 ---
 
-## 8. Arbre d'améliorations
+## 8. La boutique : l'Atelier de Plume
 
-### 8.1 Par outil
+> Statut : **plan validable**, pas encore codé. Les chiffres sont des points de départ, à ajuster avec le simulateur (§7.4).
+> La monnaie s'appelle encore « pièces » 🪙 (elle deviendra peut-être « éclats de mémoire » ✨, cf. histoire). Le plan marche pareil dans les deux cas.
 
-**Balai**
-- Rayon (+8 % / niveau)
-- Force (permet de bouger les particules lourdes, + vitesse de poussée)
-- Douceur (moins de particules qui « s'échappent » sur les côtés)
+### 8.1 Le principe
+- **Cohérent avec l'histoire** : la boutique n'a pas de marchand. C'est **l'Atelier de Plume** : il utilise la mémoire récupérée (les pièces) pour **enchanter ses outils** et le château.
+- **Deux façons d'y accéder** :
+  1. la touche **`B`**, n'importe où dans le château (pratique) ;
+  2. **l'Établi de Plume**, un vrai meuble en 3D contre le mur sud des Combles (`E` pour l'utiliser). C'est là qu'il « fabrique » ses améliorations : un établi, des outils accrochés et un bocal de poussière d'étoile qui brille.
+- **Le jeu continue pendant les achats** : la poussière retombe et les assistants travaillent. La souris est libérée et le son est légèrement étouffé, comme pour la carte.
+- **Les portes ne sont pas dans la boutique** : elles s'ouvrent toujours sur place avec `E`. La boutique sert à devenir plus fort, et les portes à avancer dans le château.
 
-**Aspirateur**
-- Rayon d'aspiration
-- Puissance d'attraction
-- Capacité du réservoir
-- Vidage automatique (achat unique) 🔑
+### 8.2 L'écran
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ 🛠️ L'Atelier de Plume                                   🪙 12,4 k  (+340/s) │
+├───────────────┬──────────────────────────────────────┬─────────────────────┤
+│ 🧹 Balai    ● │ ┌──────────┐ ┌──────────┐ ┌──────────┐│ BROSSE LARGE  niv. 4│
+│ 🗑️ Ramassage  │ │  [img]   │ │  [img]   │ │  [img]   ││ ┌─────────────────┐ │
+│ ✨ Valeur   ● │ │ Brosse   │ │ Poils    │ │ Manche   ││ │ [aperçu 3D de la│ │
+│ 🏰 Château    │ │ large    │ │ durs     │ │ télesco. ││ │  brosse qui     │ │
+│ 👟 Plume      │ │ niv. 4   │ │ niv. 1   │ │ 🔒       ││ │  grandit]       │ │
+│ 🐑 Assistants │ │ 180 🪙 ✓ │ │ 320 🪙   │ │ Galerie  ││ └─────────────────┘ │
+│   (bientôt)   │ └──────────┘ └──────────┘ └──────────┘│ Largeur :           │
+│               │ ┌──────────┐ ┌──────────┐             │  106 cm → 114 cm    │
+│               │ │ Aspira-  │ │ Plumeau  │             │                     │
+│               │ │ teur 🔒  │ │ 🔒       │             │ [ ×1 ][ ×10 ][ Max ]│
+│               │ └──────────┘ └──────────┘             │  180 🪙   2,9 k  …  │
+└───────────────┴──────────────────────────────────────┴─────────────────────┘
+```
+- **À gauche**, les catégories. Une pastille **●** signale « quelque chose est achetable ici ».
+- **Au centre**, des cartes d'objets. Une carte **achetable** brille doucement, une carte **trop chère** est grisée avec le montant manquant, et une carte **verrouillée** 🔒 affiche ce qui la débloque (« Ouvre la Galerie »).
+- **À droite**, le détail de l'objet sélectionné : **avant → après en chiffres** (« 106 cm → 114 cm »), un **aperçu** quand c'est visuel (la brosse qui s'élargit) et les boutons **×1 / ×10 / Max**.
+- **Achat rapide** : clic sur une carte = ×1, clic maintenu = achats en rafale (de plus en plus vite), molette ou flèches pour se déplacer.
+- **Badge « Nouveau ! »** sur les objets qui viennent de se débloquer.
+- **Dans le HUD**, le bouton 🛒 affiche une pastille et la touche `B` quand un achat devient possible, et une notification apparaît la première fois qu'un nouvel objet se débloque.
 
-**Plumeau / Éponge**
-- Dégâts par seconde / par distance frottée
-- Rayon
+### 8.3 Les objets
 
-**Souffleur**
-- Angle du cône
-- Portée
-- Puissance
+Formule de prix : **`prix(n) = base × croissance^n`**, arrondi à 2 chiffres significatifs (180 et pas 183,7). « n » est le niveau actuel. Le bouton **Max** utilise la somme géométrique pour acheter d'un coup tout ce qu'on peut payer.
 
-### 8.2 Globales
+#### 🧹 Balai
+| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
+|---|---|---|---|---|---|
+| **Brosse large** | +8 cm de largeur (74 → 234 cm). La brosse **grandit à l'écran** | 20 | 25 | ×1,45 | départ |
+| **Poils durs** | +0,05 de prise (les grains collent mieux à la brosse, les moutons lourds suivent) | 8 | 60 | ×1,6 | départ |
+| **Manche télescopique** | +20 cm de portée (230 → 330 cm) | 5 | 400 | ×2,2 | Galerie ouverte |
+| **Coup de balai** | Clic maintenu : la poussée passe de ×1,5 à ×2,5 | 5 | 250 | ×1,9 | 1★ aux Combles |
+| *Outil* **Plumeau** 🪶 | débloque l'outil (toiles d'araignée) | 1 | 1 500 | — | Bibliothèque ouverte |
+| *Outil* **Éponge** 🧽 | débloque l'outil (taches) | 1 | 8 000 | — | Chambre ouverte |
+| *Outil* **Aspirateur** 🌀 | débloque l'outil (aspire directement, réservoir) | 1 | 40 000 | — | Grand Hall ouvert |
 
-- **Valeur de la saleté** (×1,25 par niveau, croissance de coût forte)
-- **Pelles plus larges** (zone de collecte agrandie)
-- **Fenêtres ouvertes** (la saleté se dépose plus vite = plus de revenus potentiels)
-- **Combo prolongé** (la jauge de combo retombe plus lentement)
-- **Chance dorée** (+ de poussière d'étoile)
+#### 🗑️ Ramassage
+| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
+|---|---|---|---|---|---|
+| **Pelles géantes** | +15 % de taille de toutes les pelles | 10 | 40 | ×1,55 | départ |
+| **Aspiration magique** | +20 cm de rayon d'aspiration douce autour des pelles (120 → 320) | 10 | 80 | ×1,6 | départ |
+| **Pelle en plus** *(par pièce)* | ajoute une pelle à un emplacement prévu de la pièce actuelle | 2 par pièce | 30 % du prix de la pièce | ×3 | pièce ouverte |
 
-### 8.3 Assistants
+#### ✨ Valeur
+| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
+|---|---|---|---|---|---|
+| **Poussière précieuse** | ×1,25 sur la valeur de toute la poussière (cumulatif) | 25 | 100 | ×1,9 | départ |
+| **Combo tenace** | le combo met +0,2 s à redescendre et redescend 10 % moins vite | 10 | 150 | ×1,7 | premier combo ×2 |
+| **Combo légendaire** | ajoute un palier de combo : ×3,5 puis ×4 | 2 | 5 000 | ×8 | Combo tenace niv. 5 |
+| **Chance dorée** | +0,05 % de poussière d'étoile (0,15 % → 0,65 %) | 10 | 300 | ×1,8 | 1re étoile ramassée |
+| **Moutons dodus** | les moutons valent +2 (5 → 25) | 10 | 200 | ×1,7 | Galerie ouverte |
 
-- Recruter un assistant de plus (coût croissant)
-- Vitesse / Rayon / Intelligence de chaque type d'assistant
+#### 🏰 Château *(par pièce : chaque pièce a ses propres niveaux)*
+| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
+|---|---|---|---|---|---|
+| **Courants d'air** | +15 % de poussière qui retombe dans la pièce (= plus de revenus) | 10 | 50 × valeur de la pièce | ×1,6 | pièce ouverte |
+| **Tapis magique** | +10 % de valeur de la poussière de cette pièce | 10 | 120 × valeur de la pièce | ×1,7 | pièce impeccable 1★ |
 
----
+#### 👟 Plume
+| Objet | Effet par niveau | Niv. max | Base | Croiss. | Débloqué |
+|---|---|---|---|---|---|
+| **Chaussons de feutre** | +8 % de vitesse de marche et de course | 5 | 200 | ×2 | départ |
+| **Souffle du vent** | `Maj` : course 25 % plus rapide | 3 | 2 000 | ×3 | Grand Hall ouvert |
+
+#### 🐑 Assistants *(jalon M4, visibles mais verrouillés d'ici là)*
+Moutonnet, Plumette, Roulio, Biscotte (le chat) : recruter, puis améliorer vitesse, rayon et intelligence. Silhouettes visibles, avec le texte « Bientôt… ».
+
+### 8.4 Rythme visé (avec les nouveaux prix de portes)
+Avec la boutique, les portes reprennent leurs vrais prix : **Galerie 500, Bibliothèque 6 000, Chambre 40 000, Grand Hall 250 000**.
+
+| Moment | Objectif |
+|---|---|
+| 0:20 | 1er achat (Brosse large niv. 1, 25 🪙) |
+| 2:00 | 4 à 6 achats déjà faits, on sent le balai grandir |
+| 4–6 min | Galerie ouverte |
+| ~15 min | Bibliothèque |
+| ~35 min | Chambre royale |
+| ~60 min | Grand Hall |
+
+Règle de confort : **il y a presque toujours un achat à moins d'une minute de revenus**.
+
+### 8.5 Sons et effets (synthétiques)
+| Moment | Son | Effet visuel |
+|---|---|---|
+| Ouvrir / fermer l'Atelier | glissando + petit tintement d'outils | le panneau arrive en rebondissant |
+| Changer d'onglet | « swoosh » court | les cartes glissent |
+| Survol d'une carte | « tic » (déjà fait) | la carte se soulève et penche |
+| **Achat** | « ka-tching » : arpège de pièces qui monte, plus aigu à chaque niveau | la carte saute, des pièces 🪙 s'envolent du compteur vers la carte, le niveau compte |
+| Achat en rafale | arpège qui accélère | petits sauts répétés |
+| **Niveau max** | mini-fanfare | la carte devient dorée avec « MAX ✨ » |
+| Trop cher | « bonk » (déjà fait) | la carte tremble et le montant manquant clignote |
+| Nouvel objet débloqué | carillon (déjà fait) | badge « Nouveau ! » et notification |
+
+Dans le monde : quand on achète **Brosse large**, la brosse grandit **en vrai**, avec son empreinte rectangulaire. Avec **Pelles géantes**, les pelles grossissent, en rebondissant.
+
+### 8.6 Comment on le code (technique)
+- `src/data/shop.ts` : la liste des objets (`id`, catégorie, nom, description, `base`, `growth`, `maxLevel`, condition de déblocage, effet). On change les chiffres sans toucher au code.
+- `src/economy/shop.ts` : `cost(item, level)`, `costForN(item, level, n)` (somme géométrique), `maxAffordable(item, level, coins)`, `isUnlocked(item, state)`.
+- `src/economy/modifiers.ts` : à partir des niveaux achetés, il calcule les **modificateurs** de chaque pièce (largeur et prise de la brosse, taille des pelles, aspiration, valeur, réapparition, combo, chance d'étoile) et du joueur (vitesse, portée). C'est une seule fonction pure, testable, appliquée à chaque achat.
+- **Sauvegarde** : `upgrades: Record<string, number>` (niveaux), et `upgrades["airflow:gallery"]` pour les objets par pièce. La migration v2 → v3 met tout à 0.
+- **Interface** : `src/ui/Shop.tsx` (onglets, cartes, détail, ×1/×10/Max), ouverte avec `B` ou l'Établi.
+- **Tests** : formules de prix, somme géométrique et Max, déblocages, calcul des modificateurs, migration de sauvegarde, et un test du simulateur qui vérifie qu'on atteint chaque porte dans les temps visés (§8.4).
+
+### 8.7 Étapes
+1. Données, formules, modificateurs et sauvegarde, avec leurs tests.
+2. L'écran de l'Atelier (`B`), avec les onglets Balai, Ramassage, Valeur et Plume.
+3. Les effets visibles dans le monde (brosse qui grandit, pelles plus grosses) et les sons d'achat.
+4. Les objets par pièce (Château) et l'Établi en 3D dans les Combles.
+5. Équilibrage avec le simulateur, et nouveaux prix des portes.
 
 ## 9. Prestige : le Grand Ménage
 
