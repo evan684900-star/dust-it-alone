@@ -12,6 +12,8 @@ import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
 import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
+import { StoryDirector, playLines } from './story/director';
+import { ALL_SOUVENIRS, THRONE_SOUVENIRS } from './data/story';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
 /** Seuil de propreté pour « pièce impeccable ». */
@@ -38,6 +40,9 @@ export class Game {
   private fpsAcc = { frames: 0, time: 0 };
   private last = performance.now();
   private currentRoom: RoomDef | null = null;
+  private director!: StoryDirector;
+  /** Fin du jeu : la caméra tourne lentement autour de la Salle du trône. */
+  private cinematicT = -1;
   private tickCount = 0;
   private farDt: number[] = [];
   private visibleIds = new Set<string>();
@@ -87,6 +92,20 @@ export class Game {
     this.autoStart = autoStartFor(this.world.gpuName());
     this.applyQuality(qs === 'auto' ? this.autoStart : qs);
     this.checkGpu();
+    this.director = new StoryDirector({
+      save: this.save,
+      rooms: this.rooms,
+      isUnlocked: (id) => this.isUnlocked(id),
+      player: this.player,
+      world: this.world,
+      onSouvenir: () => {
+        this.synth.bigNode();
+        this.publishCastle();
+      },
+      persist: () => this.persist(),
+    });
+    this.director.init();
+    store.souvenirCount.value = this.save.souvenirs.length;
     this.bindInput();
     this.updatePlace(true);
 
@@ -101,7 +120,7 @@ export class Game {
       const broomRoom = this.playing ? bp.room : null;
       this.world.render(
         dt,
-        { x: p.x, z: p.z, eye: p.eye, yaw: p.yaw, pitch: p.pitch },
+        this.cinematicT >= 0 ? this.cinematicView(dt) : { x: p.x, z: p.z, eye: p.eye, yaw: p.yaw, pitch: p.pitch },
         { visible: store.started.value, x: bp.x, z: bp.z, y: bp.room ? bp.room.floorY : p.feet, pressed: this.input.pressed },
         broomRoom ? this.runtime(broomRoom).sim : null,
       );
@@ -112,6 +131,7 @@ export class Game {
       );
       this.updatePlace(false);
       this.updateHud(realDt);
+      if (store.started.value) this.director.update(realDt, this.player.room());
       if (!store.paused.value && !document.hidden) this.autoQuality(realDt);
       requestAnimationFrame(frame);
     };
@@ -335,11 +355,7 @@ export class Game {
     store.started.value = true;
     if (firstTime) {
       this.save.introSeen = true;
-      // Réplique provisoire, en attendant l'histoire complète.
-      setTimeout(() => {
-        store.say('Plume', '… Tant de poussière. Combien de temps ai-je dormi ?', 520, true);
-        store.say('Plume', 'Le vieux balai est toujours là. Bon. Au travail ! (maintiens le clic pour balayer)', 520, true);
-      }, 900);
+      setTimeout(() => this.director.intro(), 900);
     }
     store.paused.value = false;
     store.mapOpen.value = false;
@@ -420,7 +436,7 @@ export class Game {
   }
 
   private get playing(): boolean {
-    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value;
+    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && this.cinematicT < 0;
   }
 
   // ───────────────────────────── Commandes ─────────────────────────────
@@ -456,6 +472,10 @@ export class Game {
       if (e.button === 0) this.input.pressed = false;
     });
     window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyJ' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && this.cinematicT < 0) {
+        this.toggleAlbum();
+        return;
+      }
       if (e.code === 'KeyM' && store.started.value && !store.treeOpen.value) {
         this.toggleMap();
         return;
@@ -497,6 +517,10 @@ export class Game {
         earn: (n: number) => this.earn(n),
         buy: (id: string, n: number) => this.buyNode(id, n),
         refund: (id: string) => this.refundNode(id),
+        giveSouvenirs: (n: number) => {
+          for (const s of ALL_SOUVENIRS.slice(0, n)) if (!this.save.souvenirs.includes(s.id)) this.save.souvenirs.push(s.id);
+        },
+        souvenirSpots: () => [...(this.director as unknown as { positions: Map<string, { x: number; y: number }> }).positions.entries()],
         unlockAll: () => {
           for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
           this.world.setDoorState((d) => this.doorOpen(d), true);
@@ -554,6 +578,62 @@ export class Game {
     return true;
   }
 
+  /** Ouvre / ferme l'album des souvenirs (touche J). */
+  toggleAlbum(): void {
+    const open = !store.albumOpen.value;
+    store.albumOpen.value = open;
+    this.player.clearKeys();
+    this.input.pressed = false;
+    if (open) document.exitPointerLock?.();
+    else this.start();
+  }
+
+  foundSouvenirs(): string[] {
+    return [...this.save.souvenirs];
+  }
+  seenEchoes(): string[] {
+    return [...this.save.echoes];
+  }
+
+  /** Revoir un écho du passé depuis l'album. */
+  replayEcho(lines: Parameters<typeof playLines>[0]): void {
+    playLines(lines);
+  }
+
+  /** La fin du jeu : la caméra fait le tour de la Salle du trône pendant les dernières répliques. */
+  private startEnding(): void {
+    this.save.endingSeen = true;
+    this.cinematicT = 0;
+    store.cinematic.value = true;
+    this.input.pressed = false;
+    this.player.clearKeys();
+    const ri = this.rooms.findIndex((r) => r.def.id === 'throne');
+    const lines = this.director.ending();
+    const seconds = 4 + lines.reduce((t, [, l]) => t + 2.2 + l.length * 0.05, 0);
+    this.world.playEcho(ri, ['adult', 'child', 'plush'], seconds);
+    store.clearDialogue();
+    setTimeout(() => playLines(lines), 1500);
+    setTimeout(() => {
+      store.cinematic.value = false;
+      store.credits.value = true;
+      this.cinematicT = -1;
+    }, seconds * 1000);
+    this.persist();
+  }
+
+  private cinematicView(dt: number): { x: number; z: number; eye: number; yaw: number; pitch: number } {
+    this.cinematicT += dt;
+    const r = roomById('throne')!;
+    const cx = r.origin.x + r.width / 2;
+    const cz = r.origin.z + r.height / 2;
+    const a = this.cinematicT * 0.12;
+    const rad = Math.min(r.width, r.height) * 0.38;
+    const x = cx + Math.sin(a) * rad;
+    const z = cz + Math.cos(a) * rad;
+    // On regarde le centre de la salle, un peu vers le bas.
+    return { x, z, eye: r.floorY + 260, yaw: Math.atan2(x - cx, z - cz), pitch: -0.32 };
+  }
+
   /** Ouvre / ferme la carte du château (la souris est libérée pendant ce temps). */
   toggleMap(): void {
     const open = !store.mapOpen.value;
@@ -570,6 +650,11 @@ export class Game {
     const d = this.nav.lockedDoorNear(this.player.x, this.player.z, this.player.y);
     if (!d || !d.room) return;
     const room = roomById(d.room)!;
+    if (room.id === 'throne' && !this.director.throneOpenable()) {
+      store.pushToast('La porte ne bouge pas…', `Elle s'ouvrira quand le château se souviendra assez : ${this.director.souvenirCount()} / ${THRONE_SOUVENIRS} souvenirs.`, 3500);
+      this.synth.denied();
+      return;
+    }
     if (store.coins.value < room.price) {
       store.pushToast('Pas assez de pièces 🪙', `Il manque ${formatNumber(room.price - store.coins.value)} pièces pour ouvrir ${room.name}.`, 2500);
       this.synth.denied();
@@ -674,7 +759,13 @@ export class Game {
     const door = this.playing ? this.nav.lockedDoorNear(p.x, p.z, p.y) : null;
     if (door?.room) {
       const r = roomById(door.room)!;
-      store.doorPrompt.value = { name: r.name, price: r.price, affordable: store.coins.value >= r.price };
+      const blocked = r.id === 'throne' && !this.director.throneOpenable();
+      store.doorPrompt.value = {
+        name: r.name,
+        price: r.price,
+        affordable: !blocked && store.coins.value >= r.price,
+        need: blocked ? `Il faut ${THRONE_SOUVENIRS} souvenirs (${this.director.souvenirCount()} / ${THRONE_SOUVENIRS})` : undefined,
+      };
     } else if (store.doorPrompt.value) {
       store.doorPrompt.value = null;
     }
@@ -729,6 +820,8 @@ export class Game {
       const bonus = Math.max(250, Math.round(r.def.price * 0.5)) * this.mods.cleanBonusMult(r.def.id);
       this.earn(bonus);
       this.world.celebrate(ri);
+      if (r.def.id === 'throne' && !this.save.endingSeen) setTimeout(() => this.startEnding(), 3000);
+      else this.director.onRoomClean(ri);
       this.synth.fanfare();
       store.pushToast(`${r.def.name} : impeccable ! ✨`, `Bonus de ${formatNumber(bonus)} pièces. La poussière, elle, n'a pas dit son dernier mot…`, 6000);
       this.publishCastle();

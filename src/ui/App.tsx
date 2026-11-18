@@ -6,6 +6,8 @@ import * as store from '../state/store';
 import { SkillTree } from './SkillTree';
 import { STAIRS } from '../data/rooms';
 import { TOOLS } from '../data/dirtTypes';
+import { ROOM_STORY, THRONE_SOUVENIRS } from '../data/story';
+import { ROOMS } from '../data/rooms';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 
@@ -19,6 +21,9 @@ export function App({ game }: { game: Game }) {
       {store.started.value && store.mapOpen.value && <CastleMap game={game} />}
       {store.started.value && store.treeOpen.value && <SkillTree game={game} />}
       {store.prestigeConfirm.value && <PrestigeConfirm game={game} />}
+      {store.albumOpen.value && <Album game={game} />}
+      {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
+      {store.credits.value && <Credits />}
       {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
@@ -112,6 +117,69 @@ function PrestigeConfirm({ game }: { game: Game }) {
   );
 }
 
+/** L'album des souvenirs (touche J) : les souvenirs trouvés, et les échos du passé à revoir. */
+function Album({ game }: { game: Game }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const found = new Set(game.foundSouvenirs());
+  const echoes = new Set(game.seenEchoes());
+  const all = ROOMS.map((r) => ({ room: r, story: ROOM_STORY[r.id] })).filter((x) => x.story);
+  const sel = open ? all.flatMap((x) => x.story!.souvenirs).find((s) => s.id === open) : null;
+  return (
+    <div class="settings-backdrop" onClick={() => game.toggleAlbum()}>
+      <div class="settings-card album-card" onClick={(e) => e.stopPropagation()}>
+        <h2>📜 L'album des souvenirs</h2>
+        <p class="album-count">
+          {found.size} / {all.length * 3} souvenirs · La Salle du trône s'ouvre avec {THRONE_SOUVENIRS} souvenirs.
+        </p>
+        <div class="album-grid">
+          {all.map(({ room, story }) => (
+            <div class="album-room" key={room.id}>
+              <strong>{room.name}</strong>
+              <div class="album-slots">
+                {story!.souvenirs.map((s) => (
+                  <button key={s.id} class={`album-slot ${found.has(s.id) ? 'found' : ''}`} disabled={!found.has(s.id)} onClick={() => setOpen(s.id)} title={found.has(s.id) ? s.name : '???'}>
+                    {found.has(s.id) ? s.icon : '?'}
+                  </button>
+                ))}
+                {echoes.has(room.id) && (
+                  <button class="album-echo" onClick={() => { game.toggleAlbum(); game.replayEcho(story!.echo.lines); }} title="Revoir l'écho du passé">
+                    ✨
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+        {sel && (
+          <div class="album-read">
+            <strong>{sel.icon} {sel.name}</strong>
+            <p>{sel.text}</p>
+          </div>
+        )}
+        <button class="btn" onClick={() => game.toggleAlbum()}>Fermer (J)</button>
+      </div>
+    </div>
+  );
+}
+
+/** Générique de fin. */
+function Credits() {
+  return (
+    <div class="title-screen credits">
+      <div class="title-card">
+        <h1 class="logo"><span class="w1">Fin</span></h1>
+        <p class="tagline">Élise est revenue. Mouton aussi. Et le château se souvient.</p>
+        <p class="credits-list">
+          <b>Dust It Alone</b><br />
+          Une histoire de poussière, de souvenirs et d'un petit plumeau.<br /><br />
+          Merci d'avoir joué ! 🧹✨
+        </p>
+        <button class="btn btn-big" onClick={() => (store.credits.value = false)}>Continuer à faire le ménage</button>
+      </div>
+    </div>
+  );
+}
+
 function Controls() {
   return (
     <div class="controls">
@@ -122,6 +190,7 @@ function Controls() {
       <span><kbd>Maj</kbd> courir</span>
       <span><kbd>E</kbd> ouvrir une porte</span>
       <span><kbd>M</kbd> carte du château</span>
+      <span><kbd>J</kbd> album des souvenirs</span>
       <span><kbd>Échap</kbd> pause</span>
     </div>
   );
@@ -212,7 +281,9 @@ function DoorPrompt() {
       <div>
         <strong>{d.name}</strong>
         <span>
-          {d.affordable ? (
+          {d.need ? (
+            <>{d.need}</>
+          ) : d.affordable ? (
             <>
               <kbd>E</kbd> Ouvrir pour {formatNumber(d.price)} 🪙
             </>

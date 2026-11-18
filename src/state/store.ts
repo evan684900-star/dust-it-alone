@@ -41,7 +41,7 @@ export const gpuName = signal('');
 /** Nom de l'endroit où l'on se trouve (pièce ou escalier). */
 export const placeName = signal('');
 /** Porte verrouillée devant soi : on affiche « [E] Ouvrir ». */
-export const doorPrompt = signal<{ name: string; price: number; affordable: boolean } | null>(null);
+export const doorPrompt = signal<{ name: string; price: number; affordable: boolean; need?: string } | null>(null);
 /** Carte du château ouverte. */
 export const mapOpen = signal(false);
 export const playerPos = signal({ x: 0, z: 0, yaw: 0 });
@@ -78,6 +78,12 @@ export interface DialogueLine {
 export const dialogue = signal<DialogueLine | null>(null);
 const dialogueQueue: DialogueLine[] = [];
 let dialogueId = 0;
+
+/** Vide la file de dialogue (cinématique de fin). */
+export function clearDialogue(): void {
+  dialogueQueue.length = 0;
+  dialogue.value = null;
+}
 
 /** Ajoute une réplique à la file (elles s'enchaînent toutes seules). */
 export function say(speaker: string, text: string, voice = 420, thought = false): void {
@@ -126,3 +132,13 @@ export const prestigeGain = signal(0);
 export const prestigeReady = signal(false);
 /** Fenêtre de confirmation du Grand Ménage. */
 export const prestigeConfirm = signal(false);
+
+// ───────────────────────────── Histoire ─────────────────────────────
+
+export const souvenirCount = signal(0);
+/** L'album des souvenirs (touche J) est ouvert. */
+export const albumOpen = signal(false);
+/** Cinématique de fin en cours (bandes noires, caméra automatique). */
+export const cinematic = signal(false);
+/** Générique de fin affiché. */
+export const credits = signal(false);

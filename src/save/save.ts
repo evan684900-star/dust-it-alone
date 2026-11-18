@@ -37,6 +37,11 @@ export interface SaveData {
   sparks: number;
   prestiges: number;
   runCoins: number;
+  /** Histoire : souvenirs trouvés, échos vus, dialogues déjà joués, fin vue. */
+  souvenirs: string[];
+  echoes: string[];
+  seen: string[];
+  endingSeen: boolean;
 }
 
 export function defaultSave(): SaveData {
@@ -55,6 +60,10 @@ export function defaultSave(): SaveData {
     sparks: 0,
     prestiges: 0,
     runCoins: 0,
+    souvenirs: [],
+    echoes: [],
+    seen: [],
+    endingSeen: false,
   };
 }
 
@@ -113,7 +122,15 @@ export function migrate(raw: unknown): SaveData {
     prestiges: Math.floor(num(r.prestiges, 0)),
     // Anciennes sauvegardes : on part du total gagné.
     runCoins: num(r.runCoins, num(r.totalCoins, 0)),
+    souvenirs: strings(r.souvenirs),
+    echoes: strings(r.echoes),
+    seen: strings(r.seen),
+    endingSeen: r.endingSeen === true,
   };
+}
+
+function strings(v: unknown): string[] {
+  return Array.isArray(v) ? [...new Set(v.filter((x): x is string => typeof x === 'string'))] : [];
 }
 
 /** Nœuds renommés quand l'arbre est devenu gigantesque (les paliers « I » gardent les anciens niveaux). */

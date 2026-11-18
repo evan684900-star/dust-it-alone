@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
-import { drawStain, drawWeb } from './canvasTextures';
+import { drawDustMessage, drawEmoji, drawStain, drawWeb, softDot } from './canvasTextures';
 import type { RoomSim } from '../sim/roomSim';
 import { PAL } from './palette';
 import { fabric, mat, plastic as plasticLike } from './materials';
@@ -56,6 +56,8 @@ interface RoomView {
   visible: boolean;
   /** Modèles 3D des assistants présents. */
   helperViews: Map<Helper, THREE.Object3D>;
+  /** Message de Mouton Ier écrit dans la poussière. */
+  dustMessage?: THREE.Mesh;
 }
 
 const DUST_COLORS = [0x9e95a6, 0xaea197, 0x938c9f, 0xb7adb9, 0xa69ca8];
@@ -537,6 +539,7 @@ export class World3D {
       if (v.motes && this.ambienceOn) this.updateMotes(v.motes);
     }
     this.updateDoors(dt);
+    this.updateStory(dt);
     this.updateLights(dt);
     this.updateBroom(broomSim, dt, broom);
     this.updateFx(dt);
@@ -699,6 +702,122 @@ export class World3D {
     }
     this.helperCache.set(kind, g);
     return g.clone();
+  }
+
+  // ───────────────────────────── Histoire ─────────────────────────────
+
+  /** Écrit le message de Mouton Ier dans la poussière d'une pièce. */
+  setDustMessage(roomIndex: number, text: string): void {
+    const v = this.views[roomIndex];
+    const t = new THREE.CanvasTexture(drawDustMessage(text));
+    t.colorSpace = THREE.SRGBColorSpace;
+    const w = Math.min(v.def.width, v.def.height * 2) * 0.55;
+    const m = new THREE.Mesh(
+      new THREE.PlaneGeometry(w, w / 4).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }),
+    );
+    m.position.set(v.def.width / 2, 1.5, v.def.height / 2);
+    // Le message se lit depuis l'entrée la plus probable : on le tourne vers le grand côté.
+    if (v.def.height > v.def.width) m.rotation.y = Math.PI / 2;
+    m.renderOrder = 2;
+    v.group.add(m);
+    v.dustMessage = m;
+  }
+
+  private souvenirViews = new Map<string, THREE.Group>();
+  private emojiTex = new Map<string, THREE.Texture>();
+  private glowTex: THREE.Texture | null = null;
+
+  /** Affiche les souvenirs apparus (et retire ceux qui ont été ramassés). */
+  setSouvenirs(list: { id: string; roomIndex: number; x: number; y: number; icon: string }[]): void {
+    const keep = new Set(list.map((s) => s.id));
+    for (const [id, g] of this.souvenirViews) {
+      if (!keep.has(id)) {
+        g.parent?.remove(g);
+        this.souvenirViews.delete(id);
+      }
+    }
+    for (const s of list) {
+      if (this.souvenirViews.has(s.id)) continue;
+      let tex = this.emojiTex.get(s.icon);
+      if (!tex) {
+        tex = new THREE.CanvasTexture(drawEmoji(s.icon));
+        tex.colorSpace = THREE.SRGBColorSpace;
+        this.emojiTex.set(s.icon, tex);
+      }
+      this.glowTex ??= new THREE.CanvasTexture(softDot());
+      const g = new THREE.Group();
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex, color: 0xffd86a, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.scale.set(130, 130, 1);
+      const icon = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+      icon.scale.set(46, 46, 1);
+      g.add(glow, icon);
+      g.position.set(s.x, 45, s.y);
+      g.userData.base = 45;
+      this.views[s.roomIndex].group.add(g);
+      this.souvenirViews.set(s.id, g);
+    }
+  }
+
+  private ghosts: { obj: THREE.Group; life: number; total: number; mats: THREE.MeshBasicMaterial[] }[] = [];
+
+  /** Écho du passé : des silhouettes dorées apparaissent quelques secondes dans la pièce. */
+  playEcho(roomIndex: number, figures: ('adult' | 'child' | 'plush')[], seconds: number): void {
+    const v = this.views[roomIndex];
+    const cx = v.def.width / 2;
+    const cz = v.def.height / 2;
+    figures.forEach((kind, k) => {
+      const mats: THREE.MeshBasicMaterial[] = [];
+      const m = () => {
+        const mm = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd890).multiplyScalar(1.6), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
+        mats.push(mm);
+        return mm;
+      };
+      const g = new THREE.Group();
+      if (kind === 'plush') {
+        const body = new THREE.Mesh(this.bunnyGeo, m());
+        body.scale.setScalar(14);
+        body.position.y = 12;
+        g.add(body);
+      } else {
+        const h = kind === 'adult' ? 1 : 0.62;
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(20 * h, 80 * h, 4, 10), m());
+        body.position.y = 60 * h;
+        const head = new THREE.Mesh(new THREE.SphereGeometry(16 * h, 14, 10), m());
+        head.position.y = 130 * h;
+        g.add(body, head);
+      }
+      const a = (k / Math.max(1, figures.length)) * Math.PI * 2;
+      g.position.set(cx + Math.cos(a) * 120, 0, cz + Math.sin(a) * 120);
+      g.lookAt(cx, 0, cz);
+      v.group.add(g);
+      this.ghosts.push({ obj: g, life: 0, total: seconds, mats });
+    });
+  }
+
+  private updateStory(dt: number): void {
+    for (const v of this.views) {
+      if (!v.visible || !v.dustMessage) continue;
+      // Le message s'efface à mesure que la pièce est propre.
+      const c = v.sim.cleanliness;
+      (v.dustMessage.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - c / 0.55);
+    }
+    for (const g of this.souvenirViews.values()) {
+      g.position.y = g.userData.base + Math.sin(this.time * 2 + g.id) * 8;
+      g.rotation.y += dt;
+    }
+    for (let k = this.ghosts.length - 1; k >= 0; k--) {
+      const gh = this.ghosts[k];
+      gh.life += dt;
+      const t = gh.life / gh.total;
+      const a = t < 0.15 ? t / 0.15 : t > 0.85 ? (1 - t) / 0.15 : 1;
+      for (const m of gh.mats) m.opacity = 0.45 * Math.max(0, a);
+      gh.obj.position.y = Math.sin(this.time * 1.5 + k) * 4;
+      if (gh.life >= gh.total) {
+        gh.obj.parent?.remove(gh.obj);
+        this.ghosts.splice(k, 1);
+      }
+    }
   }
 
   private updatePans(v: RoomView, dt: number): void {

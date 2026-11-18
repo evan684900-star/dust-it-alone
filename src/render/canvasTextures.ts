@@ -373,3 +373,30 @@ export function drawGrass(px: number): HTMLCanvasElement {
   }
   return c;
 }
+
+/** Message tracé du doigt dans la poussière (lettres grises, bords flous). */
+export function drawDustMessage(text: string): HTMLCanvasElement {
+  const { c, g } = canvas(1024, 256);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  const size = text.length > 22 ? 70 : 104;
+  g.font = `${size}px "Lilita One", sans-serif`;
+  // Plusieurs passes décalées : effet « écrit au doigt dans la poussière ».
+  for (let k = 0; k < 6; k++) {
+    g.fillStyle = `rgba(${200 + k * 8},${190 + k * 8},${210 + k * 6},${0.16})`;
+    g.fillText(text, 512 + Math.sin(k * 2.1) * 4, 128 + Math.cos(k * 1.7) * 4);
+  }
+  g.fillStyle = 'rgba(235,228,240,0.75)';
+  g.fillText(text, 512, 128);
+  return c;
+}
+
+/** Une icône (emoji) sur fond transparent, pour les souvenirs. */
+export function drawEmoji(emoji: string): HTMLCanvasElement {
+  const { c, g } = canvas(128, 128);
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = '92px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+  g.fillText(emoji, 64, 70);
+  return c;
+}

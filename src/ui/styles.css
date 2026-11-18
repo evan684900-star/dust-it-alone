@@ -627,3 +627,26 @@ kbd {
 .prestige-cols div { background: #f3e3c3; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 12px; }
 .prestige-cols ul { margin: 6px 0 0; padding-left: 18px; }
 .prestige-buttons { display: flex; justify-content: space-between; gap: 10px; margin-top: 16px; }
+
+/* ───────── Album des souvenirs ───────── */
+.album-card { width: min(980px, calc(100vw - 32px)); }
+.album-count { font-weight: 800; margin: 0 0 10px; }
+.album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.album-room { background: #f3e3c3; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 10px; }
+.album-room strong { display: block; font: 16px var(--font-display); font-weight: normal; margin-bottom: 6px; }
+.album-slots { display: flex; gap: 6px; align-items: center; }
+.album-slot, .album-echo { width: 44px; height: 44px; border: 3px solid var(--ink); border-radius: 12px; background: #d9c7a8; font-size: 22px; cursor: pointer; display: grid; place-items: center; color: #7a6a58; font-family: var(--font-display); }
+.album-slot.found { background: #fff1c4; box-shadow: 2px 3px 0 var(--ink); }
+.album-slot:disabled { cursor: default; }
+.album-echo { background: linear-gradient(135deg, #ffe58a, #ffb84a); margin-left: auto; }
+.album-read { margin: 12px 0; padding: 10px 14px; background: #fffaf0; border: 3px dashed var(--ink); border-radius: 14px; }
+.album-read p { margin: 6px 0 0; font-weight: 700; font-style: italic; }
+
+/* ───────── Cinématique de fin ───────── */
+.letterbox { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+.letterbox div { position: absolute; left: 0; right: 0; height: 11vh; background: #000; animation: bars 1.2s ease both; }
+.letterbox div:first-child { top: 0; }
+.letterbox div:last-child { bottom: 0; }
+@keyframes bars { from { height: 0; } }
+.credits .title-card { animation-duration: 1.2s; }
+.credits-list { font-weight: 800; line-height: 1.6; }
