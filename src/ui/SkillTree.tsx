@@ -81,8 +81,8 @@ export function SkillTree({ game }: { game: Game }) {
         class="tree-svg"
         viewBox="-760 -640 1520 1280"
         onPointerDown={(e) => {
+          // Pas de capture de la souris ici : sinon le clic n'arriverait jamais jusqu'au nœud.
           drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
-          (e.currentTarget as Element).setPointerCapture(e.pointerId);
         }}
         onPointerMove={(e) => {
           const d = drag.current;
@@ -90,10 +90,20 @@ export function SkillTree({ game }: { game: Game }) {
           const sc = 1520 / (svgRef.current?.clientWidth || 1520) / view.k;
           const dx = (e.clientX - d.x) * sc;
           const dy = (e.clientY - d.y) * sc;
-          if (Math.abs(dx) + Math.abs(dy) > 4) d.moved = true;
-          setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }));
+          if (!d.moved && Math.abs(dx) + Math.abs(dy) > 6) {
+            // On glisse vraiment : maintenant seulement, on capture la souris pour déplacer l'arbre.
+            d.moved = true;
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+          }
+          if (d.moved) setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }));
         }}
-        onPointerUp={() => (drag.current = null)}
+        onPointerUp={() => {
+          // Le clic du nœud passe juste après : on garde l'info « a glissé » le temps de ce clic.
+          const d = drag.current;
+          setTimeout(() => {
+            if (drag.current === d) drag.current = null;
+          }, 0);
+        }}
       >
         <defs>
           <radialGradient id="tree-glow">
