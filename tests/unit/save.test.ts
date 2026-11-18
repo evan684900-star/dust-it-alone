@@ -47,3 +47,17 @@ describe('réglages graphiques', () => {
     expect(migrate({ showFps: true }).showFps).toBe(true);
   });
 });
+
+describe('poussière restante', () => {
+  it('la poussière qui reste dans chaque pièce est sauvegardée et relue', () => {
+    const s = memoryStore();
+    const data = migrate(null);
+    data.rooms.attic.dirt = { dust: 120, bunny: 3, star: 0 };
+    writeSave(data, s);
+    expect(loadSave(s).rooms.attic.dirt).toEqual({ dust: 120, bunny: 3, star: 0 });
+  });
+  it('une valeur abîmée est ignorée (la pièce repart pleine plutôt que de planter)', () => {
+    const d = migrate({ rooms: { attic: { unlocked: true, dirt: { dust: 'beaucoup', bunny: 1, star: 0 } } } });
+    expect(d.rooms.attic.dirt).toBeUndefined();
+  });
+});

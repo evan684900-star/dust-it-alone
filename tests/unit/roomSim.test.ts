@@ -96,3 +96,18 @@ describe('obstacles', () => {
     expect(insideBox).toBe(false);
   });
 });
+
+describe('reprise de partie', () => {
+  it('une pièce nettoyée revient avec exactement la même quantité de poussière', () => {
+    const sim = new RoomSim(ROOMS[0], 11);
+    sim.fill(1);
+    // On « nettoie » presque tout.
+    let n = 0;
+    for (let i = 0; i < sim.pool.cap && n < sim.pool.cap - 50; i++) if (sim.pool.alive[i] && sim.pool.typeOf(i) !== 'star') { sim.pool.kill(i); n++; }
+    const saved = sim.dirtCounts();
+    const reloaded = new RoomSim(ROOMS[0], 12);
+    reloaded.fillCounts(saved);
+    expect(reloaded.dirtCounts()).toEqual(saved);
+    expect(reloaded.cleanliness).toBeCloseTo(sim.cleanliness, 5);
+  });
+});

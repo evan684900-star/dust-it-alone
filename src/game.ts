@@ -44,7 +44,10 @@ export class Game {
     this.save = loadSave();
     this.rooms = ROOMS.map((def, i) => {
       const sim = new RoomSim(def, ((Date.now() & 0xffff) + i * 7919) >>> 0);
-      sim.fill(1);
+      // On retrouve la pièce exactement comme on l'a laissée (sinon elle est pleine de poussière).
+      const saved = this.save.rooms[def.id]?.dirt;
+      if (saved) sim.fillCounts(saved);
+      else sim.fill(1);
       return { def, sim };
     });
     this.nav = new Navigation(ROOMS, DOORS, STAIRS, (id) => this.isUnlocked(id));
@@ -590,6 +593,11 @@ export class Game {
 
   private persist(): void {
     const p = this.player;
+    // Poussière restante de chaque pièce ouverte.
+    for (const r of this.rooms) {
+      const rs = this.save.rooms[r.def.id];
+      if (rs?.unlocked) rs.dirt = r.sim.dirtCounts();
+    }
     this.save = {
       ...this.save,
       coins: store.coins.value,

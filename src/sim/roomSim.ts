@@ -129,6 +129,22 @@ export class RoomSim {
     });
   }
 
+  /** Remet exactement la quantité de poussière sauvegardée (positions tirées au hasard dans les zones sales). */
+  fillCounts(counts: Partial<Record<DirtId, number>>): void {
+    for (const id of DIRT_ORDER) {
+      const target = Math.min(this.room.capacity[id] ?? 0, Math.max(0, Math.floor(counts[id] ?? 0)));
+      let guard = target * 4 + 10;
+      while (this.pool.aliveCount[id] < target && guard-- > 0) this.spawnRandom(id);
+    }
+    for (let i = 0; i < this.pool.cap; i++) if (this.pool.alive[i]) this.pool.age[i] = 10;
+  }
+
+  /** Quantité de poussière au sol, pour la sauvegarde. */
+  dirtCounts(): { dust: number; bunny: number; star: number } {
+    const c = this.pool.aliveCount;
+    return { dust: c.dust, bunny: c.bunny, star: c.star };
+  }
+
   /** Remplit la pièce (début de partie, ou retour après une absence). */
   fill(ratio = 1): void {
     for (const id of ['dust', 'bunny'] as DirtId[]) {
