@@ -5,6 +5,7 @@ import { formatNumber } from '../core/format';
 import * as store from '../state/store';
 import { SkillTree } from './SkillTree';
 import { STAIRS } from '../data/rooms';
+import { TOOLS } from '../data/dirtTypes';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 
@@ -160,8 +161,11 @@ function DoorPrompt() {
   );
 }
 
-const SHORT_NAMES: Record<string, string> = { attic: 'Combles', gallery: 'Galerie', library: 'Bibliothèque', bedroom: 'Chambre', hall: 'Grand Hall' };
-const LEVEL_NAMES: Record<number, string> = { 400: 'Combles', 0: 'Étage', [-400]: 'Rez-de-chaussée' };
+const SHORT_NAMES: Record<string, string> = {
+  attic: 'Combles', gallery: 'Galerie', library: 'Bibliothèque', bedroom: 'Chambre', hall: 'Grand Hall', kitchen: 'Cuisines',
+  banquet: 'Banquets', chapel: 'Chapelle', courtyard: 'Cour', cellar: 'Caves', dungeon: 'Cachots', clocktower: 'Horloge', ramparts: 'Remparts', throne: 'Trône',
+};
+const LEVEL_NAMES: Record<number, string> = { 800: 'Tours', 400: 'Combles', 0: 'Étage', [-400]: 'Rez-de-chaussée', [-800]: 'Sous-sol' };
 
 /** Carte du château vue de dessus, avec les étages en couleurs. */
 function CastleMap({ game }: { game: Game }) {
@@ -173,7 +177,7 @@ function CastleMap({ game }: { game: Game }) {
   const maxX = Math.max(...rooms.map((r) => r.x + r.w)) + pad;
   const maxZ = Math.max(...rooms.map((r) => r.z + r.h)) + pad;
   const p = store.playerPos.value;
-  const levelColor: Record<number, string> = { 400: '#c99a5a', 0: '#9fbfa0', [-400]: '#a7a3c9' };
+  const levelColor: Record<number, string> = { 800: '#e8c86a', 400: '#c99a5a', 0: '#9fbfa0', [-400]: '#a7a3c9', [-800]: '#8a8a9a' };
   return (
     <div class="settings-backdrop" onClick={() => game.toggleMap()}>
       <div class="settings-card map-card" onClick={(e) => e.stopPropagation()}>
@@ -205,6 +209,8 @@ function CastleMap({ game }: { game: Game }) {
           Les couleurs indiquent l'étage : <span class="chip" style={{ background: levelColor[400] }}>Combles</span>
           <span class="chip" style={{ background: levelColor[0] }}>Étage</span>
           <span class="chip" style={{ background: levelColor[-400] }}>Rez-de-chaussée</span>
+          <span class="chip" style={{ background: levelColor[-800] }}>Sous-sol</span>
+          <span class="chip" style={{ background: levelColor[800] }}>Tours</span>
         </p>
         <button class="btn" onClick={() => game.toggleMap()}>Fermer (M)</button>
       </div>
@@ -277,13 +283,7 @@ function Bouncy({ value, class: cls }: { value: number; class?: string }) {
   return <span class={`${cls ?? ''} ${bump ? 'bump' : ''}`}>{formatNumber(value)}</span>;
 }
 
-const TOOLS = [
-  { id: 'broom', icon: '🧹', name: 'Balai', unlocked: true },
-  { id: 'duster', icon: '🪶', name: 'Plumeau', unlocked: false },
-  { id: 'sponge', icon: '🧽', name: 'Éponge', unlocked: false },
-  { id: 'vacuum', icon: '🌀', name: 'Aspirateur', unlocked: false },
-  { id: 'blower', icon: '💨', name: 'Souffleur', unlocked: false },
-];
+
 
 function Hud({ game }: { game: Game }) {
   const clean = store.cleanliness.value;
@@ -315,18 +315,28 @@ function Hud({ game }: { game: Game }) {
 
       <div class="bottom-bar">
         <div class="panel tools tilt-r">
-          {TOOLS.map((t, k) => (
+          {TOOLS.map((t, k) => {
+            const unlocked = store.unlockedTools.value[k];
+            return (
             <div
               key={t.id}
-              class={`tool ${t.unlocked ? (store.selectedTool.value === k ? 'active' : '') : 'locked'} ${store.toolShake.value?.index === k ? 'shake-' + (Math.floor(store.toolShake.value.at) % 2) : ''}`}
-              title={t.unlocked ? t.name : 'Pas encore débloqué'}
+              class={`tool ${unlocked ? (store.selectedTool.value === k ? 'active' : '') : 'locked'} ${store.toolShake.value?.index === k ? 'shake-' + (Math.floor(store.toolShake.value.at) % 2) : ''}`}
+              title={unlocked ? `${t.name} : ${t.hint}` : 'À débloquer dans l’Arbre des Souvenirs'}
             >
-              <span class="tool-icon">{t.unlocked ? t.icon : '?'}</span>
+              <span class="tool-icon">{unlocked ? t.icon : '?'}</span>
               <span class="tool-key">{k + 1}</span>
             </div>
-          ))}
+            );
+          })}
         </div>
 
+        {store.vacuum.value && (
+          <div class={`panel vacuum-gauge tilt-l ${store.vacuum.value.load >= store.vacuum.value.cap ? 'full' : ''}`}>
+            <span>🌀 Réservoir</span>
+            <div class="vac-bar"><div style={{ width: `${(100 * store.vacuum.value.load) / store.vacuum.value.cap}%` }} /></div>
+            <small>{store.vacuum.value.load >= store.vacuum.value.cap ? 'Plein ! Va le vider à une pelle (E)' : `${store.vacuum.value.load} / ${store.vacuum.value.cap}`}</small>
+          </div>
+        )}
         <button class={`btn btn-shop ${store.treeBuyable.value ? 'has-buy' : ''}`} onClick={() => game.toggleTree()} title="L'Arbre des Souvenirs (B)">
           🌳 Arbre <small>touche B</small>
           {store.treeBuyable.value && <span class="buy-dot">!</span>}

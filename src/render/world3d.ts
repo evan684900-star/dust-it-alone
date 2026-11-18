@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
-import { DIRT_TYPES } from '../data/dirtTypes';
+import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
+import { drawStain, drawWeb } from './canvasTextures';
 import type { RoomSim } from '../sim/roomSim';
 import { PAL } from './palette';
 import { fabric, mat } from './materials';
@@ -42,9 +43,9 @@ interface RoomView {
   def: RoomDef;
   sim: RoomSim;
   group: THREE.Group;
-  dust: THREE.InstancedMesh;
-  bunnies: THREE.InstancedMesh;
-  stars: THREE.InstancedMesh;
+  dust: THREE.InstancedMesh | null;
+  /** Un InstancedMesh par type de saleté présent dans la pièce. */
+  meshes: { kind: DirtId; mesh: THREE.InstancedMesh; start: number; count: number }[];
   pans: Pan[];
   ambience: THREE.Object3D[];
   /** Positions monde des flammes (pour les lumières dynamiques). */
@@ -65,7 +66,7 @@ const LIGHT_POOL = 4;
 export class World3D {
   readonly renderer: THREE.WebGLRenderer;
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(72, 1, 3, 9000);
+  readonly camera = new THREE.PerspectiveCamera(72, 1, 3, 90000);
   readonly floaters: Floaters;
   quality: QualityLevel = 'medium';
   private composer: EffectComposer;
@@ -85,7 +86,8 @@ export class World3D {
   })();
   private bunnyGeo = dustBunnyGeometry();
   private starGeo = starGeometry();
-  private sharedMats!: { dust: [THREE.Material, THREE.Material]; bunny: [THREE.Material, THREE.Material]; star: THREE.Material };
+  /** Pour chaque type : géométrie, matériau riche, matériau simple, projette une ombre, couleurs. */
+  private kinds!: Record<DirtId, { geo: THREE.BufferGeometry; rich: THREE.Material; mid: THREE.Material; big: boolean; colors?: number[] }>;
   private views: RoomView[] = [];
   private doors: DoorView[] = [];
   private stairFlames: THREE.Object3D[] = [];
@@ -163,6 +165,21 @@ export class World3D {
     s.fog = new THREE.FogExp2(0x2a1a30, 0.00022);
 
     s.add(new THREE.HemisphereLight(0xffe9c8, 0x6a4a5a, 1.4));
+    // Ciel autour du château (on le voit depuis la cour et le chemin de ronde) : dégradé de fin d'après-midi.
+    const skyGeo = new THREE.SphereGeometry(40000, 32, 16);
+    const sc = new Float32Array(skyGeo.attributes.position.count * 3);
+    const top = new THREE.Color(0x4a6ab8);
+    const horizon = new THREE.Color(0xffc89a);
+    const c = new THREE.Color();
+    for (let i = 0; i < skyGeo.attributes.position.count; i++) {
+      const y = skyGeo.attributes.position.getY(i) / 40000;
+      c.copy(horizon).lerp(top, Math.min(1, Math.max(0, y * 1.6 + 0.1)));
+      sc.set([c.r, c.g, c.b], i * 3);
+    }
+    skyGeo.setAttribute('color', new THREE.BufferAttribute(sc, 3));
+    const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    sky.renderOrder = -1;
+    s.add(sky);
     const sun = new THREE.DirectionalLight(0xffd59a, 4.2);
     this.sun = sun;
     sun.castShadow = true;
@@ -179,10 +196,34 @@ export class World3D {
       s.add(l);
     }
 
-    this.sharedMats = {
-      dust: [fabric(0xffffff, { sheen: 0.6 }), mat(0xffffff, { roughness: 0.95 })],
-      bunny: [fabric(0xffffff, { vertexColors: true }), mat(0xffffff, { vertexColors: true, roughness: 0.95 })],
-      star: new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.25 }),
+    const canvasTex = (c: HTMLCanvasElement) => {
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+    const leafShape = new THREE.Shape();
+    leafShape.moveTo(0, -1);
+    leafShape.quadraticCurveTo(0.9, -0.3, 0, 1);
+    leafShape.quadraticCurveTo(-0.9, -0.3, 0, -1);
+    const leafGeo = new THREE.ShapeGeometry(leafShape, 6).rotateX(-Math.PI / 2);
+    const crumbGeo = new THREE.BoxGeometry(1.4, 0.8, 1.1);
+    const rubbleGeo = new THREE.DodecahedronGeometry(1, 0).scale(1, 0.75, 0.9);
+    const flat = new THREE.PlaneGeometry(2, 2).rotateX(-Math.PI / 2);
+    const decal = (map: THREE.Texture) =>
+      new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, vertexColors: false });
+    const webMat = decal(canvasTex(drawWeb()));
+    const stainMat = new THREE.MeshStandardMaterial({ map: canvasTex(drawStain()), transparent: true, depthWrite: false, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -2 });
+    const starMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.25 });
+    this.kinds = {
+      dust: { geo: this.dustGeoHigh, rich: fabric(0xffffff, { sheen: 0.6 }), mid: mat(0xffffff, { roughness: 0.95 }), big: false, colors: DUST_COLORS },
+      bunny: { geo: this.bunnyGeo, rich: fabric(0xffffff, { vertexColors: true }), mid: mat(0xffffff, { vertexColors: true, roughness: 0.95 }), big: true },
+      star: { geo: this.starGeo, rich: starMat, mid: starMat, big: true },
+      crumb: { geo: crumbGeo, rich: mat(0xffffff, { roughness: 0.8 }), mid: mat(0xffffff, { roughness: 0.9 }), big: false, colors: [0xd9a35b, 0xc8914c, 0xe8c08a, 0xb87a3a] },
+      leaf: { geo: leafGeo, rich: mat(0xffffff, { roughness: 0.7, side: THREE.DoubleSide }), mid: mat(0xffffff, { roughness: 0.8, side: THREE.DoubleSide }), big: true, colors: [0xe07a2a, 0xc8462a, 0xe8b030, 0xa8582a, 0x8a9a30] },
+      rubble: { geo: rubbleGeo, rich: mat(0xffffff, { roughness: 0.95 }), mid: mat(0xffffff, { roughness: 0.95 }), big: true, colors: [0x8a8078, 0x9a8f84, 0x6f665e, 0xa89c8e] },
+      soot: { geo: this.dustGeoHigh, rich: mat(0xffffff, { roughness: 1 }), mid: mat(0xffffff, { roughness: 1 }), big: false, colors: [0x2a2624, 0x3a3430, 0x1f1c1a] },
+      web: { geo: flat, rich: webMat, mid: webMat, big: false },
+      stain: { geo: flat, rich: stainMat, mid: stainMat, big: false },
     };
 
     for (const r of rooms) this.views.push(this.buildRoomView(r.def, r.sim, doors));
@@ -230,28 +271,35 @@ export class World3D {
     mergeStatic(group, new Set<THREE.Object3D>([...pans.map((p) => p.obj), ...shell.flames]));
 
     const r = sim.pool.ranges;
-    const make = (geo: THREE.BufferGeometry, rich: THREE.Material, mid: THREE.Material, count: number, big: boolean) => {
-      const mesh = new THREE.InstancedMesh(geo, rich, Math.max(1, count));
+    // Teinte des taches selon la pièce (vin, graisse, cire…).
+    const stainTint: Record<string, number> = { bedroom: 0x6a1a2a, kitchen: 0x5a4a1a, banquet: 0x5a1a2a, chapel: 0x8a7a50, throne: 0x4a1a3a };
+    const meshes: RoomView['meshes'] = [];
+    let dust: THREE.InstancedMesh | null = null;
+    for (const kind of DIRT_ORDER) {
+      const count = r[kind].count;
+      if (count <= 0) continue;
+      const k = this.kinds[kind];
+      const mesh = new THREE.InstancedMesh(k.geo, k.rich, count);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
+      mesh.castShadow = k.big;
+      mesh.receiveShadow = !DIRT_TYPES[kind].fixed;
+      if (DIRT_TYPES[kind].fixed) mesh.renderOrder = 1;
       // Sphère englobante = toute la pièce : la carte graphique saute les pièces hors du champ.
       mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(def.width / 2, 50, def.height / 2), Math.hypot(def.width, def.height) / 2 + 100);
+      const c = new THREE.Color();
+      if (k.colors) for (let i = 0; i < count; i++) mesh.setColorAt(i, c.set(k.colors[(i * 7) % k.colors.length]));
+      if (kind === 'stain') for (let i = 0; i < count; i++) mesh.setColorAt(i, c.set(stainTint[def.id] ?? 0x4a3a2a));
       group.add(mesh);
-      this.particleMats.push({ rich, mid, low: this.lambert(mid), mesh, big });
-      return mesh;
-    };
-    const dust = make(this.dustGeoHigh, this.sharedMats.dust[0], this.sharedMats.dust[1], r.dust.count, false);
-    const c = new THREE.Color();
-    for (let i = 0; i < r.dust.count; i++) dust.setColorAt(i, c.set(DUST_COLORS[(i * 7) % DUST_COLORS.length]));
-    const bunnies = make(this.bunnyGeo, this.sharedMats.bunny[0], this.sharedMats.bunny[1], r.bunny.count, true);
-    const stars = make(this.starGeo, this.sharedMats.star, this.sharedMats.star, r.star.count, true);
+      this.particleMats.push({ rich: k.rich, mid: k.mid, low: DIRT_TYPES[kind].fixed ? k.mid : this.lambert(k.mid), mesh, big: k.big });
+      meshes.push({ kind, mesh, start: r[kind].start, count });
+      if (kind === 'dust') dust = mesh;
+    }
 
     this.scene.add(group);
     group.updateMatrixWorld(true);
     // Torches : coordonnées locales → monde.
     const torches = shell.torches.map((t) => t.clone().add(new THREE.Vector3(def.origin.x, def.floorY, def.origin.z)));
-    return { def, sim, group, dust, bunnies, stars, pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
+    return { def, sim, group, dust, meshes, pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
   }
 
   /** Empreinte de la brosse au sol : un rectangle arrondi qui suit exactement la zone qui pousse. */
@@ -368,7 +416,7 @@ export class World3D {
       this.sun.shadow.map = null;
     }
 
-    for (const v of this.views) v.dust.geometry = q.lowPolyDust ? this.dustGeoLow : this.dustGeoHigh;
+    for (const v of this.views) if (v.dust) v.dust.geometry = q.lowPolyDust ? this.dustGeoLow : this.dustGeoHigh;
     for (const p of this.particleMats) {
       p.mesh.material = q.cheapMaterials ? p.low : q.richParticles ? p.rich : p.mid;
       p.mesh.castShadow = p.big ? q.bigParticleShadows : q.dustShadows;
@@ -434,8 +482,14 @@ export class World3D {
 
   // ───────────────────────────── Événements ─────────────────────────────
 
-  onCollect(roomIndex: number, collector: number, coins: number, isStar: boolean): void {
-    const pan = this.views[roomIndex].pans[collector];
+  onCollect(roomIndex: number, collector: number, coins: number, isStar: boolean, at?: { x: number; y: number }): void {
+    const view = this.views[roomIndex];
+    if (collector < 0) {
+      // Ramassé directement (outil, aspirateur) : le « +N » sort de la saleté elle-même.
+      if (at && coins >= 5) this.floaters.spawn(view.def.origin.x + at.x, view.def.floorY + 40, view.def.origin.z + at.y, coins);
+      return;
+    }
+    const pan = view.pans[collector];
     pan.pending += coins;
     pan.bounce = Math.min(1, pan.bounce + (isStar ? 0.9 : 0.05));
     if (isStar) {
@@ -490,15 +544,17 @@ export class World3D {
 
   private updateParticles(v: RoomView): void {
     const pool = v.sim.pool;
-    const { x, y, rot, age, alive } = pool;
+    const { x, y, rot, age, alive, hp, vx, vy } = pool;
     // Position de la caméra dans le repère de la pièce (les moutons la regardent).
     const camX = this.camera.position.x - v.def.origin.x;
     const camZ = this.camera.position.z - v.def.origin.z;
     const t = this.time;
 
-    const write = (mesh: THREE.InstancedMesh, start: number, count: number, kind: 'dust' | 'bunny' | 'star') => {
+    for (const { kind, mesh, start, count } of v.meshes) {
       const arr = mesh.instanceMatrix.array as Float32Array;
-      const radius = DIRT_TYPES[kind].radius;
+      const def = DIRT_TYPES[kind];
+      const radius = def.radius;
+      const maxHp = def.fixed?.hp ?? 1;
       for (let k = 0; k < count; k++) {
         const i = start + k;
         const o = k * 16;
@@ -511,32 +567,52 @@ export class World3D {
         if (a < 0.35) s *= popEase(a / 0.35);
         let yaw = rot[i];
         let py = 0;
-        if (kind === 'dust') {
-          s *= 0.8 + ((i * 13) % 10) / 20;
-          py = s * 0.4;
-        } else if (kind === 'bunny') {
-          // Les moutons te regardent toujours. Toujours.
-          yaw = Math.atan2(camX - x[i], camZ - y[i]);
-          s *= 0.9 + ((i * 7) % 5) / 20;
-          py = s * 0.8 + Math.abs(Math.sin(rot[i] * 0.5)) * s * 0.35;
-        } else {
-          yaw = t * 2.5 + i;
-          s *= 1.1 + Math.sin(t * 6 + i) * 0.15;
-          py = 18 + Math.sin(t * 3 + i) * 5;
+        let sy = s;
+        switch (kind) {
+          case 'bunny':
+            // Les moutons te regardent toujours. Toujours.
+            yaw = Math.atan2(camX - x[i], camZ - y[i]);
+            s *= 0.9 + ((i * 7) % 5) / 20;
+            sy = s;
+            py = s * 0.8 + Math.abs(Math.sin(rot[i] * 0.5)) * s * 0.35;
+            break;
+          case 'star':
+            yaw = t * 2.5 + i;
+            s *= 1.1 + Math.sin(t * 6 + i) * 0.15;
+            sy = s;
+            py = 18 + Math.sin(t * 3 + i) * 5;
+            break;
+          case 'leaf': {
+            // Une feuille qui file au vent se soulève un peu.
+            const speed = Math.hypot(vx[i], vy[i]);
+            s *= 0.8 + ((i * 13) % 10) / 25;
+            sy = s;
+            py = 1 + Math.min(25, speed * 0.04) * (0.6 + 0.4 * Math.sin(t * 9 + i));
+            break;
+          }
+          case 'web':
+          case 'stain': {
+            // Plus on travaille dessus, plus elle rétrécit.
+            const f = Math.max(0, hp[i] / maxHp);
+            s *= (0.9 + ((i * 7) % 5) / 20) * (0.35 + 0.65 * f);
+            sy = 1;
+            py = kind === 'web' ? 1.2 : 0.9;
+            break;
+          }
+          default:
+            s *= 0.8 + ((i * 13) % 10) / 20;
+            sy = s;
+            py = s * 0.4;
         }
         const c = Math.cos(yaw) * s;
         const sn = Math.sin(yaw) * s;
         arr[o] = c; arr[o + 1] = 0; arr[o + 2] = -sn; arr[o + 3] = 0;
-        arr[o + 4] = 0; arr[o + 5] = s; arr[o + 6] = 0; arr[o + 7] = 0;
+        arr[o + 4] = 0; arr[o + 5] = sy; arr[o + 6] = 0; arr[o + 7] = 0;
         arr[o + 8] = sn; arr[o + 9] = 0; arr[o + 10] = c; arr[o + 11] = 0;
         arr[o + 12] = x[i]; arr[o + 13] = py; arr[o + 14] = y[i]; arr[o + 15] = 1;
       }
       mesh.instanceMatrix.needsUpdate = true;
-    };
-    const r = pool.ranges;
-    write(v.dust, r.dust.start, r.dust.count, 'dust');
-    write(v.bunnies, r.bunny.start, r.bunny.count, 'bunny');
-    write(v.stars, r.star.start, r.star.count, 'star');
+    }
   }
 
   private updatePans(v: RoomView, dt: number): void {
@@ -610,10 +686,17 @@ export class World3D {
   private tmpB = new THREE.Vector3();
   private up = new THREE.Vector3(0, 1, 0);
 
+  /** Outil affiché dans les mains. */
+  setTool(tool: string): void {
+    for (const [id, h] of Object.entries(this.broom.heads)) h.visible = id === tool;
+    this.tool = tool;
+  }
+  private tool = 'broom';
+
   private updateBroom(sim: RoomSim | null, dt: number, broom: BroomView): void {
     const { root, head, handle } = this.broom;
     root.visible = broom.visible;
-    this.ring.visible = broom.visible && sim !== null;
+    this.ring.visible = broom.visible && sim !== null && this.tool === 'broom';
     if (!broom.visible) return;
     const cam = this.camera;
     const yaw = cam.rotation.y;
@@ -635,7 +718,7 @@ export class World3D {
     const speed = Math.hypot(v.x, v.y);
     const squash = Math.min(0.22, speed / 7000) + (broom.pressed ? 0.12 : 0);
     // La brosse grandit en vrai avec l'arbre (Brosse large, Brosse géante).
-    const widthScale = sim ? sim.broom.width / 74 : 1;
+    const widthScale = sim && this.tool === 'broom' ? sim.broom.width / 74 : 1;
     head.scale.set((1 + squash) * widthScale, 1 - squash, 1);
 
     const grip = this.tmpA.set(24, -42, -36).applyMatrix4(cam.matrixWorld);

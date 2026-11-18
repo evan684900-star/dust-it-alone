@@ -1,4 +1,4 @@
-import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
+import { DIRT_ORDER, DIRT_TYPES, type DirtId, type ToolId } from '../data/dirtTypes';
 import type { Rect, RoomDef } from '../data/rooms';
 import { createRng, type Rng } from '../core/rng';
 import { ParticlePool } from './particles';
@@ -18,9 +18,12 @@ export interface BroomInput {
   yaw?: number;
   /** Bonus de poussée venant du joueur (ex. : Marche du balayeur en avançant). */
   pushBonus?: number;
+  /** Outil en main (balai par défaut). */
+  tool?: ToolId;
 }
 
 export interface CollectEvent {
+  /** Pelle qui a ramassé (−1 = ramassé directement : outil, aspirateur). */
   collector: number;
   type: DirtId;
   coins: number;
@@ -52,9 +55,13 @@ export interface Modifiers {
   scoopBonus: number;
   /** Les pelles attirent doucement la poussière de toute la pièce. */
   magnet: boolean;
+  /** Puissance des outils (1 = de base) et capacité du réservoir de l'aspirateur. */
+  duster: number;
+  sponge: number;
+  blower: number;
+  vacuumCap: number;
 }
 
-const FRICTION: Record<DirtId, number> = { dust: 5.5, bunny: 3.2, star: 4.5 };
 /** Un grain ramassé moins de 1,2 s après un coup de balai compte comme « poussé droit dans la pelle ». */
 const SCOOP_WINDOW = 1.2;
 const MAX_BROOM_SPEED = 2600;
@@ -64,7 +71,11 @@ export class RoomSim {
   readonly pool: ParticlePool;
   readonly rng: Rng;
   broom: BroomStats = { width: 74, depth: 24, grip: 0.85 };
-  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, starValue: 1, respawnMult: 1, scoopBonus: 0, magnet: false };
+  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, starValue: 1, respawnMult: 1, scoopBonus: 0, magnet: false, duster: 1, sponge: 1, blower: 1, vacuumCap: 300 };
+  /** Grains dans le réservoir de l'aspirateur. */
+  vacuumLoad = 0;
+  /** L'outil a touché quelque chose ce pas-ci (pour le son). */
+  toolActive = 0;
   /** Pelles effectives (agrandies par l'arbre). */
   collectorRects: Rect[];
   private time = 0;
@@ -82,7 +93,7 @@ export class RoomSim {
   /** Numéro de passage : chaque particule n'est poussée qu'une fois par pas de simulation. */
   private stamp: Uint32Array;
   private stampId = 0;
-  private respawnAcc: Record<DirtId, number> = { dust: 0, bunny: 0, star: 0 };
+  private respawnAcc = Object.fromEntries(DIRT_ORDER.map((d) => [d, 0])) as Record<DirtId, number>;
   private events: CollectEvent[] = [];
   private readonly maxDirt: number;
   private readonly patchTotal: number;
@@ -112,6 +123,10 @@ export class RoomSim {
       respawnMult: m.respawnMult,
       scoopBonus: m.scoopBonus,
       magnet: m.panMagnet,
+      duster: m.duster,
+      sponge: m.sponge,
+      blower: m.blower,
+      vacuumCap: m.vacuumCap,
     };
     // Pelles agrandies autour de leur bouche, sans dépasser des murs.
     this.collectorRects = this.room.collectors.map((c) => {
@@ -132,7 +147,9 @@ export class RoomSim {
   /** Remet exactement la quantité de poussière sauvegardée (positions tirées au hasard dans les zones sales). */
   fillCounts(counts: Partial<Record<DirtId, number>>): void {
     for (const id of DIRT_ORDER) {
-      const target = Math.min(this.room.capacity[id] ?? 0, Math.max(0, Math.floor(counts[id] ?? 0)));
+      // Type absent de la sauvegarde (nouveau type de saleté) : la pièce le reçoit plein.
+      const want = id in counts ? counts[id]! : id === 'star' ? 3 : (this.room.capacity[id] ?? 0);
+      const target = Math.min(this.room.capacity[id] ?? 0, Math.max(0, Math.floor(want)));
       let guard = target * 4 + 10;
       while (this.pool.aliveCount[id] < target && guard-- > 0) this.spawnRandom(id);
     }
@@ -140,14 +157,13 @@ export class RoomSim {
   }
 
   /** Quantité de poussière au sol, pour la sauvegarde. */
-  dirtCounts(): { dust: number; bunny: number; star: number } {
-    const c = this.pool.aliveCount;
-    return { dust: c.dust, bunny: c.bunny, star: c.star };
+  dirtCounts(): Record<DirtId, number> {
+    return { ...this.pool.aliveCount };
   }
 
   /** Remplit la pièce (début de partie, ou retour après une absence). */
   fill(ratio = 1): void {
-    for (const id of ['dust', 'bunny'] as DirtId[]) {
+    for (const id of DIRT_ORDER.filter((d) => d !== 'star')) {
       const target = Math.floor((this.room.capacity[id] ?? 0) * ratio);
       while (this.pool.aliveCount[id] < target && this.spawnRandom(id)) { /* remplissage */ }
     }
@@ -169,7 +185,13 @@ export class RoomSim {
 
   step(dt: number, input: BroomInput): void {
     this.time += dt;
-    this.applyBroom(dt, input);
+    this.toolActive = 0;
+    const tool = input.tool ?? 'broom';
+    if (tool === 'broom') this.applyBroom(dt, input);
+    else {
+      this.trackTool(dt, input);
+      if (input.active && input.pressed) this.applyTool(tool, dt, input);
+    }
     if (this.mods.magnet) this.applyMagnet();
     this.integrate(dt);
     this.respawn(dt);
@@ -256,6 +278,7 @@ export class RoomSim {
         const ry = y[i] - cy;
         if (rx > reach || rx < -reach || ry > reach || ry < -reach) continue;
         const def = DIRT_TYPES[DIRT_ORDER[type[i]]];
+        if (def.fixed) continue;
         const r = def.radius;
         const lt = rx * tx + ry * ty;
         const ln = rx * nx + ry * ny;
@@ -298,6 +321,104 @@ export class RoomSim {
     this.broomPushed = pushed;
   }
 
+  // ───────────────────────────── Autres outils ─────────────────────────────
+
+  private toolPrev = { x: 0, y: 0, has: false };
+  private toolMove = 0;
+
+  /** Suit le déplacement de l'outil (l'éponge a besoin de savoir combien on frotte). */
+  private trackTool(_dt: number, input: BroomInput): void {
+    this.broomVel.x *= 0.8;
+    this.broomVel.y *= 0.8;
+    this.prev.has = false;
+    if (!input.active) {
+      this.toolPrev.has = false;
+      this.toolMove = 0;
+      return;
+    }
+    this.toolMove = this.toolPrev.has ? Math.hypot(input.x - this.toolPrev.x, input.y - this.toolPrev.y) : 0;
+    this.toolPrev.x = input.x;
+    this.toolPrev.y = input.y;
+    this.toolPrev.has = true;
+  }
+
+  baseValue(id: DirtId): number {
+    const def = DIRT_TYPES[id];
+    if (id === 'bunny') return this.mods.bunnyValue;
+    if (id === 'star') return def.value * this.mods.starValue;
+    return def.value;
+  }
+
+  /** Retire directement un grain (outil, aspirateur) : il rapporte sur place, sans pelle. */
+  private collectDirect(i: number, id: DirtId): void {
+    const coins = this.baseValue(id) * this.mods.valueMultiplier;
+    const px = this.pool.x[i];
+    const py = this.pool.y[i];
+    this.pool.kill(i);
+    this.events.push({ collector: -1, type: id, coins, x: px, y: py });
+  }
+
+  private applyTool(tool: ToolId, dt: number, input: BroomInput): void {
+    const { x, y, vx, vy, alive, type, hp } = this.pool;
+    const yaw = input.yaw ?? 0;
+    const fx = -Math.sin(yaw);
+    const fy = -Math.cos(yaw);
+    for (let i = 0; i < this.pool.cap; i++) {
+      if (!alive[i]) continue;
+      const id = DIRT_ORDER[type[i]];
+      const def = DIRT_TYPES[id];
+      const dx = x[i] - input.x;
+      const dy = y[i] - input.y;
+      if (tool === 'duster' || tool === 'sponge') {
+        if (def.fixed?.tool !== tool) continue;
+        const reach = (tool === 'duster' ? 45 : 30) + def.radius;
+        if (dx * dx + dy * dy > reach * reach) continue;
+        // Plumeau : il suffit de rester dessus. Éponge : il faut frotter (la distance parcourue compte).
+        hp[i] -= tool === 'duster' ? dt * this.mods.duster : this.toolMove * this.mods.sponge;
+        this.toolActive++;
+        if (hp[i] <= 0) this.collectDirect(i, id);
+      } else if (tool === 'vacuum') {
+        if (def.fixed || this.vacuumLoad >= this.mods.vacuumCap) continue;
+        const d = Math.hypot(dx, dy);
+        const R = 80;
+        if (d > R) continue;
+        if (d < 16 + def.radius * 0.5) {
+          this.vacuumLoad++;
+          this.collectDirect(i, id);
+          continue;
+        }
+        // Aspiration : les grains filent vers la buse, les lourds moins vite.
+        const pull = (1600 * (1 - d / R)) / Math.max(1, def.mass * 0.6);
+        vx[i] += (-dx / d) * pull * dt * 8;
+        vy[i] += (-dy / d) * pull * dt * 8;
+        this.toolActive++;
+      } else if (tool === 'blower') {
+        if (def.fixed) continue;
+        // Cône devant soi : départ un peu derrière le point visé, 4 m de portée.
+        const ox = input.x - fx * 150;
+        const oy = input.y - fy * 150;
+        const rx = x[i] - ox;
+        const ry = y[i] - oy;
+        const along = rx * fx + ry * fy;
+        if (along < 0 || along > 420) continue;
+        const across = Math.abs(rx * -fy + ry * fx);
+        if (across > 40 + along * 0.45) continue;
+        const f = (1 - along / 420) * this.mods.blower;
+        const push = (1100 * f) / def.mass;
+        vx[i] += (fx * push + (Math.random() - 0.5) * 120) * dt * 6;
+        vy[i] += (fy * push + (Math.random() - 0.5) * 120) * dt * 6;
+        this.toolActive++;
+      }
+    }
+  }
+
+  /** Vide le réservoir de l'aspirateur (à faire près d'une pelle). */
+  emptyVacuum(): number {
+    const n = this.vacuumLoad;
+    this.vacuumLoad = 0;
+    return n;
+  }
+
   // ───────────────────────────── Physique ─────────────────────────────
 
   private integrate(dt: number): void {
@@ -335,7 +456,7 @@ export class RoomSim {
         }
       }
 
-      const damp = Math.exp(-FRICTION[id] * dt);
+      const damp = Math.exp(-def.friction * dt);
       pvx *= damp;
       pvy *= damp;
       let px = x[i] + pvx * dt;
@@ -392,8 +513,7 @@ export class RoomSim {
   }
 
   private collect(i: number, collector: number, id: DirtId, px: number, py: number): void {
-    const def = DIRT_TYPES[id];
-    const base = id === 'bunny' ? this.mods.bunnyValue : id === 'star' ? def.value * this.mods.starValue : def.value;
+    const base = this.baseValue(id);
     const scoop = this.time - this.touched[i] < SCOOP_WINDOW ? 1 + this.mods.scoopBonus : 1;
     const coins = base * this.mods.valueMultiplier * scoop;
     this.pool.kill(i);
@@ -441,9 +561,21 @@ export class RoomSim {
     if (!this.pool.canSpawn(id)) return false;
     const r = DIRT_TYPES[id].radius;
     for (let attempt = 0; attempt < 8; attempt++) {
-      const p = this.pickPatch();
-      const px = p.x + this.rng.gauss() * p.spread * 0.5;
-      const py = p.y + this.rng.gauss() * p.spread * 0.5;
+      let px: number;
+      let py: number;
+      if (id === 'web') {
+        // Les toiles d'araignée s'accrochent le long des murs.
+        const W = this.room.width;
+        const H = this.room.height;
+        const m = r + 6 + this.rng.next() * 40;
+        const side = this.rng.int(0, 3);
+        px = side === 0 ? m : side === 1 ? W - m : this.rng.range(m, W - m);
+        py = side === 2 ? m : side === 3 ? H - m : this.rng.range(m, H - m);
+      } else {
+        const p = this.pickPatch();
+        px = p.x + this.rng.gauss() * p.spread * 0.5;
+        py = p.y + this.rng.gauss() * p.spread * 0.5;
+      }
       if (px < r + 4 || py < r + 4 || px > this.room.width - r - 4 || py > this.room.height - r - 4) continue;
       if (this.collectorRects.some((r) => inside(grow(r, 60), px, py))) continue;
       if (this.room.obstacles.some((o) => inside(grow(o.rect, r + 2), px, py))) continue;

@@ -290,3 +290,86 @@ export function drawPortrait(seed: number): HTMLCanvasElement {
   g.fillRect(0, 0, 192, 256);
   return c;
 }
+
+/** Toile d'araignée (fond transparent). */
+export function drawWeb(): HTMLCanvasElement {
+  const { c, g } = canvas(256, 256);
+  g.strokeStyle = 'rgba(245,245,255,0.85)';
+  g.lineWidth = 2;
+  const spokes = 10;
+  for (let k = 0; k < spokes; k++) {
+    const a = (k / spokes) * Math.PI * 2;
+    g.beginPath();
+    g.moveTo(128, 128);
+    g.lineTo(128 + Math.cos(a) * 124, 128 + Math.sin(a) * 124);
+    g.stroke();
+  }
+  g.lineWidth = 1.5;
+  for (let r = 18; r < 124; r += 16) {
+    g.beginPath();
+    for (let k = 0; k <= spokes; k++) {
+      const a = (k / spokes) * Math.PI * 2;
+      const rr = r * (0.92 + 0.08 * Math.sin(k * 2.3 + r));
+      const px = 128 + Math.cos(a) * rr;
+      const py = 128 + Math.sin(a) * rr;
+      if (k === 0) g.moveTo(px, py);
+      else g.quadraticCurveTo(128 + Math.cos(a - 0.3) * rr * 0.9, 128 + Math.sin(a - 0.3) * rr * 0.9, px, py);
+    }
+    g.stroke();
+  }
+  return c;
+}
+
+/** Tache au sol (blanc → teinte appliquée au rendu), bords irréguliers et doux. */
+export function drawStain(): HTMLCanvasElement {
+  const { c, g } = canvas(256, 256);
+  const grad = g.createRadialGradient(128, 128, 20, 128, 128, 120);
+  grad.addColorStop(0, 'rgba(255,255,255,0.95)');
+  grad.addColorStop(0.7, 'rgba(255,255,255,0.75)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.beginPath();
+  for (let k = 0; k <= 24; k++) {
+    const a = (k / 24) * Math.PI * 2;
+    const r = 96 + Math.sin(a * 3) * 14 + Math.cos(a * 5) * 9;
+    const px = 128 + Math.cos(a) * r;
+    const py = 128 + Math.sin(a) * r;
+    if (k === 0) g.moveTo(px, py);
+    else g.lineTo(px, py);
+  }
+  g.closePath();
+  g.fill();
+  // Petites éclaboussures.
+  for (let k = 0; k < 6; k++) {
+    g.beginPath();
+    g.arc(128 + Math.cos(k * 1.1) * 112, 128 + Math.sin(k * 1.7) * 108, 6 + (k % 3) * 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}
+
+/** Herbe (cour intérieure). */
+export function drawGrass(px: number): HTMLCanvasElement {
+  const { c, g } = canvas(px, px);
+  g.fillStyle = '#5f9a3a';
+  g.fillRect(0, 0, px, px);
+  const rnd = seeded(77);
+  for (let k = 0; k < 3500; k++) {
+    const x = rnd() * px;
+    const y = rnd() * px;
+    const v = 70 + Math.floor(rnd() * 70);
+    g.strokeStyle = `rgba(${v - 30},${v + 60},${v - 40},0.7)`;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(x + (rnd() - 0.5) * 6, y - 4 - rnd() * 8);
+    g.stroke();
+  }
+  for (let k = 0; k < 30; k++) {
+    g.fillStyle = ['#f4ecdc', '#ffd84a', '#ff8a6e'][k % 3];
+    g.beginPath();
+    g.arc(rnd() * px, rnd() * px, 2.5, 0, Math.PI * 2);
+    g.fill();
+  }
+  return c;
+}

@@ -1,5 +1,6 @@
 import { isQualitySetting, type QualitySetting } from '../render/quality';
 import { NODE_BY_ID } from '../data/tree';
+import { DIRT_ORDER, type DirtId } from '../data/dirtTypes';
 
 export const SAVE_KEY = 'dust-it-alone:save';
 export const SAVE_VERSION = 3;
@@ -8,7 +9,7 @@ export interface RoomSave {
   unlocked: boolean;
   cleaned: boolean;
   /** Poussière encore au sol (nombre de grains par type). Absent = pièce pleine. */
-  dirt?: { dust: number; bunny: number; star: number };
+  dirt?: Partial<Record<DirtId, number>>;
 }
 
 export interface PlayerSave {
@@ -67,10 +68,17 @@ export function migrate(raw: unknown): SaveData {
       const d = rv.dirt as Record<string, unknown> | undefined;
       const cnt = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? Math.floor(x) : null);
       if (d && typeof d === 'object') {
-        const dust = cnt(d.dust);
-        const bunny = cnt(d.bunny);
-        const star = cnt(d.star);
-        if (dust !== null && bunny !== null && star !== null) rooms[id].dirt = { dust, bunny, star };
+        // Il faut au moins la poussière ; les types absents (anciennes sauvegardes) repartent à 0… sauf
+        // s'ils n'existaient pas encore : on les laisse alors absents (la pièce les recevra pleins).
+        const out: Partial<Record<DirtId, number>> = {};
+        let ok = cnt(d.dust) !== null;
+        for (const k of DIRT_ORDER) {
+          if (!(k in d)) continue;
+          const v = cnt(d[k]);
+          if (v === null) ok = false;
+          else out[k] = v;
+        }
+        if (ok) rooms[id].dirt = out;
       }
     }
   }

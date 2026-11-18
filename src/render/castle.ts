@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { fabric, mat, metal, solid } from './materials';
 import { roundedBox } from './geometry';
-import { blobShadow, drawCarpet, drawFlagstones, drawPlanks, drawPortrait, drawStoneWall, softDot } from './canvasTextures';
+import { blobShadow, drawCarpet, drawFlagstones, drawGrass, drawPlanks, drawPortrait, drawStoneWall, softDot } from './canvasTextures';
 
 function canvasTex(c: HTMLCanvasElement, repeat = false): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
@@ -17,12 +17,14 @@ const T = {
   _stone: null as THREE.Texture | null,
   _darkStone: null as THREE.Texture | null,
   _flag: null as THREE.Texture | null,
+  _grass: null as THREE.Texture | null,
   _shadow: null as THREE.Texture | null,
   _soft: null as THREE.Texture | null,
   woods: new Map<string, THREE.Texture>(),
   get stone() { return (this._stone ??= canvasTex(drawStoneWall(512, 512), true)); },
   get darkStone() { return (this._darkStone ??= canvasTex(drawStoneWall(512, 512, { tones: ['#7d7268', '#71665c', '#887c70', '#6a5f56'], mortar: '#3f3630', seed: 9 }), true)); },
   get flag() { return (this._flag ??= canvasTex(drawFlagstones(512, 512), true)); },
+  get grass() { return (this._grass ??= canvasTex(drawGrass(512), true)); },
   get shadow() { return (this._shadow ??= canvasTex(blobShadow())); },
   get soft() { return (this._soft ??= canvasTex(softDot())); },
   planks(key: string, woods: string[]) {
@@ -88,11 +90,43 @@ function toWallU(def: RoomDef, side: Side, along: number): number {
   return side === 's' ? def.width - along : side === 'w' ? def.height - along : along;
 }
 
-const STYLE = {
-  gallery: { floor: ['#b8743c', '#a8652f', '#c4824a'], wainscot: true, windows: 'n' as Side, wallTex: 'stone' },
-  library: { floor: ['#7a4a2a', '#6a3f22', '#86563a'], wainscot: true, windows: 'n' as Side, wallTex: 'stone' },
-  bedroom: { floor: ['#9a5a3a', '#8a4e30', '#a8684a'], wainscot: true, windows: 's' as Side, wallTex: 'stone' },
-  hall: { floor: null, wainscot: false, windows: 'w' as Side, wallTex: 'darkStone' },
+interface StyleDef {
+  /** Bois du parquet, ou un sol spécial. */
+  floor: string[] | 'flag' | 'grass' | 'darkFlag';
+  floorTint?: number;
+  wainscot: boolean;
+  /** Mur qui porte les fenêtres (null = pas de fenêtres). */
+  windows: Side | null;
+  windowColors?: number[];
+  wallTex: 'stone' | 'darkStone';
+  /** En plein air : pas de plafond, on voit le ciel. */
+  outdoor?: boolean;
+  /** Murs bas (parapet avec créneaux), sauf sur ces côtés. */
+  parapet?: { height: number; fullSides: Side[] };
+  torches?: boolean;
+  torchHeight?: number;
+  rug?: [string, string, string];
+  chandeliers?: number;
+  banners?: Side[];
+  portraits?: Side;
+}
+
+const STAINED = [0xff6a6a, 0x6aa8ff, 0xffd86a, 0x8aff8a, 0xd08aff];
+
+const STYLE: Record<Exclude<RoomDef['style'], 'attic'>, StyleDef> = {
+  gallery: { floor: ['#b8743c', '#a8652f', '#c4824a'], wainscot: true, windows: 'n', wallTex: 'stone', rug: ['#8a1a2a', '#c9a24a', '#5a0a1a'], portraits: 's' },
+  library: { floor: ['#7a4a2a', '#6a3f22', '#86563a'], wainscot: true, windows: 'n', wallTex: 'stone', rug: ['#1a4a3a', '#c9a24a', '#0a2a20'], chandeliers: 1 },
+  bedroom: { floor: ['#9a5a3a', '#8a4e30', '#a8684a'], wainscot: true, windows: 's', wallTex: 'stone', rug: ['#5a1a4a', '#d8b860', '#3a0a2a'], portraits: 'w' },
+  hall: { floor: 'flag', wainscot: false, windows: 'w', wallTex: 'darkStone', rug: ['#7a1a1a', '#d8b860', '#4a0a0a'], chandeliers: 2, banners: ['n', 's'], torchHeight: 300 },
+  kitchen: { floor: 'flag', floorTint: 0xd8c0a0, wainscot: false, windows: 's', wallTex: 'stone', torchHeight: 230 },
+  banquet: { floor: ['#8a5030', '#7a4428', '#965c3a'], wainscot: true, windows: 'n', wallTex: 'stone', rug: ['#1a3a7a', '#d8b860', '#0a1a4a'], chandeliers: 2, banners: ['w', 'e'] },
+  chapel: { floor: 'flag', floorTint: 0xe8e0f0, wainscot: false, windows: 'w', windowColors: STAINED, wallTex: 'stone', rug: ['#5a1a6a', '#d8b860', '#3a0a4a'], torchHeight: 260 },
+  courtyard: { floor: 'grass', wainscot: false, windows: null, wallTex: 'stone', outdoor: true, torchHeight: 280 },
+  cellar: { floor: 'darkFlag', wainscot: false, windows: null, wallTex: 'darkStone', torchHeight: 220 },
+  dungeon: { floor: 'darkFlag', floorTint: 0x9a9aa8, wainscot: false, windows: null, wallTex: 'darkStone', torchHeight: 220 },
+  clocktower: { floor: ['#6a4a3a', '#5e4032', '#765442'], wainscot: false, windows: 'e', wallTex: 'stone', torchHeight: 260 },
+  ramparts: { floor: 'flag', wainscot: false, windows: null, wallTex: 'stone', outdoor: true, parapet: { height: 130, fullSides: ['w'] }, torches: false },
+  throne: { floor: 'flag', floorTint: 0xf0e0d0, wainscot: false, windows: 'n', windowColors: STAINED, wallTex: 'stone', rug: ['#8a1a1a', '#e8c860', '#5a0a0a'], chandeliers: 2, banners: ['w', 'e'], torchHeight: 320 },
 };
 
 /** Construit une pièce du château (coordonnées locales, à placer à l'origine de la pièce). */
@@ -105,9 +139,11 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
   const flames: THREE.Object3D[] = [];
 
   // Sol.
-  const floorTex = st.floor ? T.planks(def.style, st.floor) : T.flag;
-  const floorTile = st.floor ? 600 : 300;
-  const floor = new THREE.Mesh(tiledPlane(W, H, floorTile), mat(0xffffff, { map: floorTex, bumpMap: floorTex, bumpScale: 1.5, roughness: st.floor ? 0.55 : 0.8 }));
+  const wood = Array.isArray(st.floor);
+  const floorTex = Array.isArray(st.floor) ? T.planks(def.style, st.floor) : st.floor === 'grass' ? T.grass : T.flag;
+  const floorTile = wood ? 600 : st.floor === 'grass' ? 400 : 300;
+  const floorColor = st.floor === 'darkFlag' ? (st.floorTint ?? 0x8a8078) : (st.floorTint ?? 0xffffff);
+  const floor = new THREE.Mesh(tiledPlane(W, H, floorTile), mat(floorColor, { map: floorTex, bumpMap: floorTex, bumpScale: 1.5, roughness: wood ? 0.55 : 0.85 }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(W / 2, 0, H / 2);
   floor.receiveShadow = true;
@@ -144,9 +180,22 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
       u = o.to;
     }
     if (u < len) segs.push([u, len]);
+    const wallH = st.parapet && !st.parapet.fullSides.includes(side) ? st.parapet.height : C;
     for (const [a, b] of segs) {
-      const wall = new THREE.Mesh(tiledPlane(b - a, C, STONE_TILE, a, 0), wallMat);
-      place(wall, (a + b) / 2, C / 2);
+      const wall = new THREE.Mesh(tiledPlane(b - a, wallH, STONE_TILE, a, 0), wallMat);
+      place(wall, (a + b) / 2, wallH / 2);
+      if (wallH < C) {
+        // Créneaux sur le parapet, et le dos du mur (on le voit depuis l'intérieur du chemin de ronde).
+        const merlon = mat(0xb8a894, { roughness: 0.9 });
+        for (let m = a + 40; m < b - 40; m += 160) {
+          const blk = solid(roundedBox(80, 60, 40, 4), merlon);
+          place(blk, m + 40, wallH + 30, -10);
+          g.add(blk);
+        }
+        const top = solid(roundedBox(b - a, 14, 50, 3), merlon);
+        place(top, (a + b) / 2, wallH + 2, -15);
+        g.add(top);
+      }
       wall.receiveShadow = true;
       g.add(wall);
       if (st.wainscot) {
@@ -162,27 +211,29 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
 
     // Fenêtres hautes sur le mur « extérieur ».
     if (side === st.windows) {
-      const sill = def.style === 'library' ? 340 : def.style === 'hall' ? 380 : 170;
-      const wh = Math.min(C - sill - 40, def.style === 'hall' ? 420 : 230);
-      const step = def.style === 'hall' ? 600 : 450;
+      const tall = C >= 700;
+      const sill = def.style === 'library' ? 340 : tall ? 300 : 170;
+      const wh = Math.min(C - sill - 40, tall ? 420 : 230);
+      const step = tall ? 600 : 450;
+      let k = 0;
       for (let wu = step / 2; wu < len - 100; wu += step) {
         if (ops.some((o) => wu > o.from - 160 && wu < o.to + 160)) continue;
-        addWindow(g, place, wu, sill, 110, wh);
+        addWindow(g, place, wu, sill, 110, wh, st.windowColors ? st.windowColors[k++ % st.windowColors.length] : undefined);
       }
     }
 
     // Torches régulièrement espacées (pas devant les portes ni les fenêtres).
-    const tStep = def.style === 'hall' ? 700 : 520;
-    for (let tu = tStep / 2 + (side === st.windows ? tStep / 2 : 0); tu < len - 120; tu += tStep) {
+    const tStep = len > 3000 ? 700 : 520;
+    for (let tu = tStep / 2 + (side === st.windows ? tStep / 2 : 0); st.torches !== false && wallH >= C && tu < len - 120; tu += tStep) {
       if (ops.some((o) => tu > o.from - 120 && tu < o.to + 120)) continue;
-      const th = def.style === 'hall' ? 300 : 215;
+      const th = st.torchHeight ?? 215;
       const t = addTorch(g, place, tu, th);
       torches.push(t.light);
       flames.push(t.flame);
     }
 
     // Portraits de famille dans la galerie (mur sud) et la chambre (mur ouest).
-    if ((def.style === 'gallery' && side === 's') || (def.style === 'bedroom' && side === 'w')) {
+    if (st.portraits === side) {
       let k = def.style === 'gallery' ? 0 : 5;
       for (let pu = 260; pu < len - 200; pu += 330) {
         if (ops.some((o) => pu > o.from - 170 && pu < o.to + 170)) continue;
@@ -190,7 +241,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
       }
     }
     // Bannières dans le Grand Hall.
-    if (def.style === 'hall' && (side === 'n' || side === 's')) {
+    if (st.banners?.includes(side)) {
       const colors = [0x8a1a2a, 0x1a3a7a, 0x8a1a2a, 0x1a3a7a];
       let k = 0;
       for (let bu = 450; bu < len - 300; bu += 650) {
@@ -199,7 +250,8 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
     }
   }
 
-  // Plafond et poutres.
+  // Plafond et poutres (pas en plein air).
+  if (!st.outdoor) {
   const ceilTex = T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']);
   const ceil = new THREE.Mesh(tiledPlane(W, H, 600), mat(0xffffff, { map: ceilTex, roughness: 0.9 }));
   ceil.rotation.x = Math.PI / 2;
@@ -215,19 +267,26 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
     beam.castShadow = false;
     g.add(beam);
   }
+  }
 
   // Tapis.
-  if (def.style === 'gallery') addRug(g, W / 2, H / 2, W - 360, 170, '#8a1a2a', '#c9a24a', '#5a0a1a');
-  if (def.style === 'library') addRug(g, W / 2, H / 2 + 50, 700, 520, '#1a4a3a', '#c9a24a', '#0a2a20');
-  if (def.style === 'bedroom') addRug(g, W / 2, 520, 760, 460, '#5a1a4a', '#d8b860', '#3a0a2a');
-  if (def.style === 'hall') addRug(g, W / 2, H / 2, 900, H - 500, '#7a1a1a', '#d8b860', '#4a0a0a');
+  if (st.rug) {
+    const [m, bo, ac] = st.rug;
+    if (def.style === 'gallery') addRug(g, W / 2, H / 2, W - 360, 170, m, bo, ac);
+    else if (W > 2 * H || H > 2 * W) addRug(g, W / 2, H / 2, W > H ? W - 400 : 260, W > H ? 260 : H - 400, m, bo, ac);
+    else addRug(g, W / 2, H / 2, Math.min(900, W * 0.55), Math.min(H - 400, H * 0.6), m, bo, ac);
+  }
 
   // Lustres.
-  if (def.style === 'library') flames.push(...addChandelier(g, W / 2, C - 160, H / 2, torches));
-  if (def.style === 'hall') {
-    flames.push(...addChandelier(g, W / 2, C - 260, H * 0.3, torches));
-    flames.push(...addChandelier(g, W / 2, C - 260, H * 0.7, torches));
+  const n = st.chandeliers ?? 0;
+  for (let k = 0; k < n; k++) {
+    const along = n === 1 ? 0.5 : 0.3 + (0.4 * k) / (n - 1);
+    const [cx, cz] = W >= H ? [W * along, H / 2] : [W / 2, H * along];
+    flames.push(...addChandelier(g, cx, C - (C > 700 ? 260 : 160), cz, torches));
   }
+
+  // Horloge géante sur le mur nord de la tour.
+  if (def.style === 'clocktower') addClockFace(g, W / 2, C * 0.62);
 
   // Ombres douces sous les meubles.
   for (const p of def.obstacles) addShadowBlob(g, p.rect.x + p.rect.w / 2, p.rect.y + p.rect.h / 2, Math.max(p.rect.w, p.rect.h) * 0.85);
@@ -237,7 +296,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
 
 type Place = (o: THREE.Object3D, u: number, v: number, d?: number) => void;
 
-function addWindow(g: THREE.Group, place: Place, u: number, sill: number, w: number, h: number): void {
+function addWindow(g: THREE.Group, place: Place, u: number, sill: number, w: number, h: number, color?: number): void {
   const shape = new THREE.Shape();
   const r = w / 2;
   shape.moveTo(-r, 0);
@@ -245,7 +304,7 @@ function addWindow(g: THREE.Group, place: Place, u: number, sill: number, w: num
   shape.lineTo(r, h - r);
   shape.absarc(0, h - r, r, 0, Math.PI, false);
   shape.lineTo(-r, 0);
-  const glass = new THREE.Mesh(new THREE.ShapeGeometry(shape, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xdde8ff).multiplyScalar(1.8) }));
+  const glass = new THREE.Mesh(new THREE.ShapeGeometry(shape, 16), new THREE.MeshBasicMaterial({ color: new THREE.Color(color ?? 0xdde8ff).multiplyScalar(color ? 1.4 : 1.8) }));
   place(glass, u, sill, 1);
   g.add(glass);
   // Meneaux et encadrement en pierre.
@@ -356,6 +415,28 @@ function addChandelier(g: THREE.Group, x: number, y: number, z: number, torches:
   }
   torches.push(new THREE.Vector3(x, y - 20, z));
   return flames;
+}
+
+/** Grand cadran d'horloge (avec des aiguilles qui indiquent… minuit moins cinq). */
+function addClockFace(g: THREE.Group, x: number, y: number): void {
+  const face = new THREE.Mesh(new THREE.CircleGeometry(170, 48), mat(0xf4ecdc, { roughness: 0.6 }));
+  face.position.set(x, y, 4);
+  const ring = solid(new THREE.TorusGeometry(175, 14, 12, 48), metal(0xc9a24a, 0.35));
+  ring.position.set(x, y, 6);
+  g.add(face, ring);
+  for (let k = 0; k < 12; k++) {
+    const a = (k / 12) * Math.PI * 2;
+    const tick = new THREE.Mesh(new THREE.BoxGeometry(8, 26, 4), metal(0x2a2622, 0.5));
+    tick.position.set(x + Math.sin(a) * 145, y + Math.cos(a) * 145, 8);
+    tick.rotation.z = -a;
+    g.add(tick);
+  }
+  for (const [len, ang] of [[120, -0.1], [85, 0]] as const) {
+    const hand = new THREE.Mesh(new THREE.BoxGeometry(10, len, 4).translate(0, len / 2, 0), metal(0x2a2622, 0.5));
+    hand.position.set(x, y, 10);
+    hand.rotation.z = ang;
+    g.add(hand);
+  }
 }
 
 function addShadowBlob(g: THREE.Group, x: number, z: number, size: number): void {

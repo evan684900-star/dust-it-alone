@@ -40,11 +40,17 @@ describe("l'Arbre des Souvenirs", () => {
     expect(availability(node('broom-giant'), st({ 'broom-wide-1': 5, 'broom-wide-2': 5, 'broom-wide-3': 5 })).ok).toBe(true);
   });
 
+  it('les outils demandent la pièce où apparaît leur saleté', () => {
+    const lv = { 'broom-wide-1': 1, 'broom-push-1': 5 };
+    expect(availability(node('tool-duster'), st(lv)).ok).toBe(false);
+    expect(availability(node('tool-duster'), st(lv, ['attic', 'gallery'])).ok).toBe(true);
+  });
+
   it('les conditions de pièce et « bientôt » sont respectées', () => {
     const lv = { 'broom-wide-1': 1, 'broom-push-1': 1 };
     expect(availability(node('broom-reach-1'), st(lv)).ok).toBe(false);
     expect(availability(node('broom-reach-1'), st(lv, ['attic', 'gallery'])).ok).toBe(true);
-    const soon = availability(node('tool-duster'), st({ 'broom-wide-1': 1, 'broom-push-1': 1, 'broom-reach-1': 3 }, ['attic', 'gallery']));
+    const soon = availability(node('plume-feet'), st({ 'plume-speed-1': 5, 'plume-speed-2': 5, 'plume-speed-3': 5 }));
     expect(soon.ok ? 'ok' : soon.reason).toBe('soon');
   });
 

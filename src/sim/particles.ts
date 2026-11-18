@@ -15,6 +15,8 @@ export class ParticlePool {
   readonly vy: Float32Array;
   readonly rot: Float32Array;
   readonly age: Float32Array;
+  /** Résistance restante des saletés fixées (toiles, taches). */
+  readonly hp: Float32Array;
   readonly alive: Uint8Array;
   /** Index du type (dans DIRT_ORDER) pour chaque emplacement. */
   readonly type: Uint8Array;
@@ -39,6 +41,7 @@ export class ParticlePool {
     this.vy = new Float32Array(total);
     this.rot = new Float32Array(total);
     this.age = new Float32Array(total);
+    this.hp = new Float32Array(total);
     this.alive = new Uint8Array(total);
     this.type = new Uint8Array(total);
     this.free = {} as Record<DirtId, Int32Array>;
@@ -69,6 +72,7 @@ export class ParticlePool {
     this.vy[i] = 0;
     this.rot[i] = rot;
     this.age[i] = 0;
+    this.hp[i] = DIRT_TYPES[id].fixed?.hp ?? 0;
     this.alive[i] = 1;
     this.aliveCount[id]++;
     return i;

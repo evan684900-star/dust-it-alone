@@ -293,6 +293,195 @@ export function buildProp(p: Prop): THREE.Object3D {
       }
       break;
     }
+    case 'stove': {
+      const brick = mat(0x8a3a2a, { roughness: 0.9 });
+      const body = solid(roundedBox(w, 120, h, 6), brick);
+      body.position.y = 60;
+      const top = solid(roundedBox(w + 10, 12, h + 10, 3), metal(0x2a2622, 0.5));
+      top.position.y = 126;
+      const mouth = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.4, 50), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff7a2a).multiplyScalar(2.5) }));
+      mouth.position.set(0, 45, h / 2 + 1);
+      const hood = solid(new THREE.CylinderGeometry(w * 0.25, w * 0.5, 140, 4, 1, true).rotateY(Math.PI / 4), mat(0x6a4a3a, { side: THREE.DoubleSide }));
+      hood.position.y = 210;
+      g.add(body, top, mouth, hood);
+      mouth.userData.torch = true;
+      break;
+    }
+    case 'cauldron': {
+      const pot = solid(new THREE.SphereGeometry(w * 0.45, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), metal(0x2a2622, 0.6));
+      pot.material = metal(0x2a2622, 0.6);
+      (pot.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+      pot.position.y = 60;
+      pot.rotation.x = Math.PI;
+      const soup = new THREE.Mesh(new THREE.CircleGeometry(w * 0.36, 20).rotateX(-Math.PI / 2), mat(0x8ab83a, { emissive: 0x3a6a10, emissiveIntensity: 0.6 }));
+      soup.position.y = 75;
+      const fire = new THREE.Mesh(new THREE.ConeGeometry(18, 30, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a2a).multiplyScalar(3) }));
+      fire.position.y = 15;
+      g.add(pot, soup, fire);
+      break;
+    }
+    case 'counter': {
+      const top = solid(roundedBox(w, 12, h, 3), mat(0xc9a878, { roughness: 0.5 }));
+      top.position.y = 92;
+      const body = solid(roundedBox(w - 10, 86, h - 10, 4), mat(0x7a4a22, { roughness: 0.6 }));
+      body.position.y = 43;
+      g.add(top, body);
+      for (let k = 0; k < 4; k++) {
+        const jar = solid(new THREE.CylinderGeometry(9, 11, 26, 12), mat([0xd88a3a, 0x8ab8d8, 0xe8d8b8, 0xb84a3a][k], { roughness: 0.3 }));
+        jar.position.set(-w / 2 + 60 + k * ((w - 120) / 3), 111, -h * 0.15);
+        g.add(jar);
+      }
+      break;
+    }
+    case 'pew': {
+      const wood = mat(0x6a3a22, { roughness: 0.55 });
+      const seat = solid(roundedBox(w, 10, h * 0.6, 3), wood);
+      seat.position.set(0, 45, h * 0.1);
+      const back = solid(roundedBox(w, 70, 8, 3), wood);
+      back.position.set(0, 80, -h * 0.3);
+      g.add(seat, back);
+      for (const sx of [-1, 1]) {
+        const end = solid(roundedBox(10, 95, h, 3), wood);
+        end.position.set(sx * (w / 2 - 5), 47, 0);
+        g.add(end);
+      }
+      break;
+    }
+    case 'altar': {
+      const stone = solid(roundedBox(w, 100, h, 6), mat(0xe8e0d0, { roughness: 0.6 }));
+      stone.position.y = 50;
+      const cloth = solid(roundedBox(w + 6, 6, h * 0.6, 2), fabric(0x8a1a3a));
+      cloth.position.y = 103;
+      g.add(stone, cloth);
+      for (const sx of [-1, 1]) {
+        const c = solid(new THREE.CylinderGeometry(5, 6, 50, 10), metal(0xc9a24a, 0.3));
+        c.position.set(sx * w * 0.35, 131, 0);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(4.5, 14, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffc060).multiplyScalar(3) }));
+        flame.position.set(sx * w * 0.35, 163, 0);
+        g.add(c, flame);
+      }
+      break;
+    }
+    case 'tree': {
+      const trunk = solid(new THREE.CylinderGeometry(w * 0.12, w * 0.18, 380, 12), mat(0x6a4a2a, { roughness: 0.9 }));
+      trunk.position.y = 190;
+      g.add(trunk);
+      const leaves = [0xd8742a, 0xe8a030, 0xc84a2a, 0x9aa83a];
+      for (let k = 0; k < 7; k++) {
+        const a = (k / 7) * Math.PI * 2;
+        const ball = solid(new THREE.IcosahedronGeometry(w * (0.32 + (k % 3) * 0.06), 1), mat(leaves[k % leaves.length], { roughness: 0.85, flatShading: true }));
+        ball.position.set(Math.cos(a) * w * 0.3, 400 + (k % 2) * 60, Math.sin(a) * w * 0.3);
+        g.add(ball);
+      }
+      const top = solid(new THREE.IcosahedronGeometry(w * 0.4, 1), mat(0xe08a2a, { roughness: 0.85, flatShading: true }));
+      top.position.y = 500;
+      g.add(top);
+      break;
+    }
+    case 'fountain': {
+      const stone = mat(0xc8b8a0, { roughness: 0.85 });
+      const basin = solid(new THREE.CylinderGeometry(w / 2, w / 2 + 6, 50, 32, 1, true), stone);
+      (basin.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+      basin.position.y = 25;
+      const rim = solid(new THREE.TorusGeometry(w / 2, 9, 8, 32).rotateX(Math.PI / 2), stone);
+      rim.position.y = 50;
+      const water = new THREE.Mesh(new THREE.CircleGeometry(w / 2 - 4, 32).rotateX(-Math.PI / 2), mat(0x5ec8f2, { roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.8 }));
+      water.position.y = 40;
+      const column = solid(new THREE.CylinderGeometry(14, 20, 120, 16), stone);
+      column.position.y = 60;
+      const bowl = solid(new THREE.CylinderGeometry(50, 20, 20, 24), stone);
+      bowl.position.y = 125;
+      g.add(basin, rim, water, column, bowl);
+      break;
+    }
+    case 'well': {
+      const stone = mat(0xa89c8e, { roughness: 0.9 });
+      const ring = solid(new THREE.CylinderGeometry(w / 2, w / 2, 80, 20, 1, true), stone);
+      (ring.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+      ring.position.y = 40;
+      const hole = new THREE.Mesh(new THREE.CircleGeometry(w / 2 - 6, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x0a0808 }));
+      hole.position.y = 30;
+      g.add(ring, hole);
+      for (const sx of [-1, 1]) {
+        const post = solid(roundedBox(12, 180, 12, 3), mat(0x6a4a2a));
+        post.position.set(sx * (w / 2 - 6), 90, 0);
+        g.add(post);
+      }
+      const roof = solid(new THREE.ConeGeometry(w * 0.7, 60, 4).rotateY(Math.PI / 4), mat(0x8a3a2a));
+      roof.position.y = 210;
+      g.add(roof);
+      break;
+    }
+    case 'barrel': {
+      const wood = mat(0x8a5a30, { roughness: 0.7 });
+      const body = solid(new THREE.CylinderGeometry(w * 0.45, w * 0.45, h * 1.1, 16), wood);
+      body.rotation.z = Math.PI / 2;
+      body.position.y = w * 0.45;
+      g.add(body);
+      for (const sx of [-0.35, 0, 0.35]) {
+        const hoop = solid(new THREE.TorusGeometry(w * 0.46, 2.5, 6, 20).rotateY(Math.PI / 2), metal(0x3a3430, 0.5));
+        hoop.position.set(sx * h, w * 0.45, 0);
+        g.add(hoop);
+      }
+      break;
+    }
+    case 'bars': {
+      // Barreaux de cellule, le long de z.
+      const iron = metal(0x3a3a3e, 0.45);
+      for (let z = -h / 2 + 15; z < h / 2; z += 30) {
+        const bar = solid(new THREE.CylinderGeometry(3, 3, 300, 8), iron);
+        bar.position.set(0, 150, z);
+        g.add(bar);
+      }
+      for (const y of [20, 290]) {
+        const rail = solid(roundedBox(12, 10, h, 2), iron);
+        rail.position.y = y;
+        g.add(rail);
+      }
+      break;
+    }
+    case 'gear': {
+      const brass = metal(0xc9a24a, 0.35);
+      const teeth = 18;
+      const wheel = solid(new THREE.CylinderGeometry(w / 2, w / 2, 24, 32), brass);
+      wheel.position.y = 60;
+      g.add(wheel);
+      for (let k = 0; k < teeth; k++) {
+        const a = (k / teeth) * Math.PI * 2;
+        const tooth = solid(roundedBox(22, 24, 26, 3), brass);
+        tooth.position.set(Math.cos(a) * (w / 2 + 8), 60, Math.sin(a) * (w / 2 + 8));
+        tooth.rotation.y = -a;
+        g.add(tooth);
+      }
+      const axle = solid(new THREE.CylinderGeometry(10, 10, 140, 12), metal(0x3a3430, 0.5));
+      axle.position.y = 70;
+      g.add(axle);
+      g.userData.spin = true;
+      break;
+    }
+    case 'throne': {
+      const gold = metal(0xd8b860, 0.3);
+      const velvet = fabric(0x8a1a2a);
+      const dais = solid(roundedBox(w, 30, h, 6), mat(0xd8d0c0, { roughness: 0.6 }));
+      dais.position.y = 15;
+      const seat = solid(roundedBox(w * 0.55, 50, h * 0.55, 8), velvet);
+      seat.position.set(0, 75, 0);
+      const back = solid(roundedBox(w * 0.55, 220, 20, 8), gold);
+      back.position.set(0, 160, -h * 0.25);
+      const cushion = solid(roundedBox(w * 0.45, 150, 10, 8), velvet);
+      cushion.position.set(0, 160, -h * 0.25 + 14);
+      g.add(dais, seat, back, cushion);
+      for (const sx of [-1, 1]) {
+        const arm = solid(roundedBox(18, 50, h * 0.5, 6), gold);
+        arm.position.set(sx * w * 0.3, 110, 0);
+        g.add(arm);
+      }
+      const crown = solid(new THREE.CylinderGeometry(22, 26, 24, 10, 1, true), gold);
+      (crown.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+      crown.position.set(0, 290, -h * 0.25);
+      g.add(crown);
+      break;
+    }
   }
   if (p.rot) g.rotation.y = (p.rot * Math.PI) / 2;
   g.position.set(x + p.rect.w / 2, 0, y + p.rect.h / 2);
@@ -345,28 +534,70 @@ export function buildDustpan(c: Collector): THREE.Group {
 }
 
 /** Balai : la brosse est à l'origine, le manche monte vers +Y local. */
-export function buildBroom(): { root: THREE.Group; head: THREE.Group; handle: THREE.Group } {
+export function buildBroom(): { root: THREE.Group; head: THREE.Group; handle: THREE.Group; heads: Record<string, THREE.Group> } {
   const root = new THREE.Group();
   const head = new THREE.Group();
+  const broomHead = new THREE.Group();
+  head.add(broomHead);
   // Brosse en paille : plein de petites mèches.
   const straw = mat(0xe2b553, { roughness: 0.85 });
   const bristles = solid(roundedBox(70, 26, 20, 5), straw);
   bristles.position.y = 13;
-  head.add(bristles);
+  broomHead.add(bristles);
   for (let k = 0; k < 14; k++) {
     const tuft = solid(new THREE.CylinderGeometry(1.5, 2.5, 10, 5), straw);
     tuft.position.set(-32 + k * 5, 2, (k % 2 ? 1 : -1) * 4);
     tuft.rotation.z = (k - 7) * 0.03;
-    head.add(tuft);
+    broomHead.add(tuft);
   }
   const band = solid(roundedBox(62, 12, 23, 4), plastic(PAL.tomato));
   band.position.y = 30;
-  head.add(band);
+  broomHead.add(band);
+
+  // Plumeau : un bouquet de plumes colorées.
+  const duster = new THREE.Group();
+  const plumeColors = [0xff8a6e, 0xffc93c, 0x5ec8f2, 0xc38bff, 0xf4ecdc];
+  for (let k = 0; k < 18; k++) {
+    const a = (k / 18) * Math.PI * 2;
+    const f = solid(new THREE.ConeGeometry(5, 34, 6), fabric(plumeColors[k % plumeColors.length]));
+    f.position.set(Math.cos(a) * 9, 22, Math.sin(a) * 9);
+    f.rotation.set(Math.sin(a) * 0.6, 0, -Math.cos(a) * 0.6);
+    duster.add(f);
+  }
+  const dusterCore = solid(new THREE.SphereGeometry(10, 12, 8), fabric(0xf4ecdc));
+  dusterCore.position.y = 30;
+  duster.add(dusterCore);
+  // Éponge : un pavé jaune et vert.
+  const sponge = new THREE.Group();
+  const spongeBody = solid(roundedBox(40, 16, 26, 5), mat(0xffd84a, { roughness: 0.95 }));
+  spongeBody.position.y = 10;
+  const scrub = solid(roundedBox(40, 6, 26, 2), mat(0x4aa84a, { roughness: 1 }));
+  scrub.position.y = 3;
+  sponge.add(spongeBody, scrub);
+  // Aspirateur : une large buse plate.
+  const vacuum = new THREE.Group();
+  const nozzle = solid(roundedBox(56, 10, 18, 4), plastic(0x5ec8f2));
+  nozzle.position.y = 6;
+  const neck = solid(new THREE.CylinderGeometry(6, 8, 30, 12), plastic(0x3a8ab8));
+  neck.position.y = 24;
+  vacuum.add(nozzle, neck);
+  // Souffleur : un cône qui pointe vers l'avant.
+  const blower = new THREE.Group();
+  const cone = solid(new THREE.CylinderGeometry(6, 16, 46, 14, 1, true).rotateX(Math.PI / 2), plastic(0xff8a6e));
+  cone.position.set(0, 26, -18);
+  const motor = solid(roundedBox(26, 22, 26, 6), plastic(0xd84a3a));
+  motor.position.set(0, 26, 10);
+  blower.add(cone, motor);
+  for (const h of [duster, sponge, vacuum, blower]) {
+    h.visible = false;
+    head.add(h);
+  }
+  const heads = { broom: broomHead, duster, sponge, vacuum, blower };
   const handle = new THREE.Group();
   // Manche de longueur fixe (pas d'étirement : ça perturbait le calcul des ombres).
   const stick = solid(new THREE.CylinderGeometry(3.5, 3.5, 260, 12).translate(0, 130, 0), mat(0xb8692a, { roughness: 0.45 }));
   stick.castShadow = false;
   handle.add(stick);
   root.add(head, handle);
-  return { root, head, handle };
+  return { root, head, handle, heads };
 }

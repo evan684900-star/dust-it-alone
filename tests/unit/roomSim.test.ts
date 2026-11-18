@@ -111,3 +111,57 @@ describe('reprise de partie', () => {
     expect(reloaded.cleanliness).toBeCloseTo(sim.cleanliness, 5);
   });
 });
+
+describe('outils', () => {
+  const room = { ...ROOMS[0], respawn: {}, capacity: { ...ROOMS[0].capacity, web: 4, stain: 4, leaf: 4 } };
+  const at = { active: true, x: 800, y: 450, pressed: true, yaw: 0 };
+
+  it('le balai ne pousse pas une toile d’araignée', () => {
+    const sim = new RoomSim(room, 21);
+    const i = sim.pool.spawn('web', 800, 450);
+    for (let k = 0; k < 20; k++) sim.step(1 / 60, { ...at, x: 700 + k * 15, yaw: -Math.PI / 2 });
+    expect(sim.pool.alive[i]).toBe(1);
+    expect(sim.pool.x[i]).toBe(800);
+  });
+
+  it('le plumeau retire une toile en restant dessus, et elle rapporte sur place', () => {
+    const sim = new RoomSim(room, 22);
+    const i = sim.pool.spawn('web', 800, 450);
+    let coins = 0;
+    for (let k = 0; k < 120 && sim.pool.alive[i]; k++) {
+      sim.step(1 / 60, { ...at, tool: 'duster' });
+      coins += sim.drainEvents().reduce((s, e) => s + e.coins, 0);
+    }
+    expect(sim.pool.alive[i]).toBe(0);
+    expect(coins).toBeGreaterThan(0);
+  });
+
+  it("l'éponge ne nettoie une tache qu'en frottant", () => {
+    const still = new RoomSim(room, 23);
+    const a = still.pool.spawn('stain', 800, 450);
+    for (let k = 0; k < 200; k++) still.step(1 / 60, { ...at, tool: 'sponge' });
+    expect(still.pool.alive[a]).toBe(1);
+    const scrub = new RoomSim(room, 24);
+    const b = scrub.pool.spawn('stain', 800, 450);
+    for (let k = 0; k < 200 && scrub.pool.alive[b]; k++) scrub.step(1 / 60, { ...at, tool: 'sponge', x: 800 + (k % 2 ? 12 : -12) });
+    expect(scrub.pool.alive[b]).toBe(0);
+  });
+
+  it("l'aspirateur ramasse jusqu'à ce que son réservoir soit plein", () => {
+    const sim = new RoomSim(room, 25);
+    sim.mods.vacuumCap = 5;
+    for (let k = 0; k < 12; k++) sim.pool.spawn('dust', 800 + (k % 4) * 6, 450 + Math.floor(k / 4) * 6);
+    for (let k = 0; k < 120; k++) sim.step(1 / 60, { ...at, tool: 'vacuum' });
+    expect(sim.vacuumLoad).toBe(5);
+    expect(sim.emptyVacuum()).toBe(5);
+    expect(sim.vacuumLoad).toBe(0);
+  });
+
+  it('le souffleur pousse les feuilles loin devant', () => {
+    const sim = new RoomSim(room, 26);
+    // Regard vers +x (yaw = −π/2) : la feuille est devant.
+    const i = sim.pool.spawn('leaf', 900, 450);
+    for (let k = 0; k < 30; k++) sim.step(1 / 60, { ...at, tool: 'blower', x: 820, yaw: -Math.PI / 2 });
+    expect(sim.pool.x[i]).toBeGreaterThan(1000);
+  });
+});

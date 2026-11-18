@@ -12,8 +12,8 @@ describe('équilibrage (simulateur de progression)', () => {
     lines.push('  revenu/h : ' + r.incomeByHour.map((v) => Math.round(v)).join(' · '));
     lines.push('  restants : ' + r.remaining.sort((a, b) => a.next - b.next).slice(0, 12).map((x) => `${x.id}=${x.next.toExponential(1)}`).join(' '));
     console.log('\n' + lines.join('\n'));
-    expect(r.doors.length).toBe(4);
+    expect(r.doors.length).toBe(13);
     expect(r.end).toBeGreaterThanOrEqual(10 * 3600);
-    expect(r.end).toBeLessThanOrEqual(16 * 3600);
+    expect(r.end).toBeLessThanOrEqual(22 * 3600);
   });
 });

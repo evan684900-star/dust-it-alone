@@ -601,3 +601,8 @@ kbd {
 .tree-btn.refund { background: #f3e3c3; font-size: 17px; }
 .tree-btn.refund:disabled { opacity: 0.55; }
 .td-refund-why { font-size: 13px; font-weight: 800; color: #8a4a2a; }
+.vacuum-gauge { flex-direction: column; align-items: stretch; gap: 4px; min-width: 220px; font-weight: 900; }
+.vac-bar { height: 14px; border: 3px solid var(--ink); border-radius: 8px; background: #d9c7a8; overflow: hidden; }
+.vac-bar div { height: 100%; background: var(--sky); transition: width 0.2s; }
+.vacuum-gauge.full { background: #fbe0d8; animation: shake 0.4s 3; }
+.vacuum-gauge small { font-size: 12px; }

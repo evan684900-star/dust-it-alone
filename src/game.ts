@@ -4,6 +4,7 @@ import { World3D } from './render/world3d';
 import { Player } from './player/player';
 import { Navigation } from './world/nav';
 import { sfx } from './audio/synth';
+import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
 import { loadSave, writeSave, type SaveData } from './save/save';
@@ -37,6 +38,9 @@ export class Game {
   private fpsAcc = { frames: 0, time: 0 };
   private last = performance.now();
   private currentRoom: RoomDef | null = null;
+  private tickCount = 0;
+  private farDt: number[] = [];
+  private visibleIds = new Set<string>();
   private mods!: Modifiers;
   private visibleKey = '';
 
@@ -380,7 +384,7 @@ export class Game {
       }
       if (!this.playing) return;
       this.player.setKey(e.code, true);
-      if (e.code === 'KeyE') this.tryUnlock();
+      if (e.code === 'KeyE' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
       const digit = /^Digit([1-5])$/.exec(e.code);
       if (digit) this.selectTool(Number(digit[1]) - 1);
@@ -407,6 +411,17 @@ export class Game {
         earn: (n: number) => this.earn(n),
         buy: (id: string, n: number) => this.buyNode(id, n),
         refund: (id: string) => this.refundNode(id),
+        unlockAll: () => {
+          for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
+          this.world.setDoorState((d) => this.doorOpen(d), true);
+          this.visibleKey = '';
+          this.publishCastle();
+          this.applyTree();
+        },
+        tool: (i: number) => {
+          for (const t of TOOLS) if (t.node) this.save.tree[t.node] = 1;
+          this.selectTool(i);
+        },
         teleport: (x: number, z: number, y: number, yaw: number, pitch = -0.3) => {
           Object.assign(this.player, { x, z, y, yaw, pitch });
           (this.player as unknown as { smoothY: number }).smoothY = y;
@@ -417,15 +432,40 @@ export class Game {
     }
   }
 
-  /** Changer d'outil (seul le balai existe pour l'instant). */
+  /** Un outil est-il débloqué (par son nœud de l'arbre) ? */
+  private toolUnlocked(index: number): boolean {
+    const t = TOOLS[index];
+    return !!t && (!t.node || (this.save.tree[t.node] ?? 0) > 0);
+  }
+
+  /** Changer d'outil (touches 1 à 5, molette). */
   selectTool(index: number): void {
-    if (index === 0) {
-      if (store.selectedTool.value !== 0) this.synth.tool();
-      store.selectedTool.value = 0;
+    if (!this.toolUnlocked(index)) {
+      store.toolShake.value = { index, at: performance.now() };
+      this.synth.denied();
       return;
     }
-    store.toolShake.value = { index, at: performance.now() };
-    this.synth.denied();
+    if (store.selectedTool.value !== index) this.synth.tool();
+    store.selectedTool.value = index;
+    this.world.setTool(TOOLS[index].id);
+    store.toolHint.value = TOOLS[index].hint;
+  }
+
+  /** Vider l'aspirateur : il faut être près d'une pelle de la pièce. */
+  private tryEmptyVacuum(): boolean {
+    const room = this.player.room();
+    if (!room) return false;
+    const rt = this.runtime(room);
+    if (rt.sim.vacuumLoad <= 0) return false;
+    const near = room.collectors.some((c) => Math.hypot(room.origin.x + c.mouth.x - this.player.x, room.origin.z + c.mouth.y - this.player.z) < 320);
+    if (!near) {
+      store.pushToast('Réservoir de l’aspirateur', 'Approche-toi d’une pelle pour le vider (E).', 2200);
+      return true;
+    }
+    rt.sim.emptyVacuum();
+    this.synth.close();
+    this.synth.chime();
+    return true;
   }
 
   /** Ouvre / ferme la carte du château (la souris est libérée pendant ce temps). */
@@ -466,32 +506,44 @@ export class Game {
   private tick(dt: number): void {
     if (this.playing) this.player.update(dt);
     const bp = this.player.broomPoint();
+    this.tickCount++;
     for (let ri = 0; ri < this.rooms.length; ri++) {
       const r = this.rooms[ri];
       if (!this.isUnlocked(r.def.id)) continue;
       const here = this.playing && bp.room === r.def;
+      // Les pièces loin du joueur sont simulées 6 fois moins souvent (la poussière y retombe quand même).
+      const near = here || r.def === this.currentRoom || this.visibleIds.has(r.def.id);
+      let stepDt = dt;
+      if (!near) {
+        this.farDt[ri] = (this.farDt[ri] ?? 0) + dt;
+        if ((this.tickCount + ri) % 6 !== 0) continue;
+        stepDt = this.farDt[ri];
+        this.farDt[ri] = 0;
+      }
       this.input.active = here;
       this.input.x = bp.x - r.def.origin.x;
       this.input.y = bp.z - r.def.origin.z;
       this.input.yaw = this.player.yaw;
       this.input.pushBonus = this.player.movingForward ? this.mods.player.marchBonus : 0;
-      r.sim.step(dt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
+      this.input.tool = TOOLS[store.selectedTool.value].id;
+      r.sim.step(stepDt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
       const events = r.sim.drainEvents();
       if (events.length === 0) continue;
       let gained = 0;
-      const counts = { dust: 0, bunny: 0, star: 0 };
+      const counts: Partial<Record<DirtId, number>> = {};
       for (const e of events) {
         gained += e.coins;
-        counts[e.type]++;
-        this.world.onCollect(ri, e.collector, e.coins, e.type === 'star');
+        counts[e.type] = (counts[e.type] ?? 0) + 1;
+        this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', e);
       }
       this.earn(gained);
       // On n'entend que ce qui se passe dans la pièce où l'on est.
       if (r.def === this.currentRoom) {
         const lvl = 0;
         if (counts.star) this.synth.collect('star', lvl, counts.star);
-        if (counts.bunny) this.synth.collect('bunny', lvl, counts.bunny);
-        if (counts.dust) this.synth.collect('dust', lvl, counts.dust);
+        if (counts.bunny || counts.rubble) this.synth.collect('bunny', lvl, (counts.bunny ?? 0) + (counts.rubble ?? 0));
+        const small = (counts.dust ?? 0) + (counts.crumb ?? 0) + (counts.leaf ?? 0) + (counts.soot ?? 0) + (counts.web ?? 0) + (counts.stain ?? 0);
+        if (small) this.synth.collect('dust', lvl, small);
       }
     }
   }
@@ -521,6 +573,7 @@ export class Game {
     const key = [...visible].sort().join(',');
     if (force || key !== this.visibleKey) {
       this.visibleKey = key;
+      this.visibleIds = visible;
       this.world.setVisibleRooms(visible);
     }
 
@@ -568,6 +621,9 @@ export class Game {
       w.push(0);
     }
     const cur = this.currentRoom ? this.runtime(this.currentRoom) : null;
+    store.unlockedTools.value = TOOLS.map((_, i) => this.toolUnlocked(i));
+    if (cur && TOOLS[store.selectedTool.value].id === 'vacuum') store.vacuum.value = { load: cur.sim.vacuumLoad, cap: cur.sim.mods.vacuumCap };
+    else if (store.vacuum.value) store.vacuum.value = null;
     if (cur) {
       const c = cur.sim.cleanliness;
       store.cleanliness.value = c;

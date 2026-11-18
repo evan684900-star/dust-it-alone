@@ -22,6 +22,11 @@ export interface RoomModifiers {
   respawnMult: number;
   /** Bonus de valeur quand la poussière poussée par le balai tombe droit dans une pelle. */
   scoopBonus: number;
+  /** Puissance des outils (1 = de base). */
+  duster: number;
+  sponge: number;
+  blower: number;
+  vacuumCap: number;
 }
 
 export interface PlayerModifiers {
@@ -80,6 +85,10 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number): Modi
       starValue: M('starValue'),
       respawnMult: 1 + (r.respawn ?? 0),
       scoopBonus: A('scoop'),
+      duster: 1 + A('duster'),
+      sponge: 1 + A('sponge'),
+      blower: 1 + A('blower'),
+      vacuumCap: 300 + A('vacuumCap'),
     };
   };
 

@@ -27,7 +27,8 @@ export type StatKey =
   | 'panScale' | 'panPull' | 'magnet'
   | 'value' | 'bunnyValue' | 'starChance' | 'starValue' | 'scoop' | 'places'
   | 'respawn' | 'roomValue' | 'echo'
-  | 'walk' | 'sprint' | 'march';
+  | 'walk' | 'sprint' | 'march'
+  | 'duster' | 'sponge' | 'blower' | 'vacuumCap';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
@@ -150,12 +151,23 @@ const BROOM: TreeNode[] = [
     effect: (per, l) => `+${per} cm de portée par niveau (+${cm(per * l)})`,
     requires: (t) => (t === 0 ? { room: 'gallery' } : undefined),
   }),
-  { id: 'tool-duster', name: 'Plumeau', icon: '🪶', branch: 'broom', kind: 'big', parents: ['broom-reach-1'], maxLevel: 1, base: 8000, growth: 1, depth: 4.4, side: -2.5, requires: { soon: true }, stats: [],
-    flavor: 'Pour les toiles d’araignée. Les araignées, elles, ne sont pas ravies.', effect: () => 'Débloque le plumeau (toiles d’araignée)' },
-  { id: 'tool-sponge', name: 'Éponge', icon: '🧽', branch: 'broom', kind: 'big', parents: ['tool-duster'], maxLevel: 1, base: 200000, growth: 1, depth: 5.4, side: -2.8, requires: { soon: true }, stats: [],
-    flavor: 'Frotte, frotte… la tache finit toujours par céder.', effect: () => 'Débloque l’éponge (taches)' },
-  { id: 'tool-vacuum', name: 'Aspirateur', icon: '🌀', branch: 'broom', kind: 'big', parents: ['tool-sponge'], maxLevel: 1, base: 5e6, growth: 1, depth: 6.4, side: -3.1, requires: { soon: true }, stats: [],
-    flavor: 'Une invention moderne. Les portraits trouvent ça bruyant.', effect: () => 'Débloque l’aspirateur' },
+  // Les outils : chacun se débloque quand la saleté qu'il traite apparaît dans le château.
+  { id: 'tool-duster', name: 'Plumeau', icon: '🪶', branch: 'broom', kind: 'big', parents: ['broom-push-1'], maxLevel: 1, base: 2500, growth: 1, depth: 3.5, side: -2.7, requires: { room: 'gallery' }, stats: [],
+    flavor: 'Pour les toiles d’araignée. Les araignées, elles, ne sont pas ravies.', effect: () => 'Débloque le plumeau (touche 2) : retire les toiles d’araignée' },
+  { id: 'tool-sponge', name: 'Éponge', icon: '🧽', branch: 'broom', kind: 'big', parents: ['tool-duster'], maxLevel: 1, base: 40000, growth: 1, depth: 4.6, side: -2.9, requires: { room: 'bedroom' }, stats: [],
+    flavor: 'Frotte, frotte… la tache finit toujours par céder.', effect: () => 'Débloque l’éponge (touche 3) : frotte les taches' },
+  { id: 'tool-vacuum', name: 'Aspirateur', icon: '🌀', branch: 'broom', kind: 'big', parents: ['tool-sponge'], maxLevel: 1, base: 4e6, growth: 1, depth: 5.7, side: -3.1, requires: { room: 'hall' }, stats: [],
+    flavor: 'Une invention moderne. Les portraits trouvent ça bruyant.', effect: () => 'Débloque l’aspirateur (touche 4) : aspire tout, vide-le à une pelle' },
+  { id: 'tool-blower', name: 'Souffleur', icon: '💨', branch: 'broom', kind: 'big', parents: ['tool-vacuum'], maxLevel: 1, base: 6e7, growth: 1, depth: 6.8, side: -3.3, requires: { room: 'courtyard' }, stats: [],
+    flavor: 'Le vent, en boîte. Les feuilles mortes n’ont aucune chance.', effect: () => 'Débloque le souffleur (touche 5) : souffle tout devant toi' },
+  { id: 'duster-power', name: 'Plumes d’autruche', icon: '🪶', branch: 'broom', kind: 'small', parents: ['tool-duster'], maxLevel: 5, base: 6000, growth: 1.9, depth: 4, side: -3.8, stats: [{ key: 'duster', per: 0.3, mode: 'add' }],
+    flavor: 'Plus douces, plus efficaces.', effect: (l) => `Le plumeau va +30 % plus vite par niveau (+${Math.round(30 * l)} %)` },
+  { id: 'sponge-power', name: 'Éponge magique', icon: '🫧', branch: 'broom', kind: 'small', parents: ['tool-sponge'], maxLevel: 5, base: 90000, growth: 1.9, depth: 5.1, side: -4, stats: [{ key: 'sponge', per: 0.3, mode: 'add' }],
+    flavor: 'Elle mousse toute seule.', effect: (l) => `L’éponge frotte +30 % plus fort par niveau (+${Math.round(30 * l)} %)` },
+  { id: 'vacuum-cap', name: 'Réservoir XXL', icon: '🛢️', branch: 'broom', kind: 'small', parents: ['tool-vacuum'], maxLevel: 5, base: 8e6, growth: 1.9, depth: 6.2, side: -4.2, stats: [{ key: 'vacuumCap', per: 200, mode: 'add' }],
+    flavor: 'Plus besoin de le vider toutes les deux minutes.', effect: (l) => `+200 grains dans le réservoir par niveau (${300 + 200 * l})` },
+  { id: 'blower-power', name: 'Souffleur turbo', icon: '🌪️', branch: 'broom', kind: 'small', parents: ['tool-blower'], maxLevel: 5, base: 1.2e8, growth: 1.9, depth: 7.3, side: -4.4, stats: [{ key: 'blower', per: 0.25, mode: 'add' }],
+    flavor: 'Vroum.', effect: (l) => `Le souffleur pousse +25 % plus fort par niveau (+${Math.round(25 * l)} %)` },
   { id: 'broom-giant', name: 'Brosse géante', icon: '🦣', branch: 'broom', kind: 'big', parents: ['broom-wide-3'], maxLevel: 1, base: 3e5, growth: 1, depth: 4.2, side: 1.9, fork: 'broom-fork',
     stats: [{ key: 'broomWidth', per: 60, mode: 'add' }, { key: 'broomGrip', per: -0.1, mode: 'add' }],
     flavor: "Une brosse si large qu'il faut la tenir à deux mains. Moins précise, mais quelle allure.",
@@ -286,27 +298,33 @@ function roomBranch(roomId: string, index: number, total: number): TreeNode[] {
   const room = ROOMS.find((r) => r.id === roomId)!;
   const v = Math.pow(room.valueMult, 2.2);
   const short = room.name.replace(/^(La |Le |Les |L’|L')/, '');
-  // Première pièce dans l'axe de la branche, puis les suivantes de part et d'autre (0, +1, −1, +2, −2…),
-  // pour que les sous-branches restent bien dans le secteur du Château.
+  // Les pièces se rangent en rangées, de plus en plus loin du tronc : 3, puis 4, 4 et 3 pièces.
+  // Plus on s'éloigne, plus le secteur du Château est large : les rangées lointaines ont plus de place.
   void total;
-  const side = index === 0 ? 0 : (index % 2 === 1 ? 1 : -1) * Math.ceil(index / 2) * 1.6;
+  const ROWS = [3, 4, 4, 3];
+  let row = 0;
+  let k = index;
+  while (row < ROWS.length - 1 && k >= ROWS[row]) k -= ROWS[row++];
+  const lanes = ROWS[row] === 4 ? [-1.2, 1.2, -3.6, 3.6] : [0, 1.7, -1.7];
+  const side = lanes[k] ?? 0;
+  const d0 = 3 + row * 4.5;
   const req = () => ({ room: roomId });
   return [
     ...chain({
       prefix: `airflow:${roomId}`, name: `Courants d’air · ${short}`, icon: '🌬️', branch: 'castle', root: 'castle-root', tiers: 3, levels: 5,
-      base: 60 * v, tierMult: 60, growth: 1.9, per: () => 0.1, key: 'respawn', mode: 'add', room: roomId, depth0: 3, side,
+      base: 60 * v, tierMult: 60, growth: 1.9, per: () => 0.1, key: 'respawn', mode: 'add', room: roomId, depth0: d0, side,
       flavors: ['Une fenêtre entrouverte, et la poussière revient… pour être ramassée.', 'Le vent apporte la poussière du dehors.', 'Une vraie tempête de poussière.'],
       effect: (per, l) => `+${pct(per)} de poussière qui retombe par niveau (+${pct(per * l)})`,
       requires: req,
     }),
     ...chain({
       prefix: `shine:${roomId}`, name: `Lustre · ${short}`, icon: '💡', branch: 'castle', root: `airflow:${roomId}-1`, tiers: 3, levels: 5,
-      base: 150 * v, tierMult: 60, growth: 2, per: () => 0.08, key: 'roomValue', mode: 'add', room: roomId, depth0: 4, side: side + 0.75,
+      base: 150 * v, tierMult: 60, growth: 2, per: () => 0.08, key: 'roomValue', mode: 'add', room: roomId, depth0: d0 + 1, side: side + 0.75,
       flavors: ['Une pièce bien éclairée, c’est une pièce dont on se souvient.', 'Le lustre brille de mille feux.', 'La pièce rayonne.'],
       effect: (per, l) => `+${pct(per)} de valeur dans la pièce par niveau (+${pct(per * l)})`,
       requires: req,
     }),
-    { id: `echo:${roomId}`, name: `Écho du lieu · ${short}`, icon: '🔔', branch: 'castle', kind: 'big', parents: [`shine:${roomId}-3`], maxLevel: 1, base: 2e6 * v, growth: 1, depth: 7, side: side + 0.4, requires: req(),
+    { id: `echo:${roomId}`, name: `Écho du lieu · ${short}`, icon: '🔔', branch: 'castle', kind: 'big', parents: [`shine:${roomId}-3`], maxLevel: 1, base: 2e6 * v, growth: 1, depth: d0 + 4, side: side + 0.4, requires: req(),
       stats: [{ key: 'echo', per: 1, mode: 'add', room: roomId }],
       flavor: 'Quand la pièce est impeccable, elle chante.', effect: () => 'Bonus « pièce impeccable » doublé' },
   ];

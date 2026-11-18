@@ -106,3 +106,10 @@ export const treeLevels = signal<Record<string, number>>({});
 export const unlockedRooms = signal<string[]>(['attic']);
 /** Un nœud est achetable : pastille sur le bouton de l'arbre. */
 export const treeBuyable = signal(false);
+
+/** Outils débloqués (dans l'ordre des touches 1 à 5). */
+export const unlockedTools = signal<boolean[]>([true, false, false, false, false]);
+/** Petite aide sur l'outil en main. */
+export const toolHint = signal('');
+/** Réservoir de l'aspirateur (affiché quand on l'a en main). */
+export const vacuum = signal<{ load: number; cap: number } | null>(null);
