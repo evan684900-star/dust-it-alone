@@ -14,6 +14,9 @@ export class Synth {
   private lastBlip = 0;
   private lastUi = 0;
   private muted = false;
+  private volume = 0.8;
+  /** Les personnages « parlent » (bips de dialogue). */
+  voices = true;
   private muffle!: BiquadFilterNode;
   private noiseBuf!: AudioBuffer;
 
@@ -28,7 +31,7 @@ export class Synth {
     const ctx = new AC();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.muted ? 0 : 0.7;
+    this.master.gain.value = this.gainValue();
     const comp = ctx.createDynamicsCompressor();
     // Filtre « étouffé » : utilisé quand le jeu est en pause.
     this.muffle = ctx.createBiquadFilter();
@@ -182,7 +185,7 @@ export class Synth {
 
   /** « Voix » d'un personnage : un petit bip par lettre (hauteur propre à chacun). */
   voice(pitch: number, char: string): void {
-    if (!this.ready()) return;
+    if (!this.ready() || !this.voices) return;
     if (/[\s.,!?…'’«»:;—-]/.test(char)) return;
     const t = this.now();
     // La hauteur varie selon la lettre : ça « parle » sans vraiment parler.
@@ -302,7 +305,17 @@ export class Synth {
 
   setMuted(m: boolean): void {
     this.muted = m;
-    if (this.ctx) this.master.gain.setTargetAtTime(m ? 0 : 0.7, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(this.gainValue(), this.ctx.currentTime, 0.05);
+  }
+
+  /** Volume général (0 à 1). */
+  setVolume(v: number): void {
+    this.volume = v;
+    if (this.ctx) this.master.gain.setTargetAtTime(this.gainValue(), this.ctx.currentTime, 0.05);
+  }
+
+  private gainValue(): number {
+    return this.muted ? 0 : 0.875 * this.volume;
   }
 
   /** Volume du balayage selon la vitesse et la quantité de poussière poussée. */

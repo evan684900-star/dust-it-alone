@@ -23,6 +23,8 @@ export interface EventContext {
   world: { setBonus(b: { roomIndex: number; x: number; y: number; icon: string } | null): void };
   sound: { wind(): void; crash(): void; coin(): void; sparkle(): void };
   random?: () => number;
+  onEvent?: (kind: EventKind) => void;
+  onCoinFound?: () => void;
 }
 
 /**
@@ -64,6 +66,7 @@ export class EventDirector {
   trigger(kind: EventKind, ri: number): void {
     const sim = this.ctx.rooms[ri].sim;
     this.last = kind;
+    this.ctx.onEvent?.(kind);
     switch (kind) {
       case 'window': {
         sim.gust(this.rnd() * Math.PI * 2, 14);
@@ -110,6 +113,7 @@ export class EventDirector {
     if (near) {
       const v = this.coinValue();
       this.ctx.earn(v);
+      this.ctx.onCoinFound?.();
       this.ctx.sound.coin();
       store.pushToast('🪙 Trouvée !', `+${formatNumber(v)} pièces.`, 3500);
     }

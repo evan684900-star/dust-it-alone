@@ -159,6 +159,7 @@ export class World3D {
     this.composer.setPixelRatio(this.renderer.getPixelRatio());
     this.composer.setSize(w, h);
     this.camera.aspect = w / h;
+
     this.camera.updateProjectionMatrix();
   }
 
@@ -729,6 +730,12 @@ export class World3D {
   private glowTex: THREE.Texture | null = null;
 
   /** Affiche les souvenirs apparus (et retire ceux qui ont été ramassés). */
+  /** Champ de vision (degrés). */
+  setFov(fov: number): void {
+    this.camera.fov = fov;
+    this.camera.updateProjectionMatrix();
+  }
+
   setSouvenirs(list: { id: string; roomIndex: number; x: number; y: number; icon: string }[]): void {
     const keep = new Set(list.map((s) => s.id));
     for (const [id, g] of this.souvenirViews) {

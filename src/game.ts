@@ -7,13 +7,15 @@ import { sfx } from './audio/synth';
 import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { loadSave, writeSave, type SaveData } from './save/save';
+import { exportSave, importSave, loadSave, writeSave, type SaveData, type Settings } from './save/save';
+import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
 import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { StoryDirector, playLines } from './story/director';
 import { EventDirector, type EventKind } from './story/events';
+import { TipDirector } from './story/tips';
 import { ALL_SOUVENIRS, THRONE_SOUVENIRS } from './data/story';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
@@ -43,6 +45,11 @@ export class Game {
   private currentRoom: RoomDef | null = null;
   private director!: StoryDirector;
   private events!: EventDirector;
+  private tips!: TipDirector;
+  private treeOpened = false;
+  private albumOpened = false;
+  private journalOpened = false;
+  private mapOpened = false;
   /** Fin du jeu : la caméra tourne lentement autour de la Salle du trône. */
   private cinematicT = -1;
   private tickCount = 0;
@@ -119,7 +126,12 @@ export class Game {
       earn: (v) => this.earn(v),
       world: this.world,
       sound: this.synth,
+      onEvent: () => this.save.stats.events++,
+      onCoinFound: () => this.save.stats.coinsFound++,
     });
+    this.applySettings();
+    store.achievements.value = [...this.save.achievements];
+    this.tips = this.makeTips();
     store.souvenirCount.value = this.save.souvenirs.length;
     this.bindInput();
     this.updatePlace(true);
@@ -310,6 +322,7 @@ export class Game {
     this.pay(node, price);
     const newLevel = lvl + count;
     this.save.tree[id] = newLevel;
+    this.save.stats.levelsBought += count;
     if (node.kind !== 'small') this.synth.bigNode();
     else if (newLevel >= node.maxLevel) this.synth.nodeMaxed();
     else this.synth.buy(node.depth, newLevel);
@@ -343,6 +356,7 @@ export class Game {
   /** Ouvre / ferme l'Arbre des Souvenirs (la souris est libérée pendant ce temps). */
   toggleTree(): void {
     const open = !store.treeOpen.value;
+    if (open) this.treeOpened = true;
     if (open && store.mapOpen.value) store.mapOpen.value = false;
     store.treeOpen.value = open;
     this.player.clearKeys();
@@ -399,6 +413,150 @@ export class Game {
     this.persist();
   }
 
+  // ───────────────────────────── Réglages ─────────────────────────────
+
+  setSetting<K extends keyof Settings>(key: K, value: Settings[K]): void {
+    this.save.settings[key] = value;
+    this.applySettings();
+    this.persistSoon();
+  }
+
+  private applySettings(): void {
+    const s = this.save.settings;
+    store.settings.value = { ...s };
+    this.player.sensitivity = 0.0022 * s.sensitivity;
+    this.player.invertY = s.invertY;
+    this.player.headBob = s.headBob;
+    this.world.setFov(s.fov);
+    this.synth.setVolume(s.volume);
+    this.synth.voices = s.voices;
+  }
+
+  private persistTimer = 0;
+  private persistSoon(): void {
+    clearTimeout(this.persistTimer);
+    this.persistTimer = window.setTimeout(() => this.persist(), 400);
+  }
+
+  /** Code de sauvegarde à copier ailleurs. */
+  exportCode(): string {
+    this.persist();
+    return exportSave(this.save);
+  }
+
+  /** Télécharge la sauvegarde dans un fichier. */
+  downloadSave(): void {
+    const blob = new Blob([this.exportCode()], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const d = new Date();
+    a.download = `dust-it-alone-${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    store.pushToast('💾 Sauvegarde exportée', 'Garde bien ce fichier : il contient toute ta partie.', 3500);
+  }
+
+  /** Remplace la partie par une sauvegarde importée. Renvoie faux si le code est illisible. */
+  loadCode(text: string): boolean {
+    const data = importSave(text);
+    if (!data) {
+      this.synth.denied();
+      return false;
+    }
+    this.prestiging = true;
+    writeSave(data);
+    location.reload();
+    return true;
+  }
+
+  /** Efface toute la partie (après confirmation dans l'interface). */
+  wipeSave(): void {
+    this.prestiging = true;
+    try {
+      localStorage.removeItem('dust-it-alone:save');
+      localStorage.removeItem('dust-it-alone:save:backup');
+    } catch {
+      /* rien */
+    }
+    location.reload();
+  }
+
+  toggleJournal(): void {
+    const open = !store.journalOpen.value;
+    if (open) this.journalOpened = true;
+    store.journalOpen.value = open;
+    this.player.clearKeys();
+    this.input.pressed = false;
+    if (open) {
+      store.paused.value = false;
+      document.exitPointerLock?.();
+    } else this.start();
+  }
+
+  /** Les bulles d'aide du tutoriel (chacune une seule fois). */
+  private makeTips(): TipDirector {
+    const grains = () => Object.values(this.save.stats.grains).reduce((a, b) => a + (b ?? 0), 0);
+    const unlocked = () => Object.values(this.save.rooms).filter((r) => r.unlocked).length;
+    const toolCount = () => TOOLS.filter((_, i) => this.toolUnlocked(i)).length;
+    const sim = () => (this.currentRoom ? this.runtime(this.currentRoom).sim : null);
+    let tools = toolCount();
+    const startTime = this.save.stats.playTime;
+    return new TipDirector(
+      [
+        { id: 'sweep', icon: '🧹', text: 'Maintiens le clic gauche et avance : la brosse pousse la poussière. Fais-la tomber dans une pelle 🧺 pour gagner des pièces !', when: () => this.save.stats.playTime - startTime > 14, done: () => grains() >= 25 },
+        { id: 'tree', icon: '🌳', text: 'Tu as assez de pièces pour une amélioration ! Appuie sur B pour ouvrir l’Arbre des Souvenirs.', when: () => store.treeBuyable.value, done: () => this.treeOpened || this.save.stats.levelsBought > 0 },
+        { id: 'door', icon: '🚪', text: 'Une porte verrouillée ! Approche-toi et appuie sur E quand tu as assez de pièces pour l’ouvrir.', when: () => store.doorPrompt.value !== null, done: () => unlocked() > 1 },
+        { id: 'map', icon: '🗺️', text: 'Le château est grand : appuie sur M pour voir la carte.', when: () => unlocked() >= 2, done: () => this.mapOpened },
+        { id: 'souvenir', icon: '✨', text: 'Quelque chose brille par terre… Plus une pièce est propre, plus elle révèle de souvenirs. Va le ramasser !', when: () => (sim()?.cleanliness ?? 0) >= 0.27 && this.save.souvenirs.length === 0, done: () => this.save.souvenirs.length > 0 },
+        { id: 'album', icon: '📜', text: 'Tu as trouvé un souvenir ! Appuie sur J pour ouvrir l’album et le relire.', when: () => this.save.souvenirs.length > 0, done: () => this.albumOpened },
+        { id: 'sprint', icon: '💨', text: 'Maintiens Maj pour courir.', when: () => unlocked() >= 3 },
+        {
+          id: 'tool',
+          icon: '🧰',
+          text: 'Nouvel outil ! Change d’outil avec les touches 1 à 5 (ou la molette). Certaines saletés ne partent qu’avec le bon outil.',
+          when: () => {
+            const n = toolCount();
+            const more = n > tools;
+            tools = n;
+            return more || n > 1;
+          },
+          done: () => store.selectedTool.value > 0,
+        },
+        { id: 'vacuum', icon: '🫙', text: 'Ton aspirateur est plein ! Approche-toi d’une pelle et appuie sur E pour le vider.', when: () => !!store.vacuum.value && store.vacuum.value.load >= store.vacuum.value.cap },
+        { id: 'journal', icon: '🏆', text: 'Premier succès ! Appuie sur K pour ouvrir ton carnet : succès et statistiques.', when: () => this.save.achievements.length > 0, done: () => this.journalOpened },
+      ],
+      { seen: this.save.tips, time: 0 },
+      (t) => (store.tip.value = t ? { id: t.id, icon: t.icon, text: t.text } : null),
+    );
+  }
+
+  /** Contexte pour les succès. */
+  achievementContext(): AchievementContext {
+    this.save.totalCoins = store.totalCoins.value;
+    this.save.coins = store.coins.value;
+    const grains = Object.values(this.save.stats.grains).reduce((a, b) => a + (b ?? 0), 0);
+    const rooms = Object.values(this.save.rooms);
+    const h = this.mods.helpers;
+    return {
+      save: this.save,
+      grains,
+      cleanedRooms: rooms.filter((r) => r.cleaned).length,
+      unlockedRooms: rooms.filter((r) => r.unlocked).length,
+      helpers: h.moutonnet + h.plumette + h.roulio + h.biscotte,
+    };
+  }
+
+  private checkAchievements(): void {
+    const ctx = this.achievementContext();
+    for (const a of ACHIEVEMENTS) {
+      if (this.save.achievements.includes(a.id) || a.progress(ctx) < 1) continue;
+      this.save.achievements.push(a.id);
+      store.achievements.value = [...this.save.achievements];
+      store.pushToast(`🏆 Succès : ${a.name}`, `${a.icon} ${a.text}`, 4500);
+      this.synth.chime();
+    }
+  }
+
   toggleFps(): void {
     store.showFps.value = !store.showFps.value;
     this.persist();
@@ -451,7 +609,7 @@ export class Game {
   }
 
   private get playing(): boolean {
-    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && this.cinematicT < 0;
+    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && this.cinematicT < 0;
   }
 
   // ───────────────────────────── Commandes ─────────────────────────────
@@ -462,7 +620,7 @@ export class Game {
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === canvas;
       if (locked) lockedAt = performance.now();
-      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value) {
+      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value) {
         store.paused.value = true;
         this.input.pressed = false;
         this.player.clearKeys();
@@ -491,6 +649,10 @@ export class Game {
         this.toggleAlbum();
         return;
       }
+      if (e.code === 'KeyK' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && !store.albumOpen.value && this.cinematicT < 0) {
+        this.toggleJournal();
+        return;
+      }
       if (e.code === 'KeyM' && store.started.value && !store.treeOpen.value) {
         this.toggleMap();
         return;
@@ -505,6 +667,10 @@ export class Game {
       }
       if (!this.playing) return;
       this.player.setKey(e.code, true);
+      if (e.code === 'KeyE' && store.benchPrompt.value && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) {
+        this.toggleTree();
+        return;
+      }
       if (e.code === 'KeyE' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
       const digit = /^Digit([1-5])$/.exec(e.code);
@@ -601,9 +767,13 @@ export class Game {
   toggleAlbum(): void {
     const open = !store.albumOpen.value;
     store.albumOpen.value = open;
+    if (open) this.albumOpened = true;
     this.player.clearKeys();
     this.input.pressed = false;
-    if (open) document.exitPointerLock?.();
+    if (open) {
+      store.paused.value = false;
+      document.exitPointerLock?.();
+    }
     else this.start();
   }
 
@@ -656,6 +826,7 @@ export class Game {
   /** Ouvre / ferme la carte du château (la souris est libérée pendant ce temps). */
   toggleMap(): void {
     const open = !store.mapOpen.value;
+    if (open) this.mapOpened = true;
     store.mapOpen.value = open;
     store.treeOpen.value = false;
     this.player.clearKeys();
@@ -681,6 +852,7 @@ export class Game {
     }
     store.coins.value -= room.price;
     this.save.rooms[room.id] = { unlocked: true, cleaned: false };
+    this.save.stats.doors++;
     this.world.setDoorState((dd) => this.doorOpen(dd));
     this.synth.unlockDoor();
     setTimeout(() => this.synth.fanfare(), 700);
@@ -695,8 +867,15 @@ export class Game {
 
   private tick(dt: number): void {
     if (this.playing) {
+      const px = this.player.x;
+      const pz = this.player.z;
       this.player.update(dt);
       this.events.update(dt);
+      this.tips.update(dt);
+      const st = this.save.stats;
+      st.playTime += dt;
+      const step = Math.hypot(this.player.x - px, this.player.z - pz);
+      if (step < 60) st.walked += step / 100;
     }
     const bp = this.player.broomPoint();
     this.tickCount++;
@@ -735,6 +914,8 @@ export class Game {
         this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', e);
       }
       this.earn(gained);
+      const grains = this.save.stats.grains;
+      for (const [k, n] of Object.entries(counts) as [DirtId, number][]) grains[k] = (grains[k] ?? 0) + n;
       // On n'entend que ce qui se passe dans la pièce où l'on est.
       if (r.def === this.currentRoom) {
         const lvl = 0;
@@ -793,6 +974,23 @@ export class Game {
     } else if (store.doorPrompt.value) {
       store.doorPrompt.value = null;
     }
+    const bench = !door && this.playing && this.nearBench();
+    if (bench !== store.benchPrompt.value) store.benchPrompt.value = bench;
+  }
+
+  /** Le joueur est-il devant l'établi de Gustave (dans les combles) ? */
+  private nearBench(): boolean {
+    const attic = ROOMS[0];
+    const b = attic.obstacles.find((o) => o.kind === 'workbench');
+    if (!b) return false;
+    const p = this.player;
+    if (Math.abs(p.y - attic.floorY) > 60) return false;
+    // Distance au bord de l'établi.
+    const x0 = attic.origin.x + b.rect.x;
+    const z0 = attic.origin.z + b.rect.y;
+    const dx = Math.max(x0 - p.x, 0, p.x - (x0 + b.rect.w));
+    const dz = Math.max(z0 - p.z, 0, p.z - (z0 + b.rect.h));
+    return Math.hypot(dx, dz) < 240;
   }
 
   /** Informations du château pour la carte et le HUD. */
@@ -822,6 +1020,8 @@ export class Game {
       this.windowStart = now;
       const w = this.earnedWindow;
       store.coinsPerSecond.value = w.reduce((a, b) => a + b, 0) / w.length;
+      this.save.stats.bestRate = Math.max(this.save.stats.bestRate, store.coinsPerSecond.value);
+      if (store.started.value) this.checkAchievements();
       w.shift();
       w.push(0);
     }

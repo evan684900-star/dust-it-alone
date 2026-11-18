@@ -22,6 +22,8 @@ export class Player {
   yaw: number;
   pitch = -0.55;
   sensitivity = 0.0022;
+  invertY = false;
+  headBob = true;
   private keys = new Set<string>();
   private bobPhase = 0;
   private bobAmount = 0;
@@ -46,7 +48,7 @@ export class Player {
 
   look(dx: number, dy: number): void {
     this.yaw -= dx * this.sensitivity;
-    this.pitch -= dy * this.sensitivity;
+    this.pitch -= dy * this.sensitivity * (this.invertY ? -1 : 1);
     this.pitch = Math.max(-1.4, Math.min(0.6, this.pitch));
   }
 
@@ -98,7 +100,7 @@ export class Player {
 
   /** Hauteur des yeux (monde) avec le léger balancement de la marche. */
   get eye(): number {
-    return this.smoothY + EYE_HEIGHT + Math.sin(this.bobPhase * 2) * 2.2 * this.bobAmount;
+    return this.smoothY + EYE_HEIGHT + Math.sin(this.bobPhase * 2) * 2.2 * this.bobAmount * (this.headBob ? 1 : 0);
   }
 
   get feet(): number {

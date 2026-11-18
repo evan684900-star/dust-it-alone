@@ -1,3 +1,4 @@
+import { DEFAULT_SETTINGS, type Settings } from '../save/save';
 import { signal } from '@preact/signals';
 import type { QualityLevel, QualitySetting } from '../render/quality';
 
@@ -41,6 +42,8 @@ export const gpuName = signal('');
 /** Nom de l'endroit où l'on se trouve (pièce ou escalier). */
 export const placeName = signal('');
 /** Porte verrouillée devant soi : on affiche « [E] Ouvrir ». */
+/** Le joueur est devant l'établi (E ouvre l'arbre). */
+export const benchPrompt = signal(false);
 export const doorPrompt = signal<{ name: string; price: number; affordable: boolean; need?: string } | null>(null);
 /** Carte du château ouverte. */
 export const mapOpen = signal(false);
@@ -138,6 +141,13 @@ export const prestigeConfirm = signal(false);
 export const souvenirCount = signal(0);
 /** L'album des souvenirs (touche J) est ouvert. */
 export const albumOpen = signal(false);
+/** Réglages (copie affichable de save.settings). */
+export const settings = signal<Settings>({ ...DEFAULT_SETTINGS });
+/** Carnet : statistiques et succès. */
+export const journalOpen = signal(false);
+export const achievements = signal<string[]>([]);
+/** Petite bulle d'aide contextuelle. */
+export const tip = signal<{ id: string; icon: string; text: string } | null>(null);
 /** Cinématique de fin en cours (bandes noires, caméra automatique). */
 export const cinematic = signal(false);
 /** Générique de fin affiché. */

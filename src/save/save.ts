@@ -19,6 +19,48 @@ export interface PlayerSave {
   yaw: number;
 }
 
+/** Réglages du joueur. */
+export interface Settings {
+  /** Sensibilité de la souris (multiplicateur, 1 = normal). */
+  sensitivity: number;
+  /** Champ de vision (degrés). */
+  fov: number;
+  /** Volume général (0 à 1). */
+  volume: number;
+  /** Les personnages « parlent » (petits bips). */
+  voices: boolean;
+  /** Balancement de la tête en marchant. */
+  headBob: boolean;
+  /** Souris inversée (haut / bas). */
+  invertY: boolean;
+}
+
+export const DEFAULT_SETTINGS: Settings = { sensitivity: 1, fov: 72, volume: 0.8, voices: true, headBob: true, invertY: false };
+
+/** Statistiques de la partie (depuis le tout début, Grands Ménages compris). */
+export interface Stats {
+  /** Temps de jeu (secondes). */
+  playTime: number;
+  /** Grains ramassés, par type. */
+  grains: Partial<Record<DirtId, number>>;
+  /** Portes ouvertes. */
+  doors: number;
+  /** Événements aléatoires vécus. */
+  events: number;
+  /** Pièces brillantes ramassées. */
+  coinsFound: number;
+  /** Niveaux achetés dans l'arbre. */
+  levelsBought: number;
+  /** Distance parcourue (mètres). */
+  walked: number;
+  /** Meilleur gain par seconde. */
+  bestRate: number;
+}
+
+export function defaultStats(): Stats {
+  return { playTime: 0, grains: {}, doors: 0, events: 0, coinsFound: 0, levelsBought: 0, walked: 0, bestRate: 0 };
+}
+
 export interface SaveData {
   version: number;
   savedAt: number;
@@ -42,6 +84,12 @@ export interface SaveData {
   echoes: string[];
   seen: string[];
   endingSeen: boolean;
+  settings: Settings;
+  stats: Stats;
+  /** Succès débloqués. */
+  achievements: string[];
+  /** Bulles d'aide déjà montrées. */
+  tips: string[];
 }
 
 export function defaultSave(): SaveData {
@@ -64,6 +112,10 @@ export function defaultSave(): SaveData {
     echoes: [],
     seen: [],
     endingSeen: false,
+    settings: { ...DEFAULT_SETTINGS },
+    stats: defaultStats(),
+    achievements: [],
+    tips: [],
   };
 }
 
@@ -126,7 +178,62 @@ export function migrate(raw: unknown): SaveData {
     echoes: strings(r.echoes),
     seen: strings(r.seen),
     endingSeen: r.endingSeen === true,
+    settings: cleanSettings(r.settings),
+    stats: cleanStats(r.stats),
+    achievements: strings(r.achievements),
+    tips: strings(r.tips),
   };
+}
+
+function cleanSettings(v: unknown): Settings {
+  const s = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const d = DEFAULT_SETTINGS;
+  const clamp = (x: unknown, lo: number, hi: number, def: number) => (typeof x === 'number' && Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : def);
+  return {
+    sensitivity: clamp(s.sensitivity, 0.2, 3, d.sensitivity),
+    fov: clamp(s.fov, 55, 100, d.fov),
+    volume: clamp(s.volume, 0, 1, d.volume),
+    voices: s.voices !== false,
+    headBob: s.headBob !== false,
+    invertY: s.invertY === true,
+  };
+}
+
+function cleanStats(v: unknown): Stats {
+  const s = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : 0);
+  const grains: Partial<Record<DirtId, number>> = {};
+  const g = s.grains as Record<string, unknown> | undefined;
+  if (g && typeof g === 'object') for (const k of DIRT_ORDER) if (n(g[k]) > 0) grains[k] = n(g[k]);
+  return {
+    playTime: n(s.playTime),
+    grains,
+    doors: n(s.doors),
+    events: n(s.events),
+    coinsFound: n(s.coinsFound),
+    levelsBought: n(s.levelsBought),
+    walked: n(s.walked),
+    bestRate: n(s.bestRate),
+  };
+}
+
+/** Texte à copier / fichier à télécharger pour garder sa partie ailleurs. */
+export function exportSave(data: SaveData): string {
+  const json = JSON.stringify({ ...data, version: SAVE_VERSION, savedAt: Date.now() });
+  return 'DUST1:' + btoa(unescape(encodeURIComponent(json)));
+}
+
+/** Relit une sauvegarde exportée (code « DUST1: » ou JSON brut). Renvoie null si illisible. */
+export function importSave(text: string): SaveData | null {
+  const t = text.trim();
+  try {
+    const json = t.startsWith('DUST1:') ? decodeURIComponent(escape(atob(t.slice(6)))) : t;
+    const raw = JSON.parse(json);
+    if (!raw || typeof raw !== 'object' || !('coins' in raw)) return null;
+    return migrate(raw);
+  } catch {
+    return null;
+  }
 }
 
 function strings(v: unknown): string[] {

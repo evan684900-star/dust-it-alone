@@ -10,6 +10,8 @@ import { ROOM_STORY, THRONE_SOUVENIRS } from '../data/story';
 import { ROOMS } from '../data/rooms';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
+import { ACHIEVEMENTS } from '../data/achievements';
+import { DIRT_ORDER, DIRT_TYPES } from '../data/dirtTypes';
 
 export function App({ game }: { game: Game }) {
   return (
@@ -17,14 +19,25 @@ export function App({ game }: { game: Game }) {
       {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <Crosshair />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <DoorPrompt />}
+      {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && store.benchPrompt.value && (
+        <div class="door-prompt ok bench-prompt">
+          <span class="lock">🛠️</span>
+          <div>
+            <strong>L'établi de Gustave</strong>
+            <span><kbd>E</kbd> Ouvrir l'Arbre des Souvenirs</span>
+          </div>
+        </div>
+      )}
       {store.started.value && store.dialogue.value && <DialogueBubble key={store.dialogue.value.id} line={store.dialogue.value} />}
       {store.started.value && store.mapOpen.value && <CastleMap game={game} />}
       {store.started.value && store.treeOpen.value && <SkillTree game={game} />}
       {store.prestigeConfirm.value && <PrestigeConfirm game={game} />}
       {store.albumOpen.value && <Album game={game} />}
+      {store.journalOpen.value && <Journal game={game} />}
       {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
       {store.credits.value && <Credits />}
       {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
+      {store.started.value && store.tip.value && !store.paused.value && !store.treeOpen.value && <div class="tip" key={store.tip.value.id}><span>{store.tip.value.icon}</span><p>{store.tip.value.text}</p></div>}
       <Toasts />
       {store.debugInfo.value && <div class="debug">{store.debugInfo.value}</div>}
       {store.showFps.value && !store.debugInfo.value && <div class="fps-counter">{Math.round(store.fps.value)} FPS</div>}
@@ -191,6 +204,8 @@ function Controls() {
       <span><kbd>E</kbd> ouvrir une porte</span>
       <span><kbd>M</kbd> carte du château</span>
       <span><kbd>J</kbd> album des souvenirs</span>
+      <span><kbd>K</kbd> carnet et succès</span>
+      <span><kbd>1</kbd>…<kbd>5</kbd> changer d'outil</span>
       <span><kbd>Échap</kbd> pause</span>
     </div>
   );
@@ -203,7 +218,11 @@ function PauseScreen({ game }: { game: Game }) {
         <h2 class="pause-title">Pause</h2>
         <p class="tagline">La poussière t'attend. Elle est patiente.</p>
         <button class="btn btn-big" onClick={() => game.start()}>Reprendre le ménage</button>
-        <SettingsButton />
+        <div class="pause-row">
+          <SettingsButton />
+          <button class="btn btn-settings" onClick={() => game.toggleAlbum()}>📜 Album (J)</button>
+          <button class="btn btn-settings" onClick={() => game.toggleJournal()}>📊 Carnet (K)</button>
+        </div>
         <GpuWarning />
         <Controls />
       </div>
@@ -215,8 +234,8 @@ function SettingsButton() {
   const s = store.qualitySetting.value;
   const label = s === 'auto' ? `Auto · ${QUALITY_LABELS[store.qualityLevel.value]}` : QUALITY_LABELS[s];
   return (
-    <button class="btn btn-settings" onClick={() => (store.settingsOpen.value = true)}>
-      ⚙️ Graphismes : {label}
+    <button class="btn btn-settings" onClick={() => (store.settingsOpen.value = true)} title={`Graphismes : ${label}`}>
+      ⚙️ Réglages
     </button>
   );
 }
@@ -234,39 +253,203 @@ function GpuWarning() {
   );
 }
 
+type SettingsTab = 'graphics' | 'controls' | 'sound' | 'save';
+
 function SettingsPanel({ game }: { game: Game }) {
-  const options: QualitySetting[] = ['auto', ...QUALITY_ORDER];
+  const [tab, setTab] = useState<SettingsTab>('graphics');
   const close = () => (store.settingsOpen.value = false);
+  const tabs: [SettingsTab, string][] = [['graphics', '🖼️ Graphismes'], ['controls', '🖱️ Contrôles'], ['sound', '🔊 Son'], ['save', '💾 Sauvegarde']];
   return (
     <div class="settings-backdrop" onClick={close}>
       <div class="settings-card" onClick={(e) => e.stopPropagation()}>
-        <h2>⚙️ Graphismes</h2>
-        <div class="quality-list">
-          {options.map((q) => (
-            <button
-              key={q}
-              class={`quality-option ${store.qualitySetting.value === q ? 'selected' : ''}`}
-              onClick={() => game.setQuality(q)}
-            >
-              <span class="q-name">
-                {QUALITY_LABELS[q]}
-                {q === 'auto' && store.qualitySetting.value === 'auto' && (
-                  <small> (en ce moment : {QUALITY_LABELS[store.qualityLevel.value]})</small>
-                )}
-              </span>
-              <span class="q-hint">{QUALITY_HINTS[q]}</span>
-            </button>
+        <h2>⚙️ Réglages</h2>
+        <div class="settings-tabs">
+          {tabs.map(([id, label]) => (
+            <button key={id} class={`settings-tab ${tab === id ? 'selected' : ''}`} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
-        <label class="toggle">
-          <input type="checkbox" checked={store.showFps.value} onChange={() => game.toggleFps()} />
-          Afficher les FPS
-        </label>
-        <p class="settings-fps">
-          Actuellement : <strong>{Math.round(store.fps.value)} FPS</strong>
-          {store.gpuName.value && <span class="gpu-name">Carte graphique : {store.gpuName.value}</span>}
-        </p>
+        {tab === 'graphics' && <GraphicsSettings game={game} />}
+        {tab === 'controls' && <ControlSettings game={game} />}
+        {tab === 'sound' && <SoundSettings game={game} />}
+        {tab === 'save' && <SaveSettings game={game} />}
         <button class="btn" onClick={close}>OK</button>
+      </div>
+    </div>
+  );
+}
+
+function GraphicsSettings({ game }: { game: Game }) {
+  const options: QualitySetting[] = ['auto', ...QUALITY_ORDER];
+  const s = store.settings.value;
+  return (
+    <>
+      <div class="quality-list">
+        {options.map((q) => (
+          <button key={q} class={`quality-option ${store.qualitySetting.value === q ? 'selected' : ''}`} onClick={() => game.setQuality(q)}>
+            <span class="q-name">
+              {QUALITY_LABELS[q]}
+              {q === 'auto' && store.qualitySetting.value === 'auto' && <small> (en ce moment : {QUALITY_LABELS[store.qualityLevel.value]})</small>}
+            </span>
+            <span class="q-hint">{QUALITY_HINTS[q]}</span>
+          </button>
+        ))}
+      </div>
+      <Slider label="Champ de vision" value={s.fov} min={55} max={100} step={1} show={(v) => `${v}°`} onInput={(v) => game.setSetting('fov', v)} />
+      <Toggle label="Balancement de la tête en marchant" checked={s.headBob} onChange={(v) => game.setSetting('headBob', v)} />
+      <label class="toggle">
+        <input type="checkbox" checked={store.showFps.value} onChange={() => game.toggleFps()} />
+        Afficher les FPS
+      </label>
+      <p class="settings-fps">
+        Actuellement : <strong>{Math.round(store.fps.value)} FPS</strong>
+        {store.gpuName.value && <span class="gpu-name">Carte graphique : {store.gpuName.value}</span>}
+      </p>
+    </>
+  );
+}
+
+function ControlSettings({ game }: { game: Game }) {
+  const s = store.settings.value;
+  return (
+    <>
+      <Slider label="Sensibilité de la souris" value={s.sensitivity} min={0.2} max={3} step={0.05} show={(v) => `×${v.toFixed(2)}`} onInput={(v) => game.setSetting('sensitivity', v)} />
+      <Toggle label="Inverser la souris (haut / bas)" checked={s.invertY} onChange={(v) => game.setSetting('invertY', v)} />
+      <Controls />
+    </>
+  );
+}
+
+function SoundSettings({ game }: { game: Game }) {
+  const s = store.settings.value;
+  return (
+    <>
+      <Slider label="Volume général" value={s.volume} min={0} max={1} step={0.01} show={(v) => `${Math.round(v * 100)} %`} onInput={(v) => game.setSetting('volume', v)} />
+      <Toggle label="Voix des personnages (petits bips)" checked={s.voices} onChange={(v) => game.setSetting('voices', v)} />
+      <Toggle label="Couper tout le son" checked={store.muted.value} onChange={() => game.toggleMute()} />
+      <p class="settings-note">🎵 La musique arrive bientôt !</p>
+    </>
+  );
+}
+
+function SaveSettings({ game }: { game: Game }) {
+  const [code, setCode] = useState('');
+  const [msg, setMsg] = useState('');
+  const [wipe, setWipe] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  return (
+    <div class="save-panel">
+      <p>Ta partie est sauvegardée automatiquement dans ce navigateur. Pour la garder ailleurs (autre PC, autre navigateur), exporte-la :</p>
+      <div class="save-buttons">
+        <button class="btn btn-settings" onClick={() => game.downloadSave()}>⬇️ Télécharger un fichier</button>
+        <button class="btn btn-settings" onClick={() => { const c = game.exportCode(); setCode(c); navigator.clipboard?.writeText(c).then(() => setMsg('Code copié dans le presse-papiers ✔'), () => setMsg('Copie le code ci-dessous.')); }}>📋 Copier un code</button>
+      </div>
+      <textarea class="save-code" placeholder="Colle ici un code de sauvegarde (DUST1:…) pour le charger" value={code} onInput={(e) => setCode((e.target as HTMLTextAreaElement).value)} />
+      <div class="save-buttons">
+        <button class="btn btn-settings" onClick={() => { if (!game.loadCode(code)) setMsg('Ce code ne ressemble pas à une sauvegarde 😕'); }} disabled={!code.trim()}>⬆️ Charger ce code</button>
+        <button class="btn btn-settings" onClick={() => fileRef.current?.click()}>📂 Charger un fichier</button>
+        <input ref={fileRef} type="file" accept=".txt,.json" style={{ display: 'none' }} onChange={async (e) => {
+          const f = (e.target as HTMLInputElement).files?.[0];
+          if (f && !game.loadCode(await f.text())) setMsg('Ce fichier ne ressemble pas à une sauvegarde 😕');
+        }} />
+      </div>
+      {msg && <p class="settings-note">{msg}</p>}
+      <div class="save-danger">
+        {wipe ? (
+          <>
+            <strong>Tout effacer ? C'est définitif !</strong>
+            <button class="btn btn-danger" onClick={() => game.wipeSave()}>Oui, recommencer à zéro</button>
+            <button class="btn btn-settings" onClick={() => setWipe(false)}>Non !</button>
+          </>
+        ) : (
+          <button class="btn btn-settings" onClick={() => setWipe(true)}>🗑️ Effacer la partie…</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Slider({ label, value, min, max, step, show, onInput }: { label: string; value: number; min: number; max: number; step: number; show: (v: number) => string; onInput: (v: number) => void }) {
+  return (
+    <label class="slider">
+      <span>{label}</span>
+      <input type="range" min={min} max={max} step={step} value={value} onInput={(e) => onInput(Number((e.target as HTMLInputElement).value))} />
+      <strong>{show(value)}</strong>
+    </label>
+  );
+}
+
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label class="toggle">
+      <input type="checkbox" checked={checked} onChange={(e) => onChange((e.target as HTMLInputElement).checked)} />
+      {label}
+    </label>
+  );
+}
+
+/** Le carnet : statistiques et succès. */
+function Journal({ game }: { game: Game }) {
+  const [tab, setTab] = useState<'stats' | 'achievements'>('achievements');
+  const ctx = game.achievementContext();
+  const st = ctx.save.stats;
+  const done = new Set(store.achievements.value);
+  const hours = Math.floor(st.playTime / 3600);
+  const mins = Math.floor((st.playTime % 3600) / 60);
+  const rows: [string, string][] = [
+    ['⏱️ Temps de jeu', `${hours} h ${String(mins).padStart(2, '0')}`],
+    ['🧹 Grains ramassés', formatNumber(ctx.grains)],
+    ['🪙 Pièces gagnées au total', formatNumber(ctx.save.totalCoins)],
+    ['📈 Meilleur gain', `${formatNumber(st.bestRate)} / s`],
+    ['🚪 Pièces ouvertes', `${ctx.unlockedRooms} / ${ROOMS.length}`],
+    ['✨ Pièces impeccables', `${ctx.cleanedRooms} / ${ROOMS.length}`],
+    ['📜 Souvenirs', `${ctx.save.souvenirs.length}`],
+    ['🌳 Niveaux achetés', formatNumber(st.levelsBought)],
+    ['🥾 Distance parcourue', `${(st.walked / 1000).toFixed(2)} km`],
+    ['🎲 Événements', formatNumber(st.events)],
+    ['🌟 Grands Ménages', formatNumber(ctx.save.prestiges)],
+  ];
+  return (
+    <div class="settings-backdrop" onClick={() => game.toggleJournal()}>
+      <div class="settings-card journal-card" onClick={(e) => e.stopPropagation()}>
+        <h2>📊 Le carnet de Plume</h2>
+        <div class="settings-tabs">
+          <button class={`settings-tab ${tab === 'achievements' ? 'selected' : ''}`} onClick={() => setTab('achievements')}>🏆 Succès ({done.size} / {ACHIEVEMENTS.length})</button>
+          <button class={`settings-tab ${tab === 'stats' ? 'selected' : ''}`} onClick={() => setTab('stats')}>📊 Statistiques</button>
+        </div>
+        {tab === 'stats' ? (
+          <div class="journal-stats">
+            <table>
+              <tbody>
+                {rows.map(([k, v]) => (
+                  <tr key={k}><td>{k}</td><td>{v}</td></tr>
+                ))}
+              </tbody>
+            </table>
+            <div class="journal-grains">
+              {DIRT_ORDER.filter((d) => (st.grains[d] ?? 0) > 0).map((d) => (
+                <span key={d}>{DIRT_TYPES[d].name} : <strong>{formatNumber(st.grains[d] ?? 0)}</strong></span>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div class="achievement-grid">
+            {ACHIEVEMENTS.map((a) => {
+              const ok = done.has(a.id);
+              const p = ok ? 1 : a.progress(ctx);
+              return (
+                <div key={a.id} class={`achievement ${ok ? 'done' : ''}`}>
+                  <span class="ach-icon">{ok ? a.icon : '🔒'}</span>
+                  <div>
+                    <strong>{a.name}</strong>
+                    <span>{a.text}</span>
+                    {!ok && <div class="ach-bar"><div style={{ width: `${Math.round(p * 100)}%` }} /></div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+        <button class="btn" onClick={() => game.toggleJournal()}>Fermer (K)</button>
       </div>
     </div>
   );

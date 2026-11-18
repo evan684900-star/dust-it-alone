@@ -394,6 +394,64 @@ export function buildProp(p: Prop): THREE.Object3D {
       g.add(basin, rim, water, column, bowl);
       break;
     }
+    case 'workbench': {
+      // L'établi de Gustave, avec ses outils et la petite pousse de l'Arbre des Souvenirs.
+      const wood = mat(0x9a6434, { roughness: 0.75 });
+      const dark = mat(0x6a4222, { roughness: 0.8 });
+      const top = solid(roundedBox(w, 12, h, 3), wood);
+      top.position.y = 92;
+      g.add(top);
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        const leg = solid(roundedBox(10, 86, 10, 2), dark);
+        leg.position.set(sx * (w / 2 - 12), 43, sz * (h / 2 - 10));
+        g.add(leg);
+      }
+      const shelf = solid(roundedBox(w - 20, 6, h - 16, 2), dark);
+      shelf.position.y = 26;
+      g.add(shelf);
+      // Panneau à outils contre le mur.
+      const board = solid(roundedBox(w, 110, 6, 3), mat(0xb98445, { roughness: 0.85 }));
+      board.position.set(0, 160, -h / 2 + 3);
+      g.add(board);
+      const iron = metal(0x6a6a70, 0.4);
+      const hammer = new THREE.Group();
+      const hHandle = solid(roundedBox(5, 50, 5, 2), mat(0xc8914c));
+      const hHead = solid(roundedBox(22, 9, 9, 2), iron);
+      hHead.position.y = 24;
+      hammer.add(hHandle, hHead);
+      hammer.position.set(-w * 0.3, 160, -h / 2 + 10);
+      const saw = solid(new THREE.BoxGeometry(60, 18, 1.5), iron);
+      saw.position.set(w * 0.05, 175, -h / 2 + 8);
+      const wrench = solid(roundedBox(6, 44, 3, 1), iron);
+      wrench.position.set(w * 0.32, 160, -h / 2 + 8);
+      wrench.rotation.z = 0.3;
+      g.add(hammer, saw, wrench);
+      // Un étau sur le coin.
+      const vice = solid(roundedBox(26, 22, 20, 3), metal(0x2f5a8a, 0.4));
+      vice.position.set(w / 2 - 22, 109, h / 2 - 18);
+      g.add(vice);
+      // Un rabot et des copeaux.
+      const plane = solid(roundedBox(34, 12, 12, 3), mat(0xc0703a));
+      plane.position.set(-w * 0.12, 104, h * 0.15);
+      plane.rotation.y = 0.4;
+      g.add(plane);
+      // La pousse de l'Arbre des Souvenirs, dans un petit pot.
+      const pot = solid(new THREE.CylinderGeometry(11, 8, 16, 14), mat(0xb4553a, { roughness: 0.8 }));
+      pot.position.set(w * 0.25, 106, h * 0.05);
+      const stem = solid(new THREE.CylinderGeometry(1.5, 2, 26, 6), mat(0x6a8a3a));
+      stem.position.set(w * 0.25, 126, h * 0.05);
+      g.add(pot, stem);
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x7bd651, emissive: 0x3a8a2a, emissiveIntensity: 0.6, roughness: 0.5 });
+      for (let k = 0; k < 5; k++) {
+        const leaf = new THREE.Mesh(new THREE.SphereGeometry(7, 10, 8).scale(1, 0.45, 0.7), leafMat);
+        const a = (k / 5) * Math.PI * 2;
+        leaf.position.set(w * 0.25 + Math.cos(a) * 7, 136 + (k % 2) * 5, h * 0.05 + Math.sin(a) * 7);
+        leaf.rotation.y = -a;
+        leaf.castShadow = true;
+        g.add(leaf);
+      }
+      break;
+    }
     case 'well': {
       const stone = mat(0xa89c8e, { roughness: 0.9 });
       const ring = solid(new THREE.CylinderGeometry(w / 2, w / 2, 80, 20, 1, true), stone);

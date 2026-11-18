@@ -19,7 +19,7 @@ export type PropKind =
   | 'bookshelf' | 'readingTable' | 'bed' | 'wardrobe' | 'chest'
   | 'pillar' | 'armor' | 'bench' | 'longTable' | 'globe'
   | 'stove' | 'cauldron' | 'counter' | 'pew' | 'altar' | 'tree' | 'fountain'
-  | 'barrel' | 'bars' | 'gear' | 'throne' | 'well';
+  | 'barrel' | 'bars' | 'gear' | 'throne' | 'well' | 'workbench';
 export interface Prop { kind: PropKind; rect: Rect; rot?: number }
 
 export type RoomStyle =
@@ -131,6 +131,8 @@ const RAW_ROOMS: RoomDef[] = [
       { kind: 'trunk', rect: { x: 1300, y: 50, w: 200, h: 105 } },
       { kind: 'armchair', rect: { x: 1340, y: 720, w: 160, h: 140 } },
       { kind: 'crate', rect: { x: 90, y: 730, w: 130, h: 120 } },
+      // L'établi de Gustave : on y ouvre l'Arbre des Souvenirs.
+      { kind: 'workbench', rect: { x: 720, y: 20, w: 220, h: 90 } },
     ],
     light: { dir: [-0.62, -0.6, 0.12], intensity: 4.2, color: 0xffd59a },
   },

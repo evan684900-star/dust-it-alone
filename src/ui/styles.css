@@ -650,3 +650,59 @@ kbd {
 @keyframes bars { from { height: 0; } }
 .credits .title-card { animation-duration: 1.2s; }
 .credits-list { font-weight: 800; line-height: 1.6; }
+
+/* ───────── Réglages complets ───────── */
+.settings-card { width: min(620px, calc(100vw - 32px)); }
+.settings-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.settings-tab { padding: 6px 12px; border: 3px solid var(--ink); border-radius: 12px; background: #f3e3c3; font: 16px var(--font-display); color: var(--ink); cursor: pointer; }
+.settings-tab.selected { background: var(--sun, #ffd35a); box-shadow: 2px 3px 0 var(--ink); transform: translateY(-1px); }
+.slider { display: grid; grid-template-columns: 1fr 180px 64px; align-items: center; gap: 10px; margin: 14px 0 4px; font-weight: 900; }
+.slider input { accent-color: var(--tomato); width: 100%; }
+.slider strong { text-align: right; font-family: var(--font-display); font-weight: normal; }
+.settings-note { font-weight: 800; margin: 12px 0; }
+.settings-card .controls { margin-top: 16px; }
+.pause-row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+.save-panel p { font-weight: 700; margin: 0 0 10px; }
+.save-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.save-code { width: 100%; height: 70px; box-sizing: border-box; border: 3px solid var(--ink); border-radius: 12px; padding: 8px; font: 12px monospace; background: #fffaf0; resize: vertical; }
+.save-danger { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0; padding-top: 10px; border-top: 3px dashed rgba(43, 26, 46, 0.3); }
+.btn-danger { background: var(--tomato) !important; color: #fff; }
+
+/* ───────── Carnet : stats et succès ───────── */
+.journal-card { width: min(860px, calc(100vw - 32px)); }
+.journal-stats table { width: 100%; border-collapse: collapse; font-weight: 800; }
+.journal-stats td { padding: 6px 8px; border-bottom: 2px dashed rgba(43, 26, 46, 0.2); }
+.journal-stats td:last-child { text-align: right; font-family: var(--font-display); font-weight: normal; font-size: 18px; }
+.journal-grains { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 12px 0; font-weight: 700; font-size: 14px; }
+.achievement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.achievement { display: flex; gap: 10px; align-items: center; padding: 8px 10px; border: 3px solid var(--ink); border-radius: 14px; background: #e4d6bc; opacity: 0.85; }
+.achievement.done { background: #fff1c4; opacity: 1; box-shadow: 2px 3px 0 var(--ink); }
+.achievement strong { display: block; font: 16px var(--font-display); font-weight: normal; }
+.achievement span { font-size: 13px; font-weight: 700; }
+.ach-icon { font-size: 28px; width: 38px; text-align: center; }
+.achievement > div { flex: 1; min-width: 0; }
+.ach-bar { height: 7px; margin-top: 4px; border: 2px solid var(--ink); border-radius: 6px; background: #fffaf0; overflow: hidden; }
+.ach-bar div { height: 100%; background: var(--apple); }
+
+/* ───────── Bulles d'aide ───────── */
+.tip {
+  position: fixed;
+  left: 24px;
+  top: 104px;
+  max-width: 330px;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 14px;
+  background: #fffaf0;
+  border: 4px solid var(--ink);
+  border-radius: 18px 18px 18px 4px;
+  box-shadow: 4px 5px 0 var(--ink);
+  font-weight: 800;
+  font-size: 15px;
+  z-index: 6;
+  pointer-events: none;
+  animation: card-in 0.4s cubic-bezier(0.2, 1.6, 0.4, 1) both;
+}
+.tip span { font-size: 26px; }
+.tip p { margin: 0; }
