@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { NODE_BY_ID, TREE_NODES } from '../../src/data/tree';
+import { COST_SCALE, NODE_BY_ID, TREE_NODES } from '../../src/data/tree';
 import { availability, canRefund, cost, costForN, maxAffordable, niceRound, refundFork, sparksFor } from '../../src/economy/tree';
 import { computeModifiers } from '../../src/economy/modifiers';
 import { migrate } from '../../src/save/save';
@@ -21,14 +21,15 @@ describe("l'Arbre des Souvenirs", () => {
     expect(niceRound(183.7)).toBe(180);
     expect(niceRound(12345)).toBe(12000);
     const n = node('broom-wide-1');
-    expect(cost(n, 0)).toBe(40);
+    // Le premier élargissement coûte 25 × COST_SCALE (arrondi joliment).
+    expect(cost(n, 0)).toBe(niceRound(25 * COST_SCALE));
     expect(cost(n, 1)).toBeGreaterThan(cost(n, 0));
     expect(costForN(n, 0, 2)).toBe(cost(n, 0) + cost(n, 1));
   });
 
   it('Max achète ce qu’on peut se payer, sans dépasser le niveau max', () => {
     const n = node('broom-wide-1');
-    expect(maxAffordable(n, 0, 39)).toBe(0);
+    expect(maxAffordable(n, 0, cost(n, 0) - 1)).toBe(0);
     expect(maxAffordable(n, 0, costForN(n, 0, 3))).toBe(3);
     expect(maxAffordable(n, 0, 1e12)).toBe(n.maxLevel);
   });
