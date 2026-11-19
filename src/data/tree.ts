@@ -406,7 +406,7 @@ const CASTLE: TreeNode[] = [
  * Multiplicateur de prix de toutes les améliorations : le bouton « difficulté » de l'économie.
  * Réglé avec le simulateur de progression (tools/pacing.ts) pour une partie d'au moins 10 h.
  */
-export const COST_SCALE = 1.6;
+export const COST_SCALE = 1.3;
 
 export const TREE_NODES: TreeNode[] = [...BROOM, ...PICKUP, ...MEMORY, ...PLUME, ...JUNCTIONS, ...HELPERS, ...CASTLE].map((n) => ({
   ...n,
