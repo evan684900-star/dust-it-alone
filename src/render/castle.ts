@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { fabric, mat, metal, solid } from './materials';
 import { roundedBox } from './geometry';
+import { REALISTIC, realWood } from './realistic';
 import { blobShadow, drawCarpet, drawFlagstones, drawGrass, drawPlanks, drawPortrait, drawStoneWall, softDot } from './canvasTextures';
 
 function canvasTex(c: HTMLCanvasElement, repeat = false): THREE.CanvasTexture {
@@ -457,16 +458,25 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   const ambience: THREE.Object3D[] = [];
   const torches: THREE.Vector3[] = [];
 
-  const floorCanvas = drawPlanks(W, H, { px: 1.6, woods: ['#b8743c', '#a8652f', '#c4824a'], grain: 'rgba(90,45,20,0.35)', ink: '#3a2018' });
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), mat(0xffffff, { map: canvasTex(floorCanvas), bumpMap: new THREE.CanvasTexture(floorCanvas), bumpScale: 2.5, roughness: 0.62 }));
+  // Prototype réaliste : vrai vieux plancher (veinage, nœuds, crasse) au lieu des planches dessinées.
+  const realMat = (w: number, h: number, o: Parameters<typeof realWood>[2], extra: THREE.MeshStandardMaterialParameters = {}) => {
+    const t = realWood(w, h, o);
+    return mat(0xffffff, { map: t.color, bumpMap: t.bump, bumpScale: 1.6, roughnessMap: t.rough, roughness: 1, ...extra });
+  };
+  const floorCanvas = REALISTIC ? null : drawPlanks(W, H, { px: 1.6, woods: ['#b8743c', '#a8652f', '#c4824a'], grain: 'rgba(90,45,20,0.35)', ink: '#3a2018' });
+  const floorMat = floorCanvas
+    ? mat(0xffffff, { map: canvasTex(floorCanvas), bumpMap: new THREE.CanvasTexture(floorCanvas), bumpScale: 2.5, roughness: 0.62 })
+    : realMat(W, H, { base: [158, 116, 80], plank: 22, px: 0.75, grime: 0.75, seed: 3 });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(W, H), floorMat);
   floor.receiveShadow = true;
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(W / 2, 0, H / 2);
   g.add(floor);
 
-  const wallTex = canvasTex(drawPlanks(W, KNEE, { px: 1, plank: 46, woods: ['#7a4a86', '#6b3d7a', '#83528f'], grain: 'rgba(43,26,46,0.3)' }));
+  const wallTex = REALISTIC ? null : canvasTex(drawPlanks(W, KNEE, { px: 1, plank: 46, woods: ['#7a4a86', '#6b3d7a', '#83528f'], grain: 'rgba(43,26,46,0.3)' }));
+  const wallMat = wallTex ? mat(0xffffff, { map: wallTex, bumpMap: wallTex, bumpScale: 1.5, roughness: 0.8 }) : realMat(W, KNEE, { base: [118, 98, 80], plank: 16, px: 0.9, grime: 0.6, seed: 5 });
   for (const z of [0, H]) {
-    const wall = new THREE.Mesh(new THREE.PlaneGeometry(W, KNEE), mat(0xffffff, { map: wallTex, bumpMap: wallTex, bumpScale: 1.5, roughness: 0.8 }));
+    const wall = new THREE.Mesh(new THREE.PlaneGeometry(W, KNEE), wallMat);
     wall.receiveShadow = true;
     wall.position.set(W / 2, KNEE / 2, z);
     wall.rotation.y = z === 0 ? 0 : Math.PI;
@@ -478,9 +488,12 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
 
   const slope = Math.hypot(H / 2, RIDGE - KNEE);
   const roofAngle = Math.atan2(RIDGE - KNEE, H / 2);
-  const roofTex = canvasTex(drawPlanks(W, slope, { px: 0.8, plank: 60, woods: ['#7a5038', '#6a4430', '#86583e'], grain: 'rgba(20,10,20,0.35)', nails: false }));
+  const roofTex = REALISTIC ? null : canvasTex(drawPlanks(W, slope, { px: 0.8, plank: 60, woods: ['#7a5038', '#6a4430', '#86583e'], grain: 'rgba(20,10,20,0.35)', nails: false }));
+  const roofMat = roofTex
+    ? mat(0xd8c8c0, { map: roofTex, bumpMap: roofTex, bumpScale: 2, roughness: 0.85, side: THREE.DoubleSide })
+    : realMat(W, slope, { base: [92, 72, 56], plank: 20, px: 0.55, grime: 0.8, seed: 9 }, { side: THREE.DoubleSide });
   for (const side of [-1, 1]) {
-    const roof = new THREE.Mesh(new THREE.PlaneGeometry(W, slope), mat(0xd8c8c0, { map: roofTex, bumpMap: roofTex, bumpScale: 2, roughness: 0.85, side: THREE.DoubleSide }));
+    const roof = new THREE.Mesh(new THREE.PlaneGeometry(W, slope), roofMat);
     roof.receiveShadow = true;
     roof.position.set(W / 2, (KNEE + RIDGE) / 2, H / 2 + (side * H) / 4);
     roof.rotation.x = side < 0 ? Math.PI / 2 - roofAngle : -(Math.PI / 2 - roofAngle);
@@ -488,7 +501,10 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   }
 
   // Pignons, avec l'ouverture de la porte vers l'escalier.
-  const gableTex = canvasTex(drawPlanks(H, RIDGE, { px: 0.9, plank: 55, woods: ['#7a4a86', '#6b3d7a', '#83528f'], grain: 'rgba(43,26,46,0.3)', vertical: true }));
+  const gableTex = REALISTIC ? null : canvasTex(drawPlanks(H, RIDGE, { px: 0.9, plank: 55, woods: ['#7a4a86', '#6b3d7a', '#83528f'], grain: 'rgba(43,26,46,0.3)', vertical: true }));
+  const gableMat = gableTex
+    ? mat(0xffffff, { map: gableTex, bumpMap: gableTex, bumpScale: 1.5, roughness: 0.8, side: THREE.DoubleSide })
+    : realMat(H, RIDGE, { base: [112, 92, 76], plank: 18, px: 0.8, grime: 0.65, vertical: true, seed: 13 }, { side: THREE.DoubleSide });
   const frameMat = mat(0x5a3220, { roughness: 0.6 });
   for (const [x, side] of [[0, 'w'], [W, 'e']] as const) {
     const ops = openingsFor(def, doors, side);
@@ -509,7 +525,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
     const uv = geo.attributes.uv as THREE.BufferAttribute;
     const pos = geo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / H, pos.getY(i) / RIDGE);
-    const gable = new THREE.Mesh(geo, mat(0xffffff, { map: gableTex, bumpMap: gableTex, bumpScale: 1.5, roughness: 0.8, side: THREE.DoubleSide }));
+    const gable = new THREE.Mesh(geo, gableMat);
     gable.receiveShadow = true;
     gable.rotation.y = -Math.PI / 2;
     gable.position.set(x, 0, 0);
@@ -563,7 +579,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   const beamTarget = new THREE.Vector3(W - 560, 0, H / 2 + 80);
   const beamStart = new THREE.Vector3(W - 4, winY, H / 2);
   const beamLen = beamStart.distanceTo(beamTarget);
-  for (const [rTop, rBot, op] of [[55, 150, 0.045], [40, 110, 0.04]] as const) {
+  for (const [rTop, rBot, op] of (REALISTIC ? [[60, 170, 0.06], [45, 120, 0.055], [30, 80, 0.05]] : [[55, 150, 0.045], [40, 110, 0.04]]) as [number, number, number][]) {
     const cone = new THREE.Mesh(
       new THREE.CylinderGeometry(rTop, rBot, beamLen, 24, 1, true),
       new THREE.MeshBasicMaterial({ color: 0xfff1c4, transparent: true, opacity: op, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
@@ -579,7 +595,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   pool.position.set(beamTarget.x, 1, beamTarget.z);
   g.add(pool);
 
-  const n = 160;
+  const n = REALISTIC ? 420 : 160;
   const pos = new Float32Array(n * 3);
   const seeds = new Float32Array(n * 3);
   for (let i = 0; i < n; i++) {

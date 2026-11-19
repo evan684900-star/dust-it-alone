@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { REALISTIC, REAL_DUST_COLORS, filmPass, naturalize, realBunnyTuftGeometry, realDustGeometry, realDustTexture } from './realistic';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
 import { drawDustMessage, drawEmoji, drawStain, drawWeb, softDot } from './canvasTextures';
@@ -60,7 +61,7 @@ interface RoomView {
   dustMessage?: THREE.Mesh;
 }
 
-const DUST_COLORS = [0x9e95a6, 0xaea197, 0x938c9f, 0xb7adb9, 0xa69ca8];
+const DUST_COLORS = REALISTIC ? REAL_DUST_COLORS : [0x9e95a6, 0xaea197, 0x938c9f, 0xb7adb9, 0xa69ca8];
 /** Nombre de lumières dynamiques (torches, lampes) : fixe pour éviter de recompiler les matériaux. */
 const LIGHT_POOL = 4;
 
@@ -83,13 +84,13 @@ export class World3D {
   private lambertCache = new Map<THREE.Material, THREE.Material>();
   private useComposer = true;
   private envMap!: THREE.Texture;
-  private dustGeoHigh = grainGeometry();
-  private dustGeoLow = (() => {
+  private dustGeoHigh = REALISTIC ? realDustGeometry() : grainGeometry();
+  private dustGeoLow = REALISTIC ? this.dustGeoHigh : (() => {
     const g = new THREE.OctahedronGeometry(1, 0);
     g.scale(1, 0.55, 0.85);
     return g;
   })();
-  private bunnyGeo = dustBunnyGeometry();
+  private bunnyGeo = REALISTIC ? realBunnyTuftGeometry() : dustBunnyGeometry();
   private starGeo = starGeometry();
   /** Pour chaque type : géométrie, matériau riche, matériau simple, projette une ombre, couleurs. */
   private kinds!: Record<DirtId, { geo: THREE.BufferGeometry; rich: THREE.Material; mid: THREE.Material; big: boolean; colors?: number[] }>;
@@ -110,6 +111,7 @@ export class World3D {
   private headLean = 0;
   private activeRoom: RoomDef | null = null;
   private lightTimer = 0;
+  private film: ReturnType<typeof filmPass> | null = null;
   private ambienceOn = true;
 
   constructor(host: HTMLElement) {
@@ -118,8 +120,8 @@ export class World3D {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(PAL.ink);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    this.renderer.shadowMap.type = REALISTIC ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.renderer.toneMapping = REALISTIC ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.info.autoReset = false;
     this.renderer.domElement.id = 'game-canvas';
@@ -144,6 +146,10 @@ export class World3D {
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.6, 0.85);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    if (REALISTIC) {
+      this.film = filmPass();
+      this.composer.addPass(this.film);
+    }
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -167,10 +173,10 @@ export class World3D {
 
   build(rooms: { def: RoomDef; sim: RoomSim }[], doors: DoorDef[], stairs: StairDef[]): void {
     const s = this.scene;
-    s.background = new THREE.Color(0x1c1220);
-    s.fog = new THREE.FogExp2(0x2a1a30, 0.00022);
+    s.background = new THREE.Color(REALISTIC ? 0x14110e : 0x1c1220);
+    s.fog = new THREE.FogExp2(REALISTIC ? 0x3a3128 : 0x2a1a30, REALISTIC ? 0.00028 : 0.00022);
 
-    s.add(new THREE.HemisphereLight(0xffe9c8, 0x6a4a5a, 1.4));
+    s.add(REALISTIC ? new THREE.HemisphereLight(0xe8dccb, 0x3a3027, 0.6) : new THREE.HemisphereLight(0xffe9c8, 0x6a4a5a, 1.4));
     // Ciel autour du château (on le voit depuis la cour et le chemin de ronde) : dégradé de fin d'après-midi.
     const skyGeo = new THREE.SphereGeometry(40000, 32, 16);
     const sc = new Float32Array(skyGeo.attributes.position.count * 3);
@@ -221,8 +227,18 @@ export class World3D {
     const stainMat = new THREE.MeshStandardMaterial({ map: canvasTex(drawStain()), transparent: true, depthWrite: false, roughness: 0.3, polygonOffset: true, polygonOffsetFactor: -2 });
     const starMat = new THREE.MeshStandardMaterial({ color: 0xffd23f, emissive: 0xffb000, emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.25 });
     this.kinds = {
-      dust: { geo: this.dustGeoHigh, rich: fabric(0xffffff, { sheen: 0.6 }), mid: mat(0xffffff, { roughness: 0.95 }), big: false, colors: DUST_COLORS },
-      bunny: { geo: this.bunnyGeo, rich: fabric(0xffffff, { vertexColors: true }), mid: mat(0xffffff, { vertexColors: true, roughness: 0.95 }), big: true },
+      dust: REALISTIC
+        ? (() => {
+            const m = mat(0xffffff, { map: realDustTexture(), transparent: true, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
+            return { geo: this.dustGeoHigh, rich: m, mid: m, big: false, colors: DUST_COLORS };
+          })()
+        : { geo: this.dustGeoHigh, rich: fabric(0xffffff, { sheen: 0.6 }), mid: mat(0xffffff, { roughness: 0.95 }), big: false, colors: DUST_COLORS },
+      bunny: REALISTIC
+        ? (() => {
+            const m = mat(0xffffff, { map: realDustTexture(), alphaTest: 0.18, side: THREE.DoubleSide, roughness: 1 });
+            return { geo: this.bunnyGeo, rich: m, mid: m, big: true, colors: [0xc8c0b4, 0xb8b0a4, 0xd2cabc, 0xaaa296] };
+          })()
+        : { geo: this.bunnyGeo, rich: REALISTIC ? fabric(0xffffff, { vertexColors: true, sheen: 0.7, sheenRoughness: 0.9, sheenColor: 0x6a645e, roughness: 1 }) : fabric(0xffffff, { vertexColors: true }), mid: mat(0xffffff, { vertexColors: true, roughness: 0.95 }), big: true },
       star: { geo: this.starGeo, rich: starMat, mid: starMat, big: true },
       crumb: { geo: crumbGeo, rich: mat(0xffffff, { roughness: 0.8 }), mid: mat(0xffffff, { roughness: 0.9 }), big: false, colors: [0xd9a35b, 0xc8914c, 0xe8c08a, 0xb87a3a] },
       leaf: { geo: leafGeo, rich: mat(0xffffff, { roughness: 0.7, side: THREE.DoubleSide }), mid: mat(0xffffff, { roughness: 0.8, side: THREE.DoubleSide }), big: true, colors: [0xe07a2a, 0xc8462a, 0xe8b030, 0xa8582a, 0x8a9a30] },
@@ -247,6 +263,7 @@ export class World3D {
       this.doors.push(v);
     }
     s.add(this.broom.root);
+    if (REALISTIC) naturalize(s);
     this.buildRing();
     this.buildFx();
   }
@@ -328,7 +345,7 @@ export class World3D {
     const inner = rounded(0.9, 0.7, 0.1);
     const border = new THREE.Shape(outer.getPoints(6));
     border.holes.push(new THREE.Path(inner.getPoints(6).reverse()));
-    const edge = new THREE.Mesh(new THREE.ShapeGeometry(border), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false }));
+    const edge = new THREE.Mesh(new THREE.ShapeGeometry(border), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: REALISTIC ? 0.14 : 0.5, depthWrite: false }));
     this.ringFill = new THREE.Mesh(new THREE.ShapeGeometry(inner), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.07, depthWrite: false }));
     // Petite flèche vers l'avant : le sens dans lequel la brosse pousse.
     const arrowShape = new THREE.Shape();
@@ -434,8 +451,8 @@ export class World3D {
     for (const v of this.views) for (const o of v.ambience) o.visible = q.ambienceFx;
 
     // Les matériaux physiques et le halo lumineux éclairent plus : on compense pour ne pas éblouir.
-    r.toneMappingExposure = q.cheapMaterials ? 1.1 : 0.82;
-    this.scene.environmentIntensity = 0.35;
+    r.toneMappingExposure = REALISTIC ? (q.cheapMaterials ? 1.25 : 1.05) : q.cheapMaterials ? 1.1 : 0.82;
+    this.scene.environmentIntensity = REALISTIC ? 0.22 : 0.35;
     this.bloom.strength = 0.22;
     this.bloom.threshold = 0.95;
     this.bloom.radius = 0.4;
@@ -524,6 +541,7 @@ export class World3D {
 
   render(dt: number, view: ViewState, broom: BroomView, broomSim: RoomSim | null): void {
     this.time += dt;
+    if (this.film) this.film.uniforms.time.value = this.time % 10;
     const cam = this.camera;
     const sx = this.shake > 0 ? (Math.random() - 0.5) * this.shake : 0;
     const sy = this.shake > 0 ? (Math.random() - 0.5) * this.shake : 0;
@@ -611,6 +629,11 @@ export class World3D {
             s *= 0.8 + ((i * 13) % 10) / 20;
             sy = s;
             py = s * 0.4;
+            // Prototype réaliste : la poussière est un voile posé à plat sur le sol.
+            if (REALISTIC && kind === 'dust') {
+              sy = 1;
+              py = 0.4 + (k % 9) * 0.03;
+            }
         }
         const c = Math.cos(yaw) * s;
         const sn = Math.sin(yaw) * s;
@@ -715,7 +738,7 @@ export class World3D {
     const w = Math.min(v.def.width, v.def.height * 2) * 0.55;
     const m = new THREE.Mesh(
       new THREE.PlaneGeometry(w, w / 4).rotateX(-Math.PI / 2),
-      new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }),
+      new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, color: REALISTIC ? 0x8a8279 : 0xffffff }),
     );
     m.position.set(v.def.width / 2, 1.5, v.def.height / 2);
     // Le message se lit depuis l'entrée la plus probable : on le tourne vers le grand côté.

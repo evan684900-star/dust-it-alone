@@ -3,6 +3,7 @@ import type { Collector, Prop } from '../data/rooms';
 import { PAL } from './palette';
 import { fabric, mat, metal, plastic, solid } from './materials';
 import { colored, roundedBox } from './geometry';
+import { REALISTIC } from './realistic';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /** Un meuble du grenier. Coordonnées du sol : x, y de la simulation → x, z en 3D. */
@@ -598,7 +599,7 @@ export function buildBroom(): { root: THREE.Group; head: THREE.Group; handle: TH
   const broomHead = new THREE.Group();
   head.add(broomHead);
   // Brosse en paille : plein de petites mèches.
-  const straw = mat(0xe2b553, { roughness: 0.85 });
+  const straw = mat(REALISTIC ? 0x9a7a44 : 0xe2b553, { roughness: 0.85 });
   const bristles = solid(roundedBox(70, 26, 20, 5), straw);
   bristles.position.y = 13;
   broomHead.add(bristles);
@@ -608,7 +609,8 @@ export function buildBroom(): { root: THREE.Group; head: THREE.Group; handle: TH
     tuft.rotation.z = (k - 7) * 0.03;
     broomHead.add(tuft);
   }
-  const band = solid(roundedBox(62, 12, 23, 4), plastic(PAL.tomato));
+  // Prototype réaliste : un vrai balai de paille avec une ligature en fer, pas de plastique rouge.
+  const band = solid(roundedBox(62, 12, 23, 4), REALISTIC ? metal(0x3a3430, 0.6) : plastic(PAL.tomato));
   band.position.y = 30;
   broomHead.add(band);
 
