@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { REALISTIC, REAL_DUST_COLORS, filmPass, naturalize, realBunnyTuftGeometry, realDustGeometry, realDustTexture } from './realistic';
+import { REALISTIC, REAL_DUST_COLORS, filmPass, sanitizePass, naturalize, realBunnyTuftGeometry, realDustGeometry, realDustTexture } from './realistic';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
 import { drawDustMessage, drawEmoji, drawStain, drawWeb, softDot } from './canvasTextures';
@@ -143,6 +143,8 @@ export class World3D {
     this.gtao.updateGtaoMaterial({ radius: 40, distanceExponent: 1.5, thickness: 8, scale: 1.2, samples: 12 });
     this.gtao.blendIntensity = 0.9;
     this.composer.addPass(this.gtao);
+    // Garde-fou : un pixel invalide ne doit jamais devenir un gros halo blanc (dans les deux styles).
+    this.composer.addPass(sanitizePass());
     this.bloom = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.45, 0.6, 0.85);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
@@ -240,10 +242,16 @@ export class World3D {
           })()
         : { geo: this.bunnyGeo, rich: REALISTIC ? fabric(0xffffff, { vertexColors: true, sheen: 0.7, sheenRoughness: 0.9, sheenColor: 0x6a645e, roughness: 1 }) : fabric(0xffffff, { vertexColors: true }), mid: mat(0xffffff, { vertexColors: true, roughness: 0.95 }), big: true },
       star: { geo: this.starGeo, rich: starMat, mid: starMat, big: true },
-      crumb: { geo: crumbGeo, rich: mat(0xffffff, { roughness: 0.8 }), mid: mat(0xffffff, { roughness: 0.9 }), big: false, colors: [0xd9a35b, 0xc8914c, 0xe8c08a, 0xb87a3a] },
-      leaf: { geo: leafGeo, rich: mat(0xffffff, { roughness: 0.7, side: THREE.DoubleSide }), mid: mat(0xffffff, { roughness: 0.8, side: THREE.DoubleSide }), big: true, colors: [0xe07a2a, 0xc8462a, 0xe8b030, 0xa8582a, 0x8a9a30] },
+      crumb: { geo: crumbGeo, rich: mat(0xffffff, { roughness: 0.8 }), mid: mat(0xffffff, { roughness: 0.9 }), big: false, colors: REALISTIC ? [0xa08868, 0x907a5c, 0xb09a7a, 0x7e6a50] : [0xd9a35b, 0xc8914c, 0xe8c08a, 0xb87a3a] },
+      leaf: { geo: leafGeo, rich: mat(0xffffff, { roughness: 0.7, side: THREE.DoubleSide }), mid: mat(0xffffff, { roughness: 0.8, side: THREE.DoubleSide }), big: true, colors: REALISTIC ? [0x9a6a3a, 0x8a4a2a, 0xa88a4a, 0x7a5a32, 0x6a6a3a] : [0xe07a2a, 0xc8462a, 0xe8b030, 0xa8582a, 0x8a9a30] },
       rubble: { geo: rubbleGeo, rich: mat(0xffffff, { roughness: 0.95 }), mid: mat(0xffffff, { roughness: 0.95 }), big: true, colors: [0x8a8078, 0x9a8f84, 0x6f665e, 0xa89c8e] },
-      soot: { geo: this.dustGeoHigh, rich: mat(0xffffff, { roughness: 1 }), mid: mat(0xffffff, { roughness: 1 }), big: false, colors: [0x2a2624, 0x3a3430, 0x1f1c1a] },
+      soot: REALISTIC
+        ? (() => {
+            // Suie : traces noires et floues, comme la poussière mais en sombre.
+            const m = mat(0xffffff, { map: realDustTexture(), transparent: true, opacity: 0.85, depthWrite: false, roughness: 1, polygonOffset: true, polygonOffsetFactor: -1 });
+            return { geo: this.dustGeoHigh, rich: m, mid: m, big: false, colors: [0x2a2624, 0x3a3430, 0x1f1c1a] };
+          })()
+        : { geo: this.dustGeoHigh, rich: mat(0xffffff, { roughness: 1 }), mid: mat(0xffffff, { roughness: 1 }), big: false, colors: [0x2a2624, 0x3a3430, 0x1f1c1a] },
       web: { geo: flat, rich: webMat, mid: webMat, big: false },
       stain: { geo: flat, rich: stainMat, mid: stainMat, big: false },
     };
@@ -630,7 +638,7 @@ export class World3D {
             sy = s;
             py = s * 0.4;
             // Prototype réaliste : la poussière est un voile posé à plat sur le sol.
-            if (REALISTIC && kind === 'dust') {
+            if (REALISTIC && (kind === 'dust' || kind === 'soot')) {
               sy = 1;
               py = 0.4 + (k % 9) * 0.03;
             }

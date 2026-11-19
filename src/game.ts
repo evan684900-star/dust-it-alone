@@ -432,6 +432,15 @@ export class Game {
     this.synth.voices = s.voices;
   }
 
+  /** Bascule entre le style dessin et le mode réaliste : il faut recharger (toutes les textures changent). */
+  setRealistic(on: boolean): void {
+    this.save.settings.realistic = on;
+    this.persist();
+    const url = new URL(location.href);
+    url.searchParams.delete('style');
+    location.replace(url.toString());
+  }
+
   private persistTimer = 0;
   private persistSoon(): void {
     clearTimeout(this.persistTimer);
@@ -707,6 +716,7 @@ export class Game {
           const room = this.player.room();
           if (room) this.events.trigger(kind, this.rooms.findIndex((r) => r.def === room));
         },
+        rooms: () => ROOMS.map((r) => ({ id: r.id, name: r.name, x: r.origin.x, z: r.origin.z, w: r.width, h: r.height, y: r.floorY })),
         unlockAll: () => {
           for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
           this.world.setDoorState((d) => this.doorOpen(d), true);

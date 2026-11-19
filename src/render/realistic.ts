@@ -3,11 +3,23 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 /**
- * PROTOTYPE « graphismes réalistes » (activé avec ?style=real).
- * Textures de bois photo-réalistes générées par le code, couleurs naturelles,
- * moutons de poussière sans yeux, grain de film et vignettage.
+ * Mode « graphismes réalistes » (Réglages → Graphismes, ou ?style=real dans l'adresse).
+ * Textures photo-réalistes générées par le code (bois, pierre, dalles, herbe),
+ * couleurs naturelles, moutons de poussière sans yeux, grain de film et vignettage.
+ * Choisi au chargement de la page (les textures sont fabriquées une seule fois).
  */
-export const REALISTIC = typeof location !== 'undefined' && new URLSearchParams(location.search).get('style') === 'real';
+export const REALISTIC = (() => {
+  if (typeof location === 'undefined') return false;
+  const q = new URLSearchParams(location.search).get('style');
+  if (q === 'real') return true;
+  if (q === 'cartoon') return false;
+  try {
+    const raw = localStorage.getItem('dust-it-alone:save');
+    return raw ? JSON.parse(raw)?.settings?.realistic === true : false;
+  } catch {
+    return false;
+  }
+})();
 
 // ───────────────────────────── Bruit ─────────────────────────────
 
@@ -41,6 +53,271 @@ function fbm(x: number, y: number, seed: number, oct = 4): number {
     amp *= 0.5;
   }
   return s;
+}
+
+/** Bruit qui se répète tous les `P` (pour des textures sans raccord visible). */
+function noiseP(x: number, y: number, seed: number, P: number): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const xf = x - xi;
+  const yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf);
+  const v = yf * yf * (3 - 2 * yf);
+  const m = (k: number) => ((k % P) + P) % P;
+  const a = hash2(m(xi), m(yi), seed);
+  const b = hash2(m(xi + 1), m(yi), seed);
+  const c = hash2(m(xi), m(yi + 1), seed);
+  const d = hash2(m(xi + 1), m(yi + 1), seed);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+
+/** fbm périodique : (x, y) entre 0 et 1 couvrent exactement une période. */
+function fbmP(x: number, y: number, seed: number, base: number, oct = 4): number {
+  let s = 0;
+  let amp = 0.5;
+  let P = base;
+  for (let o = 0; o < oct; o++) {
+    s += amp * noiseP(x * P, y * P, seed + o * 17, P);
+    P *= 2;
+    amp *= 0.5;
+  }
+  return s;
+}
+
+type Rgb = [number, number, number];
+export interface SurfaceTextures {
+  color: THREE.Texture;
+  bump: THREE.Texture;
+  rough: THREE.Texture;
+}
+
+function toTextures(N: number, M: number, col: ImageData, bmp: ImageData, rgh: ImageData, repeat: boolean): SurfaceTextures {
+  const make = (img: ImageData, srgb: boolean) => {
+    const c = document.createElement('canvas');
+    c.width = N;
+    c.height = M;
+    c.getContext('2d')!.putImageData(img, 0, 0);
+    const t = new THREE.CanvasTexture(c);
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 8;
+    if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    return t;
+  };
+  return { color: make(col, true), bump: make(bmp, false), rough: make(rgh, false) };
+}
+
+export interface StoneOptions {
+  base: Rgb;
+  mortar: Rgb;
+  /** Nombre de rangées de blocs dans la texture. */
+  rows: number;
+  /** Nombre moyen de blocs par rangée. */
+  perRow: number;
+  /** Humidité et mousse (caves, cachots). */
+  damp?: number;
+  /** Variation de teinte entre blocs. */
+  vary?: number;
+  /** Joints plus ou moins larges (en pixels). */
+  joint?: number;
+  seed?: number;
+  size?: number;
+  /** Dalles de sol : usure lisse au lieu des arêtes taillées. */
+  floor?: boolean;
+}
+
+/**
+ * Pierre taillée (murs) ou dalles (sol), répétable sans raccord : blocs irréguliers,
+ * joints de mortier, arêtes émoussées, taches, fissures, humidité et mousse.
+ */
+export function realStone(o: StoneOptions): SurfaceTextures {
+  const N = o.size ?? 512;
+  const seed = o.seed ?? 1;
+  const joint = o.joint ?? 3;
+  // Rangées de hauteurs différentes (assises de pierre irrégulières), dont la somme fait N.
+  const rowW: number[] = [];
+  for (let r = 0; r < o.rows; r++) rowW.push(0.65 + hash2(r, 77, seed) * 0.7);
+  const tot = rowW.reduce((a, b) => a + b, 0);
+  const rowTop: number[] = [];
+  let acc = 0;
+  for (let r = 0; r < o.rows; r++) {
+    rowTop.push((acc / tot) * N);
+    acc += rowW[r];
+  }
+  rowTop.push(N);
+  // Découpe de chaque rangée en blocs (la somme fait exactement N : la texture se répète).
+  const cuts: number[][] = [];
+  for (let r = 0; r < o.rows; r++) {
+    const xs: number[] = [];
+    let x = hash2(r, 99, seed) * (N / o.perRow);
+    xs.push(x);
+    const avg = N / o.perRow;
+    while (true) {
+      x += avg * (0.6 + hash2(r, xs.length, seed) * 0.8);
+      if (x >= xs[0] + N - avg * 0.45) break;
+      xs.push(x);
+    }
+    cuts.push(xs);
+  }
+  const col = new ImageData(N, N);
+  const bmp = new ImageData(N, N);
+  const rgh = new ImageData(N, N);
+  const vary = o.vary ?? 0.12;
+  const damp = o.damp ?? 0;
+  let r = 0;
+  for (let j = 0; j < N; j++) {
+    while (j >= rowTop[r + 1]) r++;
+    const rowH = rowTop[r + 1] - rowTop[r];
+    const inRow = j - rowTop[r];
+    const xs = cuts[r];
+    for (let i = 0; i < N; i++) {
+      // Bloc qui contient ce pixel (avec repli au bord de la texture).
+      let k = xs.length - 1;
+      let left = xs[k] - N;
+      let right = xs[0];
+      for (let q = 0; q < xs.length; q++) {
+        if (i >= xs[q] && (q === xs.length - 1 || i < xs[q + 1])) {
+          k = q;
+          left = xs[q];
+          right = q === xs.length - 1 ? xs[0] + N : xs[q + 1];
+          break;
+        }
+      }
+      if (i < xs[0]) {
+        k = xs.length - 1;
+        left = xs[k] - N;
+        right = xs[0];
+      }
+      const id = r * 97 + k;
+      const u = i / N;
+      const v = j / N;
+      // Distance au joint, un peu irrégulière.
+      const wob = (fbmP(u, v, seed + 5, 16, 2) - 0.5) * 3;
+      const edge = Math.min(i - left, right - i, inRow, rowH - inRow) + wob;
+      const n1 = fbmP(u, v, seed + 7, 8, 5);
+      const n2 = fbmP(u, v, seed + 9, 32, 3);
+      const tone = 1 + (hash2(id, 1, seed) - 0.5) * 2 * vary;
+      const warm = (hash2(id, 2, seed) - 0.5) * 0.08;
+      let h: number;
+      let c: Rgb;
+      if (edge < joint) {
+        // Mortier (creux, granuleux).
+        const g = 0.85 + 0.3 * n2;
+        c = [o.mortar[0] * g, o.mortar[1] * g, o.mortar[2] * g];
+        h = 0.15 + 0.1 * n2;
+      } else {
+        // Pierre : arêtes arrondies (taillées) ou usées (dalles).
+        const bevel = Math.min(1, (edge - joint) / (o.floor ? 10 : 6));
+        const shade = (o.floor ? 0.92 : 0.8) + (o.floor ? 0.08 : 0.2) * bevel;
+        let g = tone * shade * (0.82 + 0.3 * n1) * (0.94 + 0.12 * n2);
+        // Fissures fines.
+        if (!o.floor && hash2(id, 3, seed) < 0.2 && Math.abs(fbmP(u, v, seed + (id % 7), 12, 3) - 0.5) < 0.005) g *= 0.75;
+        // Usure : quelques éclats plus clairs, taches sombres.
+        g *= 0.96 + 0.08 * Math.max(0, fbmP(u, v, seed + 41, 64, 2) - 0.4);
+        c = [o.base[0] * g * (1 + warm), o.base[1] * g, o.base[2] * g * (1 - warm)];
+        h = 0.45 + 0.4 * bevel + 0.15 * n1;
+      }
+      if (damp > 0) {
+        // Traînées d'humidité qui descendent et mousse dans les creux.
+        const wet = Math.max(0, fbmP(u * 0.5, v * 2, seed + 21, 4, 3) - 0.45) * 2 * damp;
+        c = [c[0] * (1 - 0.35 * wet), c[1] * (1 - 0.3 * wet), c[2] * (1 - 0.32 * wet)];
+        const moss = Math.max(0, fbmP(u, v, seed + 33, 6, 4) - 0.58) * 3 * damp * (edge < joint + 4 ? 1.4 : 0.6);
+        c = [c[0] * (1 - moss) + 62 * moss, c[1] * (1 - moss) + 78 * moss, c[2] * (1 - moss) + 40 * moss];
+      }
+      const p = (j * N + i) * 4;
+      col.data[p] = Math.max(0, Math.min(255, c[0]));
+      col.data[p + 1] = Math.max(0, Math.min(255, c[1]));
+      col.data[p + 2] = Math.max(0, Math.min(255, c[2]));
+      col.data[p + 3] = 255;
+      bmp.data[p] = bmp.data[p + 1] = bmp.data[p + 2] = Math.max(0, Math.min(255, h * 255));
+      bmp.data[p + 3] = 255;
+      const rough = edge < joint ? 1 : (o.floor ? 0.55 : 0.75) + 0.25 * n1 - 0.2 * damp;
+      rgh.data[p] = rgh.data[p + 1] = rgh.data[p + 2] = Math.max(0, Math.min(255, rough * 255));
+      rgh.data[p + 3] = 255;
+    }
+  }
+  return toTextures(N, N, col, bmp, rgh, true);
+}
+
+/** Herbe vue de haut, répétable : brins, touffes plus sombres, terre par endroits. */
+export function realGrass(size = 512): SurfaceTextures {
+  const N = size;
+  const col = new ImageData(N, N);
+  const bmp = new ImageData(N, N);
+  const rgh = new ImageData(N, N);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const u = i / N;
+      const v = j / N;
+      const big = fbmP(u, v, 3, 4, 4);
+      const mid = fbmP(u, v, 5, 24, 3);
+      const blade = noiseP(u * 256, v * 64, 7, 256) * 0.6 + noiseP(u * 64, v * 256, 8, 256) * 0.4;
+      const dirt = Math.max(0, big - 0.62) * 3;
+      const g = 0.55 + 0.35 * mid + 0.35 * (blade - 0.5);
+      let c: Rgb = [70 * g + 18 * big, 98 * g + 20 * big, 42 * g];
+      c = [c[0] * (1 - dirt) + 104 * dirt * g, c[1] * (1 - dirt) + 86 * dirt * g, c[2] * (1 - dirt) + 62 * dirt * g];
+      const p = (j * N + i) * 4;
+      col.data[p] = c[0];
+      col.data[p + 1] = c[1];
+      col.data[p + 2] = c[2];
+      col.data[p + 3] = 255;
+      bmp.data[p] = bmp.data[p + 1] = bmp.data[p + 2] = Math.min(255, 255 * (0.3 + 0.6 * blade * (1 - dirt * 0.6)));
+      bmp.data[p + 3] = 255;
+      rgh.data[p] = rgh.data[p + 1] = rgh.data[p + 2] = 235;
+      rgh.data[p + 3] = 255;
+    }
+  }
+  return toTextures(N, N, col, bmp, rgh, true);
+}
+
+/**
+ * Rend une image dessinée (tapis, tableau) plus réaliste : couleurs moins vives,
+ * trame de tissu ou craquelures de vieille peinture, usure.
+ */
+export function realify(c: HTMLCanvasElement, kind: 'fabric' | 'paint'): HTMLCanvasElement {
+  const g = c.getContext('2d')!;
+  const img = g.getImageData(0, 0, c.width, c.height);
+  const d = img.data;
+  const W = c.width;
+  const H = c.height;
+  for (let j = 0; j < H; j++) {
+    for (let i = 0; i < W; i++) {
+      const p = (j * W + i) * 4;
+      const l = 0.3 * d[p] + 0.59 * d[p + 1] + 0.11 * d[p + 2];
+      const sat = kind === 'fabric' ? 0.45 : 0.6;
+      let r = l + (d[p] - l) * sat;
+      let gg = l + (d[p + 1] - l) * sat;
+      let b = l + (d[p + 2] - l) * sat;
+      let k: number;
+      if (kind === 'fabric') {
+        // Trame croisée + usure au milieu (là où l'on marche).
+        const weave = ((i % 4) < 2 ? 0.94 : 1.04) * ((j % 4) < 2 ? 1.02 : 0.96);
+        const wear = 1 + 0.12 * Math.max(0, 1 - Math.abs(j / H - 0.5) * 3) * fbm(i * 0.02, j * 0.02, 51, 3);
+        k = weave * wear * (0.85 + 0.25 * fbm(i * 0.05, j * 0.05, 53, 3));
+      } else {
+        // Vernis jauni et craquelures.
+        const crack = Math.abs(fbm(i * 0.08, j * 0.08, 61, 3) - 0.5) < 0.015 ? 0.7 : 1;
+        k = crack * (0.88 + 0.16 * fbm(i * 0.03, j * 0.03, 63, 3));
+        r *= 1.04;
+        b *= 0.86;
+      }
+      d[p] = Math.min(255, r * k * 0.92);
+      d[p + 1] = Math.min(255, gg * k * 0.92);
+      d[p + 2] = Math.min(255, b * k * 0.92);
+    }
+  }
+  g.putImageData(img, 0, 0);
+  return c;
+}
+
+/** Désature une couleur CSS « dessin » en couleur de bois naturelle (sRGB 0–255). */
+export function naturalWood(hex: string): Rgb {
+  const c = new THREE.Color(hex);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  c.setHSL(hsl.h, hsl.s * 0.45, Math.min(0.55, hsl.l * 1.05));
+  const o = { r: 0, g: 0, b: 0 };
+  c.getRGB(o, THREE.SRGBColorSpace);
+  return [o.r * 255, o.g * 255, o.b * 255].map((x) => Math.round(x)) as Rgb;
 }
 
 // ───────────────────────────── Bois ─────────────────────────────
@@ -135,6 +412,12 @@ export function realWood(width: number, height: number, o: WoodOptions): { color
     return t;
   };
   return { color: toTex(col, true), bump: toTex(bmp, false), rough: toTex(rgh, false) };
+}
+
+/** Pierre lisse et marbrée pour les colonnes et les statues. */
+let propStone: SurfaceTextures | null = null;
+export function propStoneTextures(): SurfaceTextures {
+  return (propStone ??= realStone({ base: [196, 188, 176], mortar: [150, 144, 136], rows: 2, perRow: 1, joint: 1.5, vary: 0.05, floor: true, size: 256, seed: 71 }));
 }
 
 /** Une texture de bois générique qui se répète (pour les meubles). */
@@ -264,6 +547,16 @@ export function naturalize(root: THREE.Object3D): void {
       if (sm.metalness < 0.5) sm.roughness = Math.min(1, sm.roughness + 0.12);
       const phys = sm as THREE.MeshPhysicalMaterial;
       if (phys.isMeshPhysicalMaterial) phys.sheen = Math.min(phys.sheen, 0.25);
+      const stoneish = hsl.s < 0.3 && hsl.l > 0.45 && hsl.l < 0.85 && sm.metalness < 0.3 && !sm.transparent && !phys.isMeshPhysicalMaterial;
+      if (stoneish && !woodish && !sm.map && mesh.geometry.attributes.uv && sm.emissiveIntensity === 1 && sm.emissive.getHex() === 0) {
+        const t = propStoneTextures();
+        sm.map = t.color;
+        sm.bumpMap = t.bump;
+        sm.bumpScale = 1.5;
+        sm.roughnessMap = t.rough;
+        sm.color.setHSL(hsl.h, hsl.s * 0.3, Math.min(0.95, hsl.l * 1.25));
+        sm.needsUpdate = true;
+      }
       if (woodish && !sm.map && mesh.geometry.attributes.uv) {
         const t = propWoodTextures();
         sm.map = t.color;
@@ -279,6 +572,25 @@ export function naturalize(root: THREE.Object3D): void {
 }
 
 // ───────────────────────────── Post-traitement ─────────────────────────────
+
+/**
+ * Nettoie l'image avant le halo lumineux : un seul pixel invalide (NaN ou infini, ça arrive
+ * avec le relief sur des faces minuscules) suffit sinon à faire un énorme nuage blanc.
+ */
+export function sanitizePass(): ShaderPass {
+  return new ShaderPass({
+    uniforms: { tDiffuse: { value: null } },
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `
+      uniform sampler2D tDiffuse; varying vec2 vUv;
+      void main(){
+        vec4 c = texture2D(tDiffuse, vUv);
+        bvec4 bad = bvec4(c.r != c.r || c.r > 6e4, c.g != c.g || c.g > 6e4, c.b != c.b || c.b > 6e4, false);
+        if (any(bad)) c.rgb = vec3(0.0);
+        gl_FragColor = vec4(min(c.rgb, vec3(64.0)), c.a);
+      }`,
+  });
+}
 
 /** Grain de film + vignettage + légère courbe de contraste (en fin de chaîne). */
 export function filmPass(): ShaderPass {

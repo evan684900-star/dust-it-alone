@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { fabric, mat, metal, solid } from './materials';
 import { roundedBox } from './geometry';
-import { REALISTIC, realWood } from './realistic';
+import { REALISTIC, naturalWood, realGrass, realStone, realWood, realify, type SurfaceTextures } from './realistic';
 import { blobShadow, drawCarpet, drawFlagstones, drawGrass, drawPlanks, drawPortrait, drawStoneWall, softDot } from './canvasTextures';
 
 function canvasTex(c: HTMLCanvasElement, repeat = false): THREE.CanvasTexture {
@@ -11,6 +11,20 @@ function canvasTex(c: HTMLCanvasElement, repeat = false): THREE.CanvasTexture {
   t.anisotropy = 8;
   if (repeat) t.wrapS = t.wrapT = THREE.RepeatWrapping;
   return t;
+}
+
+/** Mode réaliste : cartes de relief et de rugosité qui accompagnent chaque texture. */
+const SURF = new Map<THREE.Texture, SurfaceTextures>();
+function surf(t: SurfaceTextures): THREE.Texture {
+  SURF.set(t.color, t);
+  return t.color;
+}
+
+/** Paramètres de matériau pour une texture : relief et rugosité réalistes si on les a. */
+function texParams(map: THREE.Texture, bumpScale: number, roughness: number): THREE.MeshStandardMaterialParameters {
+  const s = SURF.get(map);
+  if (s) return { map, bumpMap: s.bump, bumpScale: bumpScale * 1.4, roughnessMap: s.rough, roughness: 1 };
+  return { map, bumpMap: map, bumpScale, roughness };
 }
 
 /** Textures partagées (créées une seule fois). */
@@ -22,16 +36,33 @@ const T = {
   _shadow: null as THREE.Texture | null,
   _soft: null as THREE.Texture | null,
   woods: new Map<string, THREE.Texture>(),
-  get stone() { return (this._stone ??= canvasTex(drawStoneWall(512, 512), true)); },
-  get darkStone() { return (this._darkStone ??= canvasTex(drawStoneWall(512, 512, { tones: ['#7d7268', '#71665c', '#887c70', '#6a5f56'], mortar: '#3f3630', seed: 9 }), true)); },
-  get flag() { return (this._flag ??= canvasTex(drawFlagstones(512, 512), true)); },
-  get grass() { return (this._grass ??= canvasTex(drawGrass(512), true)); },
+  get stone() {
+    return (this._stone ??= REALISTIC
+      ? surf(realStone({ base: [164, 154, 138], mortar: [118, 110, 100], rows: 5, perRow: 2.6, joint: 2.5, vary: 0.16, seed: 3 }))
+      : canvasTex(drawStoneWall(512, 512), true));
+  },
+  get darkStone() {
+    return (this._darkStone ??= REALISTIC
+      ? surf(realStone({ base: [112, 104, 94], mortar: [70, 64, 58], rows: 5, perRow: 2.4, joint: 2.5, damp: 0.8, vary: 0.2, seed: 9 }))
+      : canvasTex(drawStoneWall(512, 512, { tones: ['#7d7268', '#71665c', '#887c70', '#6a5f56'], mortar: '#3f3630', seed: 9 }), true));
+  },
+  get flag() {
+    return (this._flag ??= REALISTIC
+      ? surf(realStone({ base: [146, 138, 126], mortar: [88, 82, 74], rows: 3, perRow: 2.2, floor: true, joint: 2, vary: 0.16, seed: 15 }))
+      : canvasTex(drawFlagstones(512, 512), true));
+  },
+  get grass() { return (this._grass ??= REALISTIC ? surf(realGrass(512)) : canvasTex(drawGrass(512), true)); },
   get shadow() { return (this._shadow ??= canvasTex(blobShadow())); },
   get soft() { return (this._soft ??= canvasTex(softDot())); },
   planks(key: string, woods: string[]) {
     let t = this.woods.get(key);
     if (!t) {
-      t = canvasTex(drawPlanks(600, 600, { px: 1, woods, grain: 'rgba(60,30,15,0.35)', ink: '#2e1a12' }), true);
+      if (REALISTIC) {
+        // Vrai parquet : planches de 20 cm, veinées, un peu usées.
+        const s = realWood(600, 600, { base: naturalWood(woods[0]), plank: 20, px: 0.85, grime: 0.45, seed: key.length * 7 });
+        for (const x of [s.color, s.bump, s.rough]) x.wrapS = x.wrapT = THREE.RepeatWrapping;
+        t = surf(s);
+      } else t = canvasTex(drawPlanks(600, 600, { px: 1, woods, grain: 'rgba(60,30,15,0.35)', ink: '#2e1a12' }), true);
       this.woods.set(key, t);
     }
     return t;
@@ -144,7 +175,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
   const floorTex = Array.isArray(st.floor) ? T.planks(def.style, st.floor) : st.floor === 'grass' ? T.grass : T.flag;
   const floorTile = wood ? 600 : st.floor === 'grass' ? 400 : 300;
   const floorColor = st.floor === 'darkFlag' ? (st.floorTint ?? 0x8a8078) : (st.floorTint ?? 0xffffff);
-  const floor = new THREE.Mesh(tiledPlane(W, H, floorTile), mat(floorColor, { map: floorTex, bumpMap: floorTex, bumpScale: 1.5, roughness: wood ? 0.55 : 0.85 }));
+  const floor = new THREE.Mesh(tiledPlane(W, H, floorTile), mat(floorColor, texParams(floorTex, 1.5, wood ? 0.55 : 0.85)));
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(W / 2, 0, H / 2);
   floor.receiveShadow = true;
@@ -152,8 +183,8 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
 
   // Murs de pierre, avec leurs ouvertures de portes.
   const wallTex = st.wallTex === 'stone' ? T.stone : T.darkStone;
-  const wallMat = mat(0xffffff, { map: wallTex, bumpMap: wallTex, bumpScale: 3, roughness: 0.9 });
-  const wainMat = mat(0xffffff, { map: T.planks('wainscot', ['#6a3a22', '#5e321c', '#74422a']), roughness: 0.6 });
+  const wallMat = mat(0xffffff, texParams(wallTex, 3, 0.9));
+  const wainMat = mat(0xffffff, texParams(T.planks('wainscot', ['#6a3a22', '#5e321c', '#74422a']), 1, 0.6));
   const frameMat = mat(0x5a3220, { roughness: 0.6 });
   for (const side of ['n', 's', 'w', 'e'] as Side[]) {
     const { len, place } = wallFrame(def, side);
@@ -254,7 +285,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
   // Plafond et poutres (pas en plein air).
   if (!st.outdoor) {
   const ceilTex = T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']);
-  const ceil = new THREE.Mesh(tiledPlane(W, H, 600), mat(0xffffff, { map: ceilTex, roughness: 0.9 }));
+  const ceil = new THREE.Mesh(tiledPlane(W, H, 600), mat(0xffffff, texParams(ceilTex, 1, 0.9)));
   ceil.rotation.x = Math.PI / 2;
   ceil.position.set(W / 2, C, H / 2);
   g.add(ceil);
@@ -344,7 +375,7 @@ function addTorch(g: THREE.Group, place: Place, u: number, h: number): { light: 
   place(wood, u, h - 12, 24);
   const flame = new THREE.Mesh(new THREE.ConeGeometry(7, 22, 10), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffa040).multiplyScalar(3.5) }));
   place(flame, u, h + 10, 24);
-  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.soft, color: 0xffb060, transparent: true, opacity: 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: T.soft, color: 0xffb060, transparent: true, opacity: REALISTIC ? 0.3 : 0.55, depthWrite: false, blending: THREE.AdditiveBlending }));
   glow.scale.set(90, 90, 1);
   place(glow, u, h + 8, 26);
   g.add(plate, arm, cup, wood, flame, glow);
@@ -356,7 +387,7 @@ function addTorch(g: THREE.Group, place: Place, u: number, h: number): { light: 
 }
 
 function addPortrait(g: THREE.Group, place: Place, u: number, h: number, seed: number): void {
-  const pic = new THREE.Mesh(new THREE.PlaneGeometry(96, 128), mat(0xffffff, { map: canvasTex(drawPortrait(seed)), roughness: 0.55 }));
+  const pic = new THREE.Mesh(new THREE.PlaneGeometry(96, 128), mat(0xffffff, { map: canvasTex(REALISTIC ? realify(drawPortrait(seed), 'paint') : drawPortrait(seed)), roughness: 0.55 }));
   place(pic, u, h, 4);
   const gold = metal(0xc9a24a, 0.35);
   const frame = new THREE.Group();
@@ -388,7 +419,7 @@ function addBanner(g: THREE.Group, place: Place, u: number, top: number, color: 
 }
 
 function addRug(g: THREE.Group, x: number, z: number, w: number, h: number, main: string, border: string, accent: string): void {
-  const rug = new THREE.Mesh(new THREE.PlaneGeometry(w, h), fabric(0xffffff, { map: canvasTex(drawCarpet(512, Math.round((512 * h) / w), main, border, accent)), sheen: 0.4 }));
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(w, h), fabric(0xffffff, { map: canvasTex(REALISTIC ? realify(drawCarpet(512, Math.round((512 * h) / w), main, border, accent), 'fabric') : drawCarpet(512, Math.round((512 * h) / w), main, border, accent)), sheen: 0.4 }));
   rug.rotation.x = -Math.PI / 2;
   rug.position.set(x, 0.8, z);
   rug.receiveShadow = true;
@@ -626,7 +657,7 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
   const rise = s.yAtMax - s.yAtMin;
   const steps = Math.max(4, Math.round(Math.abs(rise) / 18));
   const stepLen = len / steps;
-  const stoneMat = mat(0xb0a08c, { roughness: 0.85 });
+  const stoneMat = REALISTIC ? mat(0xd8d0c4, texParams(T.flag, 1.5, 0.85)) : mat(0xb0a08c, { roughness: 0.85 });
   const torches: THREE.Vector3[] = [];
   const flames: THREE.Object3D[] = [];
 
@@ -654,7 +685,7 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
     g.computeVertexNormals();
     return g;
   };
-  const sideMat = mat(0xffffff, { map: T.stone, bumpMap: T.stone, bumpScale: 3, roughness: 0.9, side: THREE.DoubleSide });
+  const sideMat = mat(0xffffff, { ...texParams(T.stone, 3, 0.9), side: THREE.DoubleSide });
   for (const z of [0, width]) {
     const bottom = -40;
     const corners = [[0, y0 + bottom, z], [len, y1 + bottom, z], [len, y1 + ceilH, z], [0, y0 + ceilH, z]];
@@ -667,7 +698,7 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
   const ceilCorners = [[0, y0 + ceilH, 0], [len, y1 + ceilH, 0], [len, y1 + ceilH, width], [0, y0 + ceilH, width]];
   const ceil = new THREE.Mesh(
     quad(ceilCorners, ceilCorners.map(([u, , w]) => [u / 600, w / 600])),
-    mat(0xffffff, { map: T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']), roughness: 0.9, side: THREE.DoubleSide }),
+    mat(0xffffff, { ...texParams(T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']), 1, 0.9), side: THREE.DoubleSide }),
   );
   local.add(ceil);
   // Une torche à mi-hauteur de chaque côté.

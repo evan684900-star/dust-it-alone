@@ -759,3 +759,11 @@ kbd {
   font: 17px var(--font-display);
   transform: rotate(-3deg);
 }
+
+/* ───────── Choix du style graphique ───────── */
+.style-switch { margin: 0 0 14px; padding: 10px 12px; border: 3px solid var(--ink); border-radius: 14px; background: #f3e3c3; }
+.style-switch > span { display: block; font: 19px var(--font-display); margin-bottom: 6px; }
+.style-switch small { display: block; margin-top: 6px; font-weight: 700; font-size: 12px; opacity: 0.8; }
+.style-buttons { display: flex; gap: 8px; }
+.style-option { flex: 1; padding: 8px; border: 3px solid var(--ink); border-radius: 12px; background: #fffaf0; font: 18px var(--font-display); color: var(--ink); cursor: pointer; }
+.style-option.selected { background: var(--apple); box-shadow: 2px 3px 0 var(--ink); }

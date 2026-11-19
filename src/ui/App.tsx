@@ -11,6 +11,7 @@ import { ROOMS } from '../data/rooms';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 import { ACHIEVEMENTS } from '../data/achievements';
+import { REALISTIC } from '../render/realistic';
 import { DIRT_ORDER, DIRT_TYPES } from '../data/dirtTypes';
 
 export function App({ game }: { game: Game }) {
@@ -321,6 +322,18 @@ function GraphicsSettings({ game }: { game: Game }) {
             <span class="q-hint">{QUALITY_HINTS[q]}</span>
           </button>
         ))}
+      </div>
+      <div class="style-switch">
+        <span>Style graphique</span>
+        <div class="style-buttons">
+          <button class={`style-option ${!REALISTIC ? 'selected' : ''}`} onClick={() => REALISTIC && game.setRealistic(false)}>
+            🎨 Dessin
+          </button>
+          <button class={`style-option ${REALISTIC ? 'selected' : ''}`} onClick={() => !REALISTIC && game.setRealistic(true)}>
+            📷 Réaliste
+          </button>
+        </div>
+        <small>Changer de style recharge la page (ta partie est sauvegardée). Le mode réaliste est un peu plus gourmand.</small>
       </div>
       <Slider label="Champ de vision" value={s.fov} min={55} max={100} step={1} show={(v) => `${v}°`} onInput={(v) => game.setSetting('fov', v)} />
       <Toggle label="Balancement de la tête en marchant" checked={s.headBob} onChange={(v) => game.setSetting('headBob', v)} />

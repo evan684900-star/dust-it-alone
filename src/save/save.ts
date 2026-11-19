@@ -33,9 +33,11 @@ export interface Settings {
   headBob: boolean;
   /** Souris inversée (haut / bas). */
   invertY: boolean;
+  /** Graphismes réalistes au lieu du style dessin (appliqué au rechargement). */
+  realistic: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { sensitivity: 1, fov: 72, volume: 0.8, voices: true, headBob: true, invertY: false };
+export const DEFAULT_SETTINGS: Settings = { sensitivity: 1, fov: 72, volume: 0.8, voices: true, headBob: true, invertY: false, realistic: false };
 
 /** Statistiques de la partie (depuis le tout début, Grands Ménages compris). */
 export interface Stats {
@@ -196,6 +198,7 @@ function cleanSettings(v: unknown): Settings {
     voices: s.voices !== false,
     headBob: s.headBob !== false,
     invertY: s.invertY === true,
+    realistic: s.realistic === true,
   };
 }
 

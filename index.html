@@ -23,8 +23,63 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@700;900&display=swap" rel="stylesheet" />
+    <style>
+      /* Écran de chargement : visible tout de suite, avant même que le jeu soit téléchargé. */
+      html, body { margin: 0; background: #1c1220; }
+      #loading {
+        position: fixed; inset: 0; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px;
+        background: radial-gradient(ellipse at 50% 40%, #4a2e3a 0%, #2a1a26 55%, #150d14 100%);
+        color: #fff1d6; font-family: Nunito, system-ui, sans-serif; overflow: hidden; transition: opacity 0.6s ease;
+      }
+      #loading.done { opacity: 0; pointer-events: none; }
+      #loading .ld-logo { font-family: 'Lilita One', system-ui, sans-serif; font-size: clamp(48px, 9vw, 104px); line-height: 1; letter-spacing: 1px; text-shadow: 5px 6px 0 #150d14; }
+      #loading .ld-logo .a { color: #ffd35a; } #loading .ld-logo .b { color: #ff7a5c; } #loading .ld-logo .c { color: #7ec8ff; }
+      #loading .ld-scene { position: relative; width: 260px; height: 90px; }
+      #loading .ld-floor { position: absolute; left: 0; right: 0; bottom: 8px; height: 4px; border-radius: 4px; background: #6a4a3a; }
+      #loading .ld-broom { position: absolute; bottom: 10px; left: 50%; width: 10px; height: 80px; transform-origin: 50% 100%; animation: ld-sweep 1.1s ease-in-out infinite alternate; }
+      #loading .ld-broom::before { content: ''; position: absolute; left: 3px; top: 0; width: 4px; height: 62px; background: #b07a44; border-radius: 3px; }
+      #loading .ld-broom::after { content: ''; position: absolute; left: -16px; bottom: 0; width: 42px; height: 18px; background: #e2b553; border-radius: 4px 4px 2px 2px; box-shadow: inset 0 4px 0 #c9372c; }
+      #loading .ld-dust { position: absolute; bottom: 12px; width: 8px; height: 8px; border-radius: 50%; background: #b7adb9; opacity: 0; animation: ld-puff 1.1s ease-out infinite; }
+      #loading .ld-dust:nth-child(3) { left: 40%; animation-delay: 0.15s; } #loading .ld-dust:nth-child(4) { left: 58%; animation-delay: 0.5s; } #loading .ld-dust:nth-child(5) { left: 47%; animation-delay: 0.8s; }
+      #loading .ld-bar { width: min(360px, 70vw); height: 14px; border: 3px solid #fff1d6; border-radius: 10px; overflow: hidden; }
+      #loading .ld-fill { height: 100%; width: 8%; background: linear-gradient(90deg, #ffd35a, #ff9a4a); transition: width 0.5s ease; }
+      #loading .ld-status { font-weight: 900; font-size: 16px; min-height: 22px; }
+      #loading .ld-tip { max-width: 480px; padding: 0 20px; text-align: center; font-weight: 700; font-size: 14px; opacity: 0.75; font-style: italic; }
+      @keyframes ld-sweep { from { transform: translateX(-60px) rotate(-14deg); } to { transform: translateX(40px) rotate(14deg); } }
+      @keyframes ld-puff { 0% { opacity: 0.9; transform: translate(0, 0) scale(0.6); } 100% { opacity: 0; transform: translate(30px, -40px) scale(1.8); } }
+    </style>
   </head>
   <body>
+    <div id="loading" role="status" aria-live="polite">
+      <div class="ld-logo"><span class="a">Dust</span> <span class="b">It</span> <span class="c">Alone</span></div>
+      <div class="ld-scene">
+        <div class="ld-floor"></div>
+        <div class="ld-broom"></div>
+        <div class="ld-dust"></div>
+        <div class="ld-dust"></div>
+        <div class="ld-dust"></div>
+      </div>
+      <div class="ld-bar"><div class="ld-fill"></div></div>
+      <div class="ld-status">Ouverture des portes du château…</div>
+      <div class="ld-tip"></div>
+    </div>
+    <script>
+      (function () {
+        var tips = [
+          'Astuce : maintiens le clic pour balayer, relâche pour lever la brosse.',
+          'Le saviez-vous ? Un mouton de poussière, ça se nourrit… de poussière.',
+          'Astuce : plus une pièce est propre, plus elle révèle de souvenirs.',
+          'Dustuce te salue de loin. Il est un peu timide.',
+          'Astuce : la touche B ouvre l’Arbre des Souvenirs.',
+          'Le château a attendu trente ans. Il peut bien attendre trois secondes.',
+        ];
+        var el = document.querySelector('#loading .ld-tip');
+        var k = Math.floor(Math.random() * tips.length);
+        function next() { el.textContent = tips[k++ % tips.length]; }
+        next();
+        window.__loadingTips = setInterval(next, 3500);
+      })();
+    </script>
     <div id="stage"></div>
     <div id="ui"></div>
     <script type="module" src="/src/main.tsx"></script>
