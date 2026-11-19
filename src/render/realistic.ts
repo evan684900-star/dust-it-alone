@@ -529,6 +529,27 @@ export const REAL_DUST_COLORS = [0xb0aaa0, 0xbdb5aa, 0xa29c93, 0xc6beb2, 0x97928
  * Rend les couleurs « dessin animé » plus naturelles : moins saturées, un peu plus sombres,
  * plus mates ; le bois des meubles reçoit une vraie texture.
  */
+/** Coordonnées de texture « par projection » (selon la face dominante), 1 unité = `scale` cm. */
+function addBoxUv(g: THREE.BufferGeometry, scale = 120): void {
+  if (g.attributes.uv) return;
+  if (!g.attributes.normal) g.computeVertexNormals();
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  const nrm = g.attributes.normal as THREE.BufferAttribute;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(nrm.getX(i));
+    const ay = Math.abs(nrm.getY(i));
+    const az = Math.abs(nrm.getZ(i));
+    const x = pos.getX(i) / scale;
+    const y = pos.getY(i) / scale;
+    const z = pos.getZ(i) / scale;
+    if (ay >= ax && ay >= az) uv.set([x, z], i * 2);
+    else if (ax >= az) uv.set([z, y], i * 2);
+    else uv.set([x, y], i * 2);
+  }
+  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
 export function naturalize(root: THREE.Object3D): void {
   const done = new Set<THREE.Material>();
   const hsl = { h: 0, s: 0, l: 0 };
@@ -536,6 +557,8 @@ export function naturalize(root: THREE.Object3D): void {
     const mesh = o as THREE.Mesh;
     if (!mesh.isMesh || (mesh as THREE.InstancedMesh).isInstancedMesh) return;
     const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    // Les boîtes arrondies n'ont pas de coordonnées de texture : on les projette.
+    if (!mesh.geometry.attributes.uv && mats.some((m) => (m as THREE.MeshStandardMaterial).isMeshStandardMaterial && !(m as THREE.MeshStandardMaterial).map)) addBoxUv(mesh.geometry);
     for (const m of mats) {
       if (done.has(m)) continue;
       done.add(m);
@@ -547,14 +570,14 @@ export function naturalize(root: THREE.Object3D): void {
       if (sm.metalness < 0.5) sm.roughness = Math.min(1, sm.roughness + 0.12);
       const phys = sm as THREE.MeshPhysicalMaterial;
       if (phys.isMeshPhysicalMaterial) phys.sheen = Math.min(phys.sheen, 0.25);
-      const stoneish = hsl.s < 0.3 && hsl.l > 0.45 && hsl.l < 0.85 && sm.metalness < 0.3 && !sm.transparent && !phys.isMeshPhysicalMaterial;
+      const stoneish = hsl.s < 0.3 && hsl.l > 0.28 && hsl.l < 0.85 && sm.metalness < 0.3 && !sm.transparent && !phys.isMeshPhysicalMaterial;
       if (stoneish && !woodish && !sm.map && mesh.geometry.attributes.uv && sm.emissiveIntensity === 1 && sm.emissive.getHex() === 0) {
         const t = propStoneTextures();
         sm.map = t.color;
         sm.bumpMap = t.bump;
         sm.bumpScale = 1.5;
         sm.roughnessMap = t.rough;
-        sm.color.setHSL(hsl.h, hsl.s * 0.3, Math.min(0.95, hsl.l * 1.25));
+        sm.color.setHSL(hsl.h, hsl.s * 0.3, Math.min(0.62, hsl.l * 0.85));
         sm.needsUpdate = true;
       }
       if (woodish && !sm.map && mesh.geometry.attributes.uv) {
