@@ -91,6 +91,8 @@ export class World3D {
     return g;
   })();
   private bunnyGeo = REALISTIC ? realBunnyTuftGeometry() : dustBunnyGeometry();
+  /** Forme pleine du mouton (silhouettes dorées des échos du passé). */
+  private plushGeo = REALISTIC ? dustBunnyGeometry() : this.bunnyGeo;
   private starGeo = starGeometry();
   /** Pour chaque type : géométrie, matériau riche, matériau simple, projette une ombre, couleurs. */
   private kinds!: Record<DirtId, { geo: THREE.BufferGeometry; rich: THREE.Material; mid: THREE.Material; big: boolean; colors?: number[] }>;
@@ -686,7 +688,13 @@ export class World3D {
     const g = new THREE.Group();
     if (kind === 'moutonnet') {
       // Un mouton de poussière doré, apprivoisé, avec un petit nœud rouge.
-      const body = new THREE.Mesh(this.bunnyGeo, fabric(0xffffff, { vertexColors: true, color: 0xffe6a8 }));
+      // Mode réaliste : une touffe de fibres dorées (texture découpée), comme les vrais moutons de poussière.
+      const body = new THREE.Mesh(
+        this.bunnyGeo,
+        REALISTIC
+          ? mat(0xe2c890, { map: realDustTexture(), alphaTest: 0.18, side: THREE.DoubleSide, roughness: 1 })
+          : fabric(0xffffff, { vertexColors: true, color: 0xffe6a8 }),
+      );
       body.scale.setScalar(24);
       body.position.y = 22;
       body.rotation.y = Math.PI;
@@ -836,7 +844,7 @@ export class World3D {
       };
       const g = new THREE.Group();
       if (kind === 'plush') {
-        const body = new THREE.Mesh(this.bunnyGeo, m());
+        const body = new THREE.Mesh(this.plushGeo, m());
         body.scale.setScalar(14);
         body.position.y = 12;
         g.add(body);
