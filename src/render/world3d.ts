@@ -1052,5 +1052,10 @@ function toLambert(m: THREE.Material): THREE.Material {
     side: sm.side,
     transparent: sm.transparent,
     opacity: sm.opacity,
+    // Sans ça, les parties transparentes (touffes, voiles de poussière) apparaissent en noir.
+    alphaTest: sm.alphaTest,
+    depthWrite: sm.depthWrite,
+    polygonOffset: sm.polygonOffset,
+    polygonOffsetFactor: sm.polygonOffsetFactor,
   });
 }
