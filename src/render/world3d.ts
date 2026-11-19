@@ -416,6 +416,7 @@ export class World3D {
       d.target = isOpen(d.def) ? 1 : 0;
       if (instant) d.open = d.target;
       d.lock.visible = d.target === 0;
+      d.lintel.visible = d.target === 0;
       d.pivot.children.forEach((c) => { if (c !== d.pivot.children[0]) c.visible = d.target === 0; });
     }
   }

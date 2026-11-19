@@ -183,7 +183,8 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
 
   // Murs de pierre, avec leurs ouvertures de portes.
   const wallTex = st.wallTex === 'stone' ? T.stone : T.darkStone;
-  const wallMat = mat(0xffffff, texParams(wallTex, 3, 0.9));
+  // Visible des deux côtés : depuis les escaliers, on voit le dos des murs (au-dessus des portes).
+  const wallMat = mat(0xffffff, { ...texParams(wallTex, 3, 0.9), side: THREE.DoubleSide });
   const wainMat = mat(0xffffff, texParams(T.planks('wainscot', ['#6a3a22', '#5e321c', '#74422a']), 1, 0.6));
   const frameMat = mat(0x5a3220, { roughness: 0.6 });
   for (const side of ['n', 's', 'w', 'e'] as Side[]) {
@@ -732,6 +733,8 @@ export interface DoorView {
   group: THREE.Group;
   pivot: THREE.Group;
   lock: THREE.Object3D;
+  /** Mur au-dessus de la porte tant qu'elle est fermée (la pièce derrière n'est pas encore dessinée). */
+  lintel: THREE.Object3D;
   /** 0 = fermée, 1 = grande ouverte. */
   open: number;
   target: number;
@@ -776,12 +779,18 @@ export function buildDoor(d: DoorDef): DoorView {
   pivot.add(lock2);
 
   g.add(pivot);
+  // Tant que la porte est verrouillée, la pièce derrière n'existe pas encore : sans ce
+  // morceau de mur, on verrait le ciel au-dessus de la porte (depuis les escaliers surtout).
+  const lintel = new THREE.Mesh(tiledPlane(width + 60, 280, STONE_TILE), mat(0xffffff, { ...texParams(T.stone, 3, 0.9), side: THREE.DoubleSide }));
+  lintel.position.set(width / 2, d.height + 140, 0);
+  lintel.receiveShadow = true;
+  g.add(lintel);
   if (d.axis === 'x') {
     g.rotation.y = -Math.PI / 2;
     g.position.set(d.at, d.floorY, d.from);
   } else {
     g.position.set(d.from, d.floorY, d.at);
   }
-  return { def: d, group: g, pivot, lock, open: 0, target: 0 };
+  return { def: d, group: g, pivot, lock, lintel, open: 0, target: 0 };
 }
 
