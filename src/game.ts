@@ -989,6 +989,8 @@ export class Game {
         net: () => ({ ...store.net.value, requests: store.netRequests.value }),
         dirt: (ri: number) => ({ ...this.rooms[ri].sim.pool.aliveCount }),
         coins: () => store.coins.value,
+        treeIds: () => TREE_NODES.map((n) => n.id),
+        active: () => [...(this.net?.activeRooms() ?? [])],
         rooms: () => ROOMS.map((r) => ({ id: r.id, name: r.name, x: r.origin.x, z: r.origin.z, w: r.width, h: r.height, y: r.floorY })),
         unlockAll: () => {
           for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
@@ -1246,12 +1248,16 @@ export class Game {
     }
     const bp = this.player.broomPoint();
     this.tickCount++;
+    // Arbre ouvert (plein écran) : on ne voit pas le château, tout est simulé « en résumé » (bien plus léger).
+    const thrifty = store.treeOpen.value;
+    // Multijoueur : les pièces où sont mes invités restent simulées à fond, même si je suis ailleurs.
+    const busy = this.net?.activeRooms();
     for (let ri = 0; ri < this.rooms.length; ri++) {
       const r = this.rooms[ri];
       if (!this.isUnlocked(r.def.id)) continue;
       const here = this.playing && bp.room === r.def;
       // Les pièces loin du joueur sont simulées 6 fois moins souvent (la poussière y retombe quand même).
-      const near = here || r.def === this.currentRoom || this.visibleIds.has(r.def.id);
+      const near = here || (!thrifty && (r.def === this.currentRoom || this.visibleIds.has(r.def.id))) || (busy?.has(ri) ?? false);
       let stepDt = dt;
       if (!near) {
         this.farDt[ri] = (this.farDt[ri] ?? 0) + dt;

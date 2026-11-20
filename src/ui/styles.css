@@ -503,7 +503,7 @@ kbd {
 }
 .tree-coins small { font: 15px var(--font-body); font-weight: 900; color: #3a8a2a; }
 .tree-close { margin-left: auto; }
-.tree-svg { position: absolute; inset: 0; width: calc(100% - 380px); height: 100%; cursor: grab; touch-action: none; }
+.tree-svg { position: absolute; inset: 0; width: calc(100% - 380px); height: 100%; cursor: grab; touch-action: none; will-change: transform; transform-origin: 50% 50%; }
 .tree-svg:active { cursor: grabbing; }
 
 .tree-branch-label { font: 30px var(--font-display); text-anchor: middle; paint-order: stroke fill; stroke: var(--ink); stroke-width: 7px; }

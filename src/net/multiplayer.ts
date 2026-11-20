@@ -135,6 +135,7 @@ export class Multiplayer {
   private pending = new Map<number, { name: string; color: string }>();
   /** Côté hôte : balai de chaque invité, par pièce. */
   private brooms = new Map<number, BroomState>();
+  private broomRoom = new Map<number, number>();
   private memories = new Map<string, { mem: SnapshotMemory; lastFull: number }>();
   private ecoTimer = 0;
   private poseTimer = 0;
@@ -418,19 +419,35 @@ export class Multiplayer {
 
   // ───────────────────────────── Chaque pas de jeu ─────────────────────────────
 
+  /** Côté hôte : pièces où se trouvent des invités (elles doivent rester simulées à pleine vitesse). */
+  activeRooms(): Set<number> {
+    const set = new Set<number>();
+    if (this.role !== 'host') return set;
+    for (const p of this.players.values()) {
+      if (!p.pose) continue;
+      const here = this.roomAt(p.pose.x, p.pose.z, p.pose.y);
+      if (here >= 0) set.add(here);
+      if (p.pose.broomRoom >= 0) set.add(p.pose.broomRoom);
+    }
+    return set;
+  }
+
   /** Côté hôte, avant de simuler une pièce : les balais des invités qui sont dedans. */
   applyRemoteBrooms(roomIndex: number, sim: RoomSim, dt: number): void {
     if (this.role !== 'host') return;
     const def = this.game.rooms[roomIndex].def;
     for (const p of this.players.values()) {
       const pose = p.pose;
-      if (!pose || pose.broomRoom !== roomIndex) {
-        const old = this.brooms.get(p.slot);
-        if (old) old.prev.has = false;
-        continue;
-      }
+      // On ne s'occupe que de la pièce où se trouve le balai de ce joueur
+      // (surtout ne pas « oublier » son mouvement en passant sur les autres pièces : sinon il ne pousse plus rien).
+      if (!pose || pose.broomRoom !== roomIndex) continue;
       let st = this.brooms.get(p.slot);
       if (!st) this.brooms.set(p.slot, (st = newBroomState()));
+      // Le balai vient de changer de pièce : on repart de zéro (pas de « saut » d'une pièce à l'autre).
+      if (this.broomRoom.get(p.slot) !== roomIndex) {
+        st.prev.has = false;
+        this.broomRoom.set(p.slot, roomIndex);
+      }
       const input: BroomInput = { active: true, x: pose.bx - def.origin.x, y: pose.bz - def.origin.z, pressed: pose.pressed, yaw: pose.yaw, tool: pose.tool };
       sim.applyRemote(dt, input, st, p.slot, { width: pose.width, depth: pose.depth, grip: pose.grip });
     }

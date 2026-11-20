@@ -64,7 +64,13 @@ test('héberger, voir la partie en ligne, demander, accepter, jouer ensemble', a
   const gd = (await dust(guest, 'dirt', 0)) as Record<string, number>;
   expect(Math.abs(hd.dust - gd.dust)).toBeLessThan(hd.dust * 0.05 + 10);
 
-  // L'invité balaie vers une pelle : il gagne des pièces (comptées avec ses améliorations).
+  // L'hôte part dans une autre pièce : l'invité doit pouvoir continuer à nettoyer les combles.
+  await dust(host, 'unlockAll');
+  const rooms = (await dust(host, 'rooms')) as { id: string; x: number; z: number; w: number; h: number; y: number }[];
+  const gallery = rooms.find((r) => r.id === 'gallery')!;
+  await dust(host, 'teleport', gallery.x + gallery.w / 2, gallery.z + gallery.h / 2, gallery.y, 0, -0.3);
+  await host.waitForTimeout(1500);
+  // L'invité balaie vers une pelle : la cagnotte du monde augmente.
   const before = (await dust(guest, 'coins')) as number;
   await dust(guest, 'teleport', 700, 675, 400, Math.PI / 2, -0.6);
   await dust(guest, 'press', true);

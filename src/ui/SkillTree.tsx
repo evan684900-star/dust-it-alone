@@ -62,10 +62,39 @@ export function SkillTree({ game }: { game: Game }) {
   const [hovered, setHovered] = useState<string | null>(null);
   // Vue (déplacement / zoom) : appliquée directement à l'image, sans tout redessiner.
   const view = useRef({ x: 0, y: 0, k: 0.6 });
+  /** Vue réellement dessinée dans le SVG (la « vue » ci-dessus peut être en avance pendant un geste). */
+  const drawn = useRef({ x: 0, y: 0, k: 0.6 });
+  const commitTimer = useRef(0);
+  /** Pixels par unité du dessin (mesuré une fois, puis à chaque redimensionnement : lire la taille à chaque mouvement ferait ramer). */
+  const pxPerUnit = useRef(0.6);
+  useEffect(() => {
+    const measure = () => {
+      const svg = svgRef.current;
+      if (svg) pxPerUnit.current = Math.min(svg.clientWidth / 1520, svg.clientHeight / 1280) || 0.6;
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
   const gRef = useRef<SVGGElement>(null);
   const setView = (v: { x: number; y: number; k: number } | ((v: { x: number; y: number; k: number }) => { x: number; y: number; k: number })) => {
     view.current = typeof v === 'function' ? v(view.current) : v;
-    gRef.current?.setAttribute('transform', tf(view.current));
+    // Pendant le geste, on déplace l'image déjà dessinée (la carte graphique le fait presque gratuitement)…
+    const svg = svgRef.current;
+    if (svg) {
+      const s = pxPerUnit.current;
+      const r = view.current.k / drawn.current.k;
+      const tx = s * (view.current.x - r * drawn.current.x);
+      const ty = s * (view.current.y - r * drawn.current.y);
+      svg.style.transform = `translate(${tx}px, ${ty}px) scale(${r})`;
+    }
+    // … et on ne redessine l'arbre, net, qu'une fois le geste terminé.
+    clearTimeout(commitTimer.current);
+    commitTimer.current = window.setTimeout(() => {
+      drawn.current = { ...view.current };
+      gRef.current?.setAttribute('transform', tf(drawn.current));
+      if (svgRef.current) svgRef.current.style.transform = '';
+    }, 220);
   };
   void GOLD_RING_DEPTH;
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
@@ -166,10 +195,12 @@ export function SkillTree({ game }: { game: Game }) {
                 class={`tree-node ${state} ${n.kind} ${isSel ? 'selected' : ''}`}
                 transform={`translate(${p.x.toFixed(1)} ${p.y.toFixed(1)})`}
                 onPointerEnter={() => {
+                  // Pendant qu'on fait glisser l'arbre, on ne réagit pas au survol (sinon ça rame).
+                  if (drag.current?.moved) return;
                   setHovered(n.id);
                   sfx.hover();
                 }}
-                onPointerLeave={() => setHovered(null)}
+                onPointerLeave={() => !drag.current?.moved && setHovered(null)}
                 onContextMenu={(e) => {
                   // Clic droit : rembourser un niveau.
                   e.preventDefault();
@@ -239,7 +270,7 @@ export function SkillTree({ game }: { game: Game }) {
         onPointerMove={(e) => {
           const d = drag.current;
           if (!d) return;
-          const sc = 1520 / (svgRef.current?.clientWidth || 1520) / view.current.k;
+          const sc = 1 / pxPerUnit.current / view.current.k;
           const dx = (e.clientX - d.x) * sc;
           const dy = (e.clientY - d.y) * sc;
           if (!d.moved && Math.abs(dx) + Math.abs(dy) > 6) {
@@ -263,7 +294,7 @@ export function SkillTree({ game }: { game: Game }) {
             <stop offset="1" stop-color="#fff3c4" stop-opacity="0" />
           </radialGradient>
         </defs>
-        <g ref={gRef} transform={tf(view.current)}>
+        <g ref={gRef} transform={tf(drawn.current)}>
           {graph}
         </g>
       </svg>

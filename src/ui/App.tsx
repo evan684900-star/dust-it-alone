@@ -18,7 +18,7 @@ import { DIRT_ORDER, DIRT_TYPES } from '../data/dirtTypes';
 export function App({ game }: { game: Game }) {
   return (
     <>
-      {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
+      {store.started.value ? !store.treeOpen.value && <Hud game={game} /> : <TitleScreen game={game} />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <Crosshair />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <DoorPrompt />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.inventoryOpen.value && store.chestPrompt.value && (
