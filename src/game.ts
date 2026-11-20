@@ -11,7 +11,7 @@ import { createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSa
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
-import { availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
+import { setPriceMultiplier, availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { StoryDirector, playLines } from './story/director';
 import { EventDirector, type EventKind } from './story/events';
@@ -246,6 +246,7 @@ export class Game {
   /** Recalcule et applique tous les effets de l'arbre (après un achat, une porte, une pièce impeccable…). */
   private applyTree(): void {
     this.mods = computeModifiers(this.save.tree, this.cleanedCount(), this.save.sparks);
+    setPriceMultiplier(this.mods.priceMult);
     this.rooms.forEach((r, i) => {
       const m = this.mods.room(r.def.id, r.def.valueMult);
       r.sim.applyModifiers(m);
@@ -400,6 +401,7 @@ export class Game {
     if (!r.ok) {
       this.synth.denied();
       if (r.reason === 'needed') store.pushToast('Impossible de rembourser', `« ${r.detail} » a besoin de ce niveau : rembourse-le d'abord.`, 3000);
+      if (r.reason === 'final') store.pushToast('Non remboursable', 'Le Marchandage de Plume est définitif (sinon on pourrait racheter moins cher pour revendre plus cher).', 3000);
       return false;
     }
     const lvl = treeLevel(this.save.tree, id) - 1;

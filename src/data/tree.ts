@@ -32,10 +32,13 @@ export type StatKey =
   | 'duster' | 'sponge' | 'blower' | 'vacuumCap'
   | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours'
   | 'startCoins' | 'keepHelpers' | 'keepRooms' | 'sparkGain'
-  | 'starRain' | 'feet' | 'handpan' | 'whirl';
+  | 'starRain' | 'feet' | 'handpan' | 'whirl'
+  | 'discount';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
+  /** Non remboursable (le Marchandage : sinon on rachèterait moins cher pour revendre plus cher). */
+  noRefund?: boolean;
   id: string;
   name: string;
   icon: string;
@@ -254,6 +257,13 @@ const MEMORY: TreeNode[] = [
     effect: (per, l) => `+${per} par mouton et par niveau (+${per * l})`,
     requires: (t) => (t === 0 ? { room: 'gallery' } : undefined),
   }),
+  // Marchandage : toutes les améliorations coûtent moins cher (pas l'anneau doré). Non remboursable.
+  ...chain({
+    prefix: 'haggle', name: 'Marchandage de Plume', icon: '🏷️', branch: 'memory', root: 'value-2', tiers: 3, levels: 5,
+    base: 15000, tierMult: 200, growth: 2.1, per: () => 0.02, key: 'discount', mode: 'add', depth0: 3, side: -2.4, drift: -0.4,
+    flavors: ['Plume connaît les marchands du coin. Et leurs petits secrets.', 'Un sourire, un compliment, et hop : un rabais.', 'Même les fantômes lui font des prix d’ami.'],
+    effect: (per, l) => `Toutes les améliorations coûtent ${pct(per)} de moins par niveau (−${pct(per * l)}). Non remboursable.`,
+  }),
   { id: 'star-rain', name: 'Pluie d’étoiles', icon: '🌠', branch: 'memory', kind: 'big', parents: ['star-luck-3'], maxLevel: 1, base: 3e6, growth: 1, depth: 5, side: 1.8, stats: [{ key: 'starRain', per: 1, mode: 'add' }],
     flavor: 'Parfois, le ciel se souvient aussi.', effect: () => 'Débloque l’événement « pluie d’étoiles »' },
   { id: 'memory-heart', name: 'Cœur de mémoire', icon: '💖', branch: 'memory', kind: 'big', parents: ['value-8'], maxLevel: 1, base: 2e10, growth: 1, depth: 9.2, side: 0,
@@ -419,8 +429,9 @@ const CASTLE: TreeNode[] = [
  */
 export const COST_SCALE = 1.0;
 
-export const TREE_NODES: TreeNode[] = [...BROOM, ...PICKUP, ...MEMORY, ...PLUME, ...JUNCTIONS, ...HELPERS, ...CASTLE].map((n) => ({
+export const TREE_NODES: TreeNode[] = [...BROOM, ...PICKUP, ...MEMORY, ...PLUME, ...JUNCTIONS, ...HELPERS, ...CASTLE].map((n): TreeNode => ({
   ...n,
+  noRefund: n.stats.some((st) => st.key === 'discount') || n.noRefund,
   base: n.base * COST_SCALE,
 })).concat(GOLD);
 export const NODE_BY_ID = new Map(TREE_NODES.map((n) => [n.id, n]));

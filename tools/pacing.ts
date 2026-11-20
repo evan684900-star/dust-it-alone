@@ -12,7 +12,7 @@
  */
 import { ROOMS } from '../src/data/rooms';
 import { TREE_NODES } from '../src/data/tree';
-import { availability, cost, type TreeLevels } from '../src/economy/tree';
+import { availability, cost, setPriceMultiplier, type TreeLevels } from '../src/economy/tree';
 import { computeModifiers } from '../src/economy/modifiers';
 
 export interface PacingResult {
@@ -48,6 +48,7 @@ export function simulate(maxHours = 40): PacingResult {
     (n) => n.currency !== 'sparks' && !(n.requires && 'soon' in n.requires) && !(n.requires && 'room' in n.requires && !roomIds.has(n.requires.room)) && n.id !== 'broom-precise',
   );
   let mods = computeModifiers(levels, 0);
+  setPriceMultiplier(1);
   const incomeByHour: number[] = [];
   const finish = (end: number): PacingResult => ({
     doors, treeDone, end, purchases, incomeByHour,
@@ -93,6 +94,7 @@ export function simulate(maxHours = 40): PacingResult {
         cleaned.add(r.id);
         coins += Math.max(250, r.price * 0.5) * mods.cleanBonusMult(r.id);
         mods = computeModifiers(levels, cleaned.size);
+        setPriceMultiplier(mods.priceMult);
       }
     }
     coins += best ? best.rate : 0;
@@ -119,6 +121,7 @@ export function simulate(maxHours = 40): PacingResult {
       levels[pick.id] = (levels[pick.id] ?? 0) + 1;
       purchases++;
       mods = computeModifiers(levels, cleaned.size);
+      setPriceMultiplier(mods.priceMult);
     }
     if (treeDone < 0 && nodesToBuy.every((n) => (levels[n.id] ?? 0) >= n.maxLevel)) treeDone = t;
     if (!nextDoor && treeDone >= 0) return finish(t);

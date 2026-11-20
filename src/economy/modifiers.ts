@@ -52,6 +52,8 @@ export interface Modifiers {
   offline: { eff: number; hours: number };
   /** Ce que garde / donne le Grand Ménage (anneau doré). */
   prestige: { startCoins: number; keepHelpers: boolean; keepRooms: number; sparkGain: number };
+  /** Multiplicateur des prix de l'arbre (Marchandage) : 1 = plein tarif, 0,7 = −30 %. */
+  priceMult: number;
   /** Événements débloqués dans l'arbre. */
   events: { starRain: boolean };
   /** Multiplicateur du bonus « pièce impeccable » pour une pièce. */
@@ -134,6 +136,7 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number, spark
       feet: A('feet') > 0,
     },
     events: { starRain: A('starRain') > 0 },
+    priceMult: Math.max(0.5, 1 - A('discount')),
     cleanBonusMult: (roomId) => ((roomAdd.get(roomId)?.echo ?? 0) > 0 ? 2 : 1),
   };
 }

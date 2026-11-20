@@ -20,9 +20,16 @@ export function level(levels: TreeLevels, id: string): number {
   return levels[id] ?? 0;
 }
 
+/** Réduction de prix du Marchandage (1 = plein tarif). Ne touche pas l'anneau doré (Étincelles). */
+let priceMult = 1;
+export function setPriceMultiplier(m: number): void {
+  priceMult = Math.max(0.5, Math.min(1, m));
+}
+
 /** Prix du prochain niveau (à partir du niveau `lvl`). */
 export function cost(node: TreeNode, lvl: number): number {
-  return niceRound(node.base * Math.pow(node.growth, lvl));
+  const m = node.currency === 'sparks' ? 1 : priceMult;
+  return niceRound(node.base * Math.pow(node.growth, lvl) * m);
 }
 
 /** Prix total de `n` niveaux à partir du niveau `lvl`. */
@@ -94,7 +101,7 @@ export function refundFork(node: TreeNode, levels: TreeLevels): { refund: number
   return { refund: 0, removed: null };
 }
 
-export type RefundCheck = { ok: true; amount: number } | { ok: false; reason: 'empty' | 'needed'; detail?: string };
+export type RefundCheck = { ok: true; amount: number } | { ok: false; reason: 'empty' | 'needed' | 'final'; detail?: string };
 
 /**
  * Peut-on rembourser un niveau de ce nœud ? On récupère exactement le prix payé
@@ -104,6 +111,7 @@ export type RefundCheck = { ok: true; amount: number } | { ok: false; reason: 'e
 export function canRefund(node: TreeNode, levels: TreeLevels): RefundCheck {
   const lvl = level(levels, node.id);
   if (lvl <= 0) return { ok: false, reason: 'empty' };
+  if (node.noRefund) return { ok: false, reason: 'final' };
   const after = lvl - 1;
   for (const child of NODE_BY_ID.values()) {
     if (!child.parents.includes(node.id) || level(levels, child.id) <= 0) continue;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { COST_SCALE, NODE_BY_ID, TREE_NODES } from '../../src/data/tree';
-import { availability, canRefund, cost, costForN, maxAffordable, niceRound, refundFork, sparksFor } from '../../src/economy/tree';
+import { availability, canRefund, cost, costForN, maxAffordable, niceRound, refundFork, setPriceMultiplier, sparksFor } from '../../src/economy/tree';
 import { computeModifiers } from '../../src/economy/modifiers';
 import { migrate } from '../../src/save/save';
 
@@ -148,5 +148,32 @@ describe('Grand Ménage', () => {
   it('la sauvegarde garde les Étincelles', () => {
     const d = migrate({ sparks: 42, prestiges: 2, runCoins: 1e9 });
     expect([d.sparks, d.prestiges, d.runCoins]).toEqual([42, 2, 1e9]);
+  });
+});
+
+describe('Marchandage de Plume (prix réduits)', () => {
+  it('chaque niveau baisse le prix des améliorations de 2 %, jusqu’à −30 %', () => {
+    expect(computeModifiers({}, 0).priceMult).toBe(1);
+    expect(computeModifiers({ 'haggle-1': 5 }, 0).priceMult).toBeCloseTo(0.9);
+    expect(computeModifiers({ 'haggle-1': 5, 'haggle-2': 5, 'haggle-3': 5 }, 0).priceMult).toBeCloseTo(0.7);
+    const n = node('value-3');
+    const full = cost(n, 0);
+    setPriceMultiplier(0.7);
+    try {
+      expect(cost(n, 0)).toBeLessThan(full * 0.75);
+      // L'anneau doré (payé en Étincelles) n'est pas concerné.
+      const gold = TREE_NODES.find((x) => x.currency === 'sparks')!;
+      setPriceMultiplier(1);
+      const g = cost(gold, 0);
+      setPriceMultiplier(0.7);
+      expect(cost(gold, 0)).toBe(g);
+    } finally {
+      setPriceMultiplier(1);
+    }
+  });
+  it('le Marchandage n’est pas remboursable (sinon on revendrait plus cher)', () => {
+    expect(node('haggle-1').noRefund).toBe(true);
+    expect(canRefund(node('haggle-1'), { 'haggle-1': 2 })).toMatchObject({ ok: false, reason: 'final' });
+    expect(canRefund(node('value-1'), { 'value-1': 2 }).ok).toBe(true);
   });
 });
