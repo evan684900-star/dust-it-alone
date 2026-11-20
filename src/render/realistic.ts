@@ -14,7 +14,8 @@ export const REALISTIC = (() => {
   if (q === 'real') return true;
   if (q === 'cartoon') return false;
   try {
-    const raw = localStorage.getItem('dust-it-alone:save');
+    const id = localStorage.getItem('dust-it-alone:current') || 'main';
+    const raw = localStorage.getItem(id === 'main' ? 'dust-it-alone:save' : `dust-it-alone:world:${id}`);
     return raw ? JSON.parse(raw)?.settings?.realistic === true : false;
   } catch {
     return false;

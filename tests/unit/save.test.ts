@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { loadSave, migrate, SAVE_KEY, writeSave } from '../../src/save/save';
+import { createWorld, currentWorld, deleteWorld, listWorlds, loadSave, migrate, renameWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
 
 function memoryStore() {
   const m = new Map<string, string>();
@@ -59,5 +59,46 @@ describe('poussière restante', () => {
   it('une valeur abîmée est ignorée (la pièce repart pleine plutôt que de planter)', () => {
     const d = migrate({ rooms: { attic: { unlocked: true, dirt: { dust: 'beaucoup', bunny: 1, star: 0 } } } });
     expect(d.rooms.attic.dirt).toBeUndefined();
+  });
+});
+
+describe('Mondes (plusieurs sauvegardes)', () => {
+  const mem = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), m };
+  };
+  it('l’ancienne sauvegarde unique devient le monde « Mon château »', () => {
+    const s = mem();
+    s.setItem('dust-it-alone:save', JSON.stringify({ ...migrate(null), coins: 77 }));
+    const list = listWorlds(s);
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ id: 'main', name: 'Mon château', coins: 77, multiplayer: false });
+    expect(loadSave(s).coins).toBe(77);
+  });
+  it('on crée plusieurs mondes, chacun avec sa sauvegarde, et on passe de l’un à l’autre', () => {
+    const s = mem();
+    const a = createWorld('Le premier', false, true, null, s);
+    writeSave({ ...loadSave(s), coins: 5 }, s);
+    const b = createWorld('Avec les copains', true, false, null, s);
+    expect(currentWorld(s)).toBe(b);
+    expect(loadSave(s).coins).toBe(0);
+    expect(loadSave(s).world).toEqual({ name: 'Avec les copains', multiplayer: true, isPublic: false });
+    writeSave({ ...loadSave(s), coins: 9 }, s);
+    setCurrentWorld(a, s);
+    expect(loadSave(s).coins).toBe(5);
+    const list = listWorlds(s);
+    expect(list.map((w) => w.name).sort()).toEqual(['Avec les copains', 'Le premier']);
+    expect(list.find((w) => w.id === b)).toMatchObject({ coins: 9, multiplayer: true });
+  });
+  it('effacer et renommer un monde', () => {
+    const s = mem();
+    const a = createWorld('A', false, true, null, s);
+    const b = createWorld('B', false, true, null, s);
+    renameWorld(a, 'Alpha', s);
+    expect(listWorlds(s).find((w) => w.id === a)?.name).toBe('Alpha');
+    deleteWorld(b, s);
+    expect(listWorlds(s).map((w) => w.id)).toEqual([a]);
+    expect(currentWorld(s)).toBe(a);
+    expect(s.getItem(worldKey(b))).toBeNull();
   });
 });

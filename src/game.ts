@@ -7,7 +7,7 @@ import { sfx } from './audio/synth';
 import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { exportSave, importSave, loadSave, writeSave, type SaveData, type Settings } from './save/save';
+import { createWorld, currentWorld, deleteWorld, exportSave, importSave, listWorlds, loadSave, renameWorld, setCurrentWorld, writeSave, type SaveData, type Settings } from './save/save';
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
@@ -52,8 +52,6 @@ export class Game {
   net!: Multiplayer;
   /** Invité chez un ami : les pièces ouvertes de son château. */
   private hostUnlocked: Set<string> | null = null;
-  /** Mon château tel qu'il était avant la visite (pour ne pas l'écraser en sauvegardant). */
-  private preVisit: { rooms: SaveData['rooms']; player: SaveData['player'] } | null = null;
   private treeOpened = false;
   private albumOpened = false;
   private journalOpened = false;
@@ -154,6 +152,16 @@ export class Game {
     this.tips = this.makeTips();
     this.net = new Multiplayer(this.mpGame());
     this.net.publish();
+    this.refreshWorlds();
+    // On vient de choisir un monde sur l'écran d'accueil : on y entre directement.
+    try {
+      if (sessionStorage.getItem('dust-it-alone:enter')) {
+        sessionStorage.removeItem('dust-it-alone:enter');
+        setTimeout(() => this.start(), 300);
+      }
+    } catch {
+      /* rien */
+    }
     try {
       const why = sessionStorage.getItem('dust-it-alone:netReason');
       if (why) {
@@ -255,7 +263,7 @@ export class Game {
   }
 
   private treeState() {
-    return { levels: this.save.tree, roomUnlocked: (id: string) => this.ownUnlocked(id) };
+    return { levels: this.save.tree, roomUnlocked: (id: string) => this.isUnlocked(id) };
   }
 
   /** Y a-t-il au moins un nœud qu'on peut se payer ? (pastille sur le bouton de l'arbre) */
@@ -330,6 +338,16 @@ export class Game {
   buyNode(id: string, n: number): number {
     const node = NODE_BY_ID.get(id);
     if (!node) return 0;
+    // Monde partagé : c'est l'hôte qui achète avec l'argent du monde.
+    if (this.visiting) {
+      if (node.currency === 'sparks') {
+        store.pushToast('L’anneau doré', 'Les Étincelles se dépensent chez l’hôte, dans son Grand Ménage.', 2500);
+        return 0;
+      }
+      this.net.request({ t: 'buy', id, n });
+      this.synth.buy(node.depth, 1);
+      return 0;
+    }
     const st = this.treeState();
     const a = availability(node, st);
     // Fourche : on peut changer d'avis gratuitement (l'autre choix est remboursé).
@@ -373,6 +391,10 @@ export class Game {
   refundNode(id: string): boolean {
     const node = NODE_BY_ID.get(id);
     if (!node) return false;
+    if (this.visiting) {
+      this.net.request({ t: 'refund', id });
+      return false;
+    }
     const r = canRefund(node, this.save.tree);
     if (!r.ok) {
       this.synth.denied();
@@ -426,6 +448,86 @@ export class Game {
     store.mapOpen.value = false;
     store.treeOpen.value = false;
     this.lockPointer();
+    // Monde ouvert au multijoueur : on ouvre la partie dès qu'on y entre.
+    if (this.save.world.multiplayer && !this.visiting && this.net.role === 'off') {
+      this.net.isPublic = this.save.world.isPublic;
+      void this.net.host();
+    }
+  }
+
+  // ───────────────────────────── Mondes ─────────────────────────────
+
+  /** Rafraîchit la liste des mondes affichée sur l'écran d'accueil. */
+  refreshWorlds(): void {
+    store.worlds.value = listWorlds();
+    store.currentWorld.value = currentWorld();
+    store.world.value = { ...this.save.world };
+  }
+
+  /** Joue un monde : celui qui est chargé démarre tout de suite, un autre recharge la page. */
+  playWorld(id: string): void {
+    if (id === currentWorld()) {
+      this.persist();
+      this.start();
+      return;
+    }
+    this.persist();
+    setCurrentWorld(id);
+    this.reloadInto();
+  }
+
+  /** Crée un monde et y entre. */
+  newWorld(name: string, multiplayer: boolean, isPublic: boolean): void {
+    // Tout premier lancement : le monde chargé est encore vierge, on le baptise simplement.
+    if (listWorlds().length === 0) {
+      this.save.world = { name: name.trim().slice(0, 32) || 'Mon château', multiplayer, isPublic };
+      this.persist();
+      this.refreshWorlds();
+      this.start();
+      return;
+    }
+    this.persist();
+    createWorld(name, multiplayer, isPublic, this.save.settings);
+    this.reloadInto();
+  }
+
+  removeWorld(id: string): void {
+    const loaded = id === currentWorld();
+    if (loaded) this.prestiging = true;
+    deleteWorld(id);
+    if (loaded) location.reload();
+    else this.refreshWorlds();
+  }
+
+  renameWorldTo(id: string, name: string): void {
+    if (id === currentWorld()) {
+      this.save.world.name = name.trim().slice(0, 32) || this.save.world.name;
+      this.persist();
+    } else renameWorld(id, name);
+    this.refreshWorlds();
+  }
+
+  /** Ouvre (ou ferme) ce monde au multijoueur : argent et améliorations partagés avec les invités. */
+  setWorldMultiplayer(multiplayer: boolean, isPublic: boolean): void {
+    if (this.visiting) return;
+    this.save.world.multiplayer = multiplayer;
+    this.save.world.isPublic = isPublic;
+    this.persist();
+    this.refreshWorlds();
+    if (multiplayer) {
+      this.net.setPublic(isPublic);
+      if (this.net.role === 'off' && store.started.value) void this.net.host();
+    } else if (this.net.role === 'host') this.net.leave('');
+  }
+
+  private reloadInto(): void {
+    this.prestiging = true;
+    try {
+      sessionStorage.setItem('dust-it-alone:enter', '1');
+    } catch {
+      /* rien */
+    }
+    location.reload();
   }
 
   private lockPointer(): void {
@@ -514,16 +616,9 @@ export class Game {
     return true;
   }
 
-  /** Efface toute la partie (après confirmation dans l'interface). */
+  /** Efface ce monde (après confirmation dans l'interface). */
   wipeSave(): void {
-    this.prestiging = true;
-    try {
-      localStorage.removeItem('dust-it-alone:save');
-      localStorage.removeItem('dust-it-alone:save:backup');
-    } catch {
-      /* rien */
-    }
-    location.reload();
+    this.removeWorld(currentWorld());
   }
 
   /** Écran multijoueur (liste des parties, héberger, rejoindre). */
@@ -566,7 +661,6 @@ export class Game {
       startVisit: (host, unlocked, spawn) => {
         // On met mon château de côté : il ne sera pas modifié par la visite.
         this.persist();
-        this.preVisit = { rooms: JSON.parse(JSON.stringify(this.save.rooms)), player: this.save.player ? { ...this.save.player } : null };
         this.hostUnlocked = new Set(unlocked);
         this.applyTree();
         // La poussière de l'hôte va arriver : on vide mes pièces en attendant.
@@ -578,7 +672,7 @@ export class Game {
         this.updatePlace(true);
         this.publishCastle();
         store.netOpen.value = false;
-        store.pushToast(`🏰 Chez ${host}`, 'Tu balaies dans son château : la poussière que tu pousses te rapporte des pièces, avec tes propres améliorations.', 6000);
+        store.pushToast(`🏰 Chez ${host}`, 'Monde partagé : l’argent et les améliorations sont ceux de son monde. Tout ce que vous ramassez va dans la même cagnotte !', 6000);
         this.synth.unlockDoor();
         this.start();
       },
@@ -590,7 +684,6 @@ export class Game {
         this.publishCastle();
       },
       endVisit: (reason) => {
-        this.persist();
         this.prestiging = true;
         try {
           sessionStorage.setItem('dust-it-alone:netReason', reason || 'Tu es revenu dans ton château.');
@@ -599,19 +692,33 @@ export class Game {
         }
         location.reload();
       },
-      creditGrains: (ri, counts) => {
-        const r = this.rooms[ri];
-        if (!r) return;
-        // Je compte les grains avec MES améliorations pour cette pièce.
-        let coins = 0;
-        let n = 0;
-        for (const [type, c] of Object.entries(counts) as [DirtId, number][]) {
-          coins += r.sim.baseValue(type) * r.sim.mods.valueMultiplier * c;
-          n += c;
-          this.save.stats.grains[type] = (this.save.stats.grains[type] ?? 0) + c;
+      economy: () => ({ coins: store.coins.value, total: store.totalCoins.value, cps: store.coinsPerSecond.value, sparks: this.save.sparks, tree: { ...this.save.tree } }),
+      applyEconomy: (e) => {
+        // Invité : l'argent et l'arbre affichés sont ceux du monde de l'hôte.
+        store.coins.value = e.coins;
+        store.totalCoins.value = e.total;
+        store.coinsPerSecond.value = e.cps;
+        this.save.sparks = e.sparks;
+        store.sparks.value = e.sparks;
+        const key = JSON.stringify(e.tree);
+        if (key !== JSON.stringify(this.save.tree)) {
+          this.save.tree = { ...e.tree };
+          this.applyTree();
+          this.storeNewTools(true);
         }
-        this.earn(coins);
-        if (r.def === this.currentRoom && n) this.synth.collect(counts.star ? 'star' : 'dust', 0, n);
+        this.refreshBuyable();
+      },
+      hostBuy: (id, n, who) => {
+        const node = NODE_BY_ID.get(id);
+        if (node && this.buyNode(id, n) > 0) store.pushToast(`🛒 ${who}`, `a acheté « ${node.name} » avec l’argent du monde.`, 3000);
+      },
+      hostRefund: (id, who) => {
+        const node = NODE_BY_ID.get(id);
+        if (node && this.refundNode(id)) store.pushToast(`↩️ ${who}`, `a remboursé un niveau de « ${node.name} ».`, 3000);
+      },
+      hostUnlock: (roomId, who) => {
+        const room = roomById(roomId);
+        if (room && !this.isUnlocked(room.id) && this.unlockRoom(room)) store.pushToast(`🔓 ${who}`, `a ouvert ${room.name} avec l’argent du monde !`, 4000);
       },
       toast: (title, text) => store.pushToast(title, text, 4000),
       sound: (kind) => (kind === 'leave' ? this.synth.close() : kind === 'request' ? this.synth.chime() : this.synth.fanfare()),
@@ -1084,11 +1191,6 @@ export class Game {
   private tryUnlock(): void {
     const d = this.nav.lockedDoorNear(this.player.x, this.player.z, this.player.y);
     if (!d || !d.room) return;
-    if (this.visiting) {
-      store.pushToast('Ce n’est pas ton château 🙂', 'Seul l’hôte peut ouvrir ses portes.', 2500);
-      this.synth.denied();
-      return;
-    }
     const room = roomById(d.room)!;
     if (room.id === 'throne' && !this.director.throneOpenable()) {
       store.pushToast('La porte ne bouge pas…', `Elle s'ouvrira quand le château se souviendra assez : ${this.director.souvenirCount()} / ${THRONE_SOUVENIRS} souvenirs.`, 3500);
@@ -1100,6 +1202,18 @@ export class Game {
       this.synth.denied();
       return;
     }
+    // Monde partagé : l'hôte ouvre la porte avec l'argent du monde.
+    if (this.visiting) {
+      this.net.request({ t: 'unlock', room: room.id });
+      return;
+    }
+    this.unlockRoom(room);
+  }
+
+  /** Ouvre une pièce (moi, ou un invité avec l'argent du monde). Renvoie vrai si c'est fait. */
+  private unlockRoom(room: RoomDef): boolean {
+    if (room.id === 'throne' && !this.director.throneOpenable()) return false;
+    if (store.coins.value < room.price) return false;
     store.coins.value -= room.price;
     this.save.rooms[room.id] = { unlocked: true, cleaned: false };
     this.save.stats.doors++;
@@ -1111,6 +1225,8 @@ export class Game {
     this.publishCastle();
     this.applyTree();
     this.persist();
+    this.net?.pushEconomy();
+    return true;
   }
 
   // ───────────────────────────── Boucle ─────────────────────────────
@@ -1162,13 +1278,7 @@ export class Game {
       let gained = 0;
       const counts: Partial<Record<DirtId, number>> = {};
       for (const e of events) {
-        // Multijoueur : un grain poussé par un invité lui revient (il le compte avec ses améliorations).
-        if (e.owner && this.net?.role === 'host') {
-          this.net.credit(e.owner, ri, e.type);
-          this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', { ...e, byHelper: true });
-          continue;
-        }
-        // En visite, c'est l'hôte qui décide de ce qui est ramassé (il nous l'envoie).
+        // En visite, c'est l'hôte qui ramasse pour de vrai (l'argent du monde est chez lui).
         if (this.visiting) {
           this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', { ...e, byHelper: true });
           continue;
@@ -1193,6 +1303,8 @@ export class Game {
   }
 
   private earn(amount: number): void {
+    // En visite, l'argent est celui du monde de l'hôte (il nous l'envoie).
+    if (this.visiting) return;
     this.save.runCoins += amount;
     store.coins.value += amount;
     store.totalCoins.value += amount;
@@ -1286,7 +1398,7 @@ export class Game {
     if (now - this.windowStart >= 1000) {
       this.windowStart = now;
       const w = this.earnedWindow;
-      store.coinsPerSecond.value = w.reduce((a, b) => a + b, 0) / w.length;
+      if (!this.visiting) store.coinsPerSecond.value = w.reduce((a, b) => a + b, 0) / w.length;
       this.save.stats.bestRate = Math.max(this.save.stats.bestRate, store.coinsPerSecond.value);
       if (store.started.value) this.checkAchievements();
       w.shift();
@@ -1345,22 +1457,19 @@ export class Game {
   }
 
   private persist(): void {
-    if (this.prestiging) return;
+    // En visite, rien de ce qui se passe chez l'ami ne touche à mes mondes.
+    if (this.prestiging || this.visiting) return;
     const p = this.player;
     // Poussière restante de chaque pièce ouverte.
     for (const r of this.rooms) {
       const rs = this.save.rooms[r.def.id];
       if (rs?.unlocked) rs.dirt = r.sim.dirtCounts();
     }
-    // En visite chez un ami : on garde mon château tel quel (seuls mes pièces, ma progression et mes stats changent).
-    if (this.preVisit) {
-      this.save.rooms = this.preVisit.rooms;
-    }
     this.save = {
       ...this.save,
       coins: store.coins.value,
       totalCoins: store.totalCoins.value,
-      player: this.preVisit ? this.preVisit.player : { x: p.x, z: p.z, y: p.y, yaw: p.yaw },
+      player: { x: p.x, z: p.z, y: p.y, yaw: p.yaw },
       muted: store.muted.value,
       quality: store.qualitySetting.value,
       showFps: store.showFps.value,

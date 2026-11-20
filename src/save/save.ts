@@ -94,6 +94,8 @@ export interface SaveData {
   tips: string[];
   /** Barre rapide : 3 outils ("" = case vide) ; les autres attendent dans le coffre des combles. */
   hotbar: string[];
+  /** Le monde : son nom, et s'il est ouvert au multijoueur (argent et améliorations partagés). */
+  world: { name: string; multiplayer: boolean; isPublic: boolean };
 }
 
 export function defaultSave(): SaveData {
@@ -121,6 +123,7 @@ export function defaultSave(): SaveData {
     achievements: [],
     tips: [],
     hotbar: ['broom', '', ''],
+    world: { name: 'Mon château', multiplayer: false, isPublic: true },
   };
 }
 
@@ -188,6 +191,7 @@ export function migrate(raw: unknown): SaveData {
     achievements: strings(r.achievements),
     tips: strings(r.tips),
     hotbar: cleanHotbar(r.hotbar),
+    world: cleanWorld(r.world),
   };
 }
 
@@ -204,6 +208,15 @@ function cleanHotbar(v: unknown): string[] {
   }
   while (out.length < HOTBAR_SIZE) out.push('');
   return out.slice(0, HOTBAR_SIZE);
+}
+
+function cleanWorld(v: unknown): SaveData['world'] {
+  const w = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+  return {
+    name: typeof w.name === 'string' && w.name.trim() ? w.name.trim().slice(0, 32) : 'Mon château',
+    multiplayer: w.multiplayer === true,
+    isPublic: w.isPublic !== false,
+  };
 }
 
 function cleanSettings(v: unknown): Settings {
@@ -288,9 +301,10 @@ function cleanTree(raw: unknown): Record<string, number> {
   return out;
 }
 
-interface StorageLike {
+export interface StorageLike {
   getItem(k: string): string | null;
   setItem(k: string, v: string): void;
+  removeItem?(k: string): void;
 }
 
 function storage(): StorageLike | null {
@@ -301,12 +315,127 @@ function storage(): StorageLike | null {
   }
 }
 
-/** Charge la sauvegarde (avec repli sur la copie de secours si la principale est abîmée). */
-export function loadSave(store: StorageLike | null = storage()): SaveData {
-  if (!store) return defaultSave();
-  for (const key of [SAVE_KEY, SAVE_KEY + ':backup']) {
+// ───────────────────────────── Mondes (plusieurs sauvegardes) ─────────────────────────────
+
+/** Résumé d'un monde, pour la liste de l'écran d'accueil. */
+export interface WorldMeta {
+  id: string;
+  name: string;
+  created: number;
+  lastPlayed: number;
+  coins: number;
+  totalCoins: number;
+  rooms: number;
+  souvenirs: number;
+  multiplayer: boolean;
+  isPublic: boolean;
+}
+
+const WORLDS_KEY = 'dust-it-alone:worlds';
+const CURRENT_KEY = 'dust-it-alone:current';
+/** Le tout premier monde garde l'ancienne clé : les anciennes sauvegardes deviennent « Mon château ». */
+export const FIRST_WORLD = 'main';
+
+export function worldKey(id: string): string {
+  return id === FIRST_WORLD ? SAVE_KEY : `dust-it-alone:world:${id}`;
+}
+
+function summary(id: string, d: SaveData, prev?: WorldMeta): WorldMeta {
+  return {
+    id,
+    name: d.world.name,
+    created: prev?.created ?? Date.now(),
+    lastPlayed: Date.now(),
+    coins: d.coins,
+    totalCoins: d.totalCoins,
+    rooms: Object.values(d.rooms).filter((r) => r.unlocked).length,
+    souvenirs: d.souvenirs.length,
+    multiplayer: d.world.multiplayer,
+    isPublic: d.world.isPublic,
+  };
+}
+
+/** La liste des mondes (l'ancienne sauvegarde unique y apparaît toute seule). */
+export function listWorlds(store: StorageLike | null = storage()): WorldMeta[] {
+  if (!store) return [];
+  let list: WorldMeta[] = [];
+  try {
+    const raw = JSON.parse(store.getItem(WORLDS_KEY) ?? 'null');
+    if (Array.isArray(raw)) list = raw.filter((w) => w && typeof w.id === 'string' && typeof w.name === 'string');
+  } catch {
+    /* liste abîmée : on la reconstruit */
+  }
+  if (!list.some((w) => w.id === FIRST_WORLD) && store.getItem(SAVE_KEY)) {
     try {
-      const txt = store.getItem(key);
+      const d = migrate(JSON.parse(store.getItem(SAVE_KEY)!));
+      list.unshift({ ...summary(FIRST_WORLD, d), lastPlayed: d.savedAt, created: d.savedAt });
+    } catch {
+      /* rien */
+    }
+  }
+  return list.sort((a, b) => b.lastPlayed - a.lastPlayed);
+}
+
+function saveIndex(list: WorldMeta[], store: StorageLike): void {
+  try {
+    store.setItem(WORLDS_KEY, JSON.stringify(list));
+  } catch {
+    /* rien */
+  }
+}
+
+export function currentWorld(store: StorageLike | null = storage()): string {
+  return store?.getItem(CURRENT_KEY) || FIRST_WORLD;
+}
+
+export function setCurrentWorld(id: string, store: StorageLike | null = storage()): void {
+  store?.setItem(CURRENT_KEY, id);
+}
+
+/** Crée un monde tout neuf (il devient le monde en cours). */
+export function createWorld(name: string, multiplayer: boolean, isPublic: boolean, settings: Settings | null, store: StorageLike | null = storage()): string {
+  const list = listWorlds(store);
+  // Le tout premier monde reprend l'ancienne clé s'il n'y a encore rien.
+  const id = list.length === 0 && !store?.getItem(SAVE_KEY) ? FIRST_WORLD : `w${Date.now().toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`;
+  const d = defaultSave();
+  d.world = { name: name.trim().slice(0, 32) || 'Mon château', multiplayer, isPublic };
+  if (settings) d.settings = { ...settings };
+  if (store) {
+    store.setItem(worldKey(id), JSON.stringify(d));
+    saveIndex([...list.filter((w) => w.id !== id), summary(id, d)], store);
+    setCurrentWorld(id, store);
+  }
+  return id;
+}
+
+export function deleteWorld(id: string, store: StorageLike | null = storage()): void {
+  if (!store) return;
+  store.removeItem?.(worldKey(id));
+  store.removeItem?.(worldKey(id) + ':backup');
+  const list = listWorlds(store).filter((w) => w.id !== id);
+  saveIndex(list, store);
+  if (currentWorld(store) === id) setCurrentWorld(list[0]?.id ?? FIRST_WORLD, store);
+}
+
+export function renameWorld(id: string, name: string, store: StorageLike | null = storage()): void {
+  if (!store) return;
+  const key = worldKey(id);
+  try {
+    const d = migrate(JSON.parse(store.getItem(key) ?? 'null'));
+    d.world.name = name.trim().slice(0, 32) || d.world.name;
+    writeSave(d, store, id);
+  } catch {
+    /* rien */
+  }
+}
+
+/** Charge la sauvegarde du monde en cours (avec repli sur la copie de secours si la principale est abîmée). */
+export function loadSave(store: StorageLike | null = storage(), id = currentWorld(store)): SaveData {
+  if (!store) return defaultSave();
+  const key = worldKey(id);
+  for (const k of [key, key + ':backup']) {
+    try {
+      const txt = store.getItem(k);
       if (txt) return migrate(JSON.parse(txt));
     } catch {
       /* on essaie la copie suivante */
@@ -315,12 +444,16 @@ export function loadSave(store: StorageLike | null = storage()): SaveData {
   return defaultSave();
 }
 
-export function writeSave(data: SaveData, store: StorageLike | null = storage()): void {
+export function writeSave(data: SaveData, store: StorageLike | null = storage(), id = currentWorld(store)): void {
   if (!store) return;
+  const key = worldKey(id);
   try {
-    const prev = store.getItem(SAVE_KEY);
-    if (prev) store.setItem(SAVE_KEY + ':backup', prev);
-    store.setItem(SAVE_KEY, JSON.stringify({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
+    const prev = store.getItem(key);
+    if (prev) store.setItem(key + ':backup', prev);
+    store.setItem(key, JSON.stringify({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
+    const list = listWorlds(store);
+    const old = list.find((w) => w.id === id);
+    saveIndex([...list.filter((w) => w.id !== id), summary(id, data, old)], store);
   } catch {
     /* stockage plein ou bloqué : le jeu continue sans sauvegarder */
   }

@@ -73,7 +73,7 @@ test('album, carnet et événements', async ({ page }) => {
 
 test('réglages : export puis import d’une sauvegarde', async ({ page }) => {
   const errors = await boot(page, false);
-  await page.click('.btn-settings', { force: true });
+  await page.click('text=⚙️ Réglages', { force: true });
   await page.click('.settings-tab:has-text("Sauvegarde")', { force: true });
   await page.click('.save-buttons .btn:has-text("Copier")', { force: true });
   const code = await page.locator('.save-code').inputValue();

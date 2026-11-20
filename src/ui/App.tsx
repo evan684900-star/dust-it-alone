@@ -71,26 +71,112 @@ export function App({ game }: { game: Game }) {
 }
 
 function TitleScreen({ game }: { game: Game }) {
-  const hasSave = store.totalCoins.value > 0;
+  const worlds = store.worlds.value;
+  const [creating, setCreating] = useState(false);
   return (
     <div class="title-screen">
-      <div class="title-card">
+      <div class="title-card worlds-card">
         <h1 class="logo">
           <span class="w1">Dust</span> <span class="w2">It</span> <span class="w3">Alone</span>
         </h1>
         <p class="tagline">Un vieux château. Beaucoup trop de poussière. Un seul balai.</p>
-        <button class="btn btn-big" onClick={() => game.start()}>
-          {hasSave ? 'On reprend le ménage !' : 'Au boulot !'}
-        </button>
-        {hasSave && <p class="save-info">🪙 {formatNumber(store.coins.value)} pièces en poche</p>}
         {store.offlineReport.value && <OfflineReport />}
+        {worlds.length === 0 || creating ? (
+          <NewWorldForm game={game} first={worlds.length === 0} onCancel={worlds.length ? () => setCreating(false) : undefined} />
+        ) : (
+          <>
+            <h2 class="worlds-title">🏰 Tes mondes</h2>
+            <ul class="worlds">
+              {worlds.map((w) => (
+                <WorldCard key={w.id} game={game} w={w} />
+              ))}
+            </ul>
+            <button class="btn btn-settings new-world" onClick={() => setCreating(true)}>＋ Nouveau monde</button>
+          </>
+        )}
         <div class="pause-row">
+          <button class="btn btn-settings" onClick={() => game.toggleNet()}>👥 Rejoindre un ami</button>
           <SettingsButton />
-          <button class="btn btn-settings" onClick={() => game.toggleNet()}>👥 Multijoueur</button>
           <button class="btn btn-settings" onClick={() => (store.creditsPanel.value = true)}>🎬 Crédits</button>
         </div>
         <GpuWarning />
         <Controls />
+      </div>
+    </div>
+  );
+}
+
+function ago(t: number): string {
+  const s = Math.max(0, (Date.now() - t) / 1000);
+  if (s < 90) return 'à l’instant';
+  if (s < 3600) return `il y a ${Math.round(s / 60)} min`;
+  if (s < 86400 * 2) return `il y a ${Math.round(s / 3600)} h`;
+  return `il y a ${Math.round(s / 86400)} jours`;
+}
+
+function WorldCard({ game, w }: { game: Game; w: import('../save/save').WorldMeta }) {
+  const [rename, setRename] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState(false);
+  const loaded = w.id === store.currentWorld.value;
+  return (
+    <li class={`world ${loaded ? 'loaded' : ''}`}>
+      <div class="world-main">
+        {rename !== null ? (
+          <input class="world-rename" value={rename} maxLength={32} autoFocus onInput={(e) => setRename((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { game.renameWorldTo(w.id, rename); setRename(null); } if (e.key === 'Escape') setRename(null); }}
+            onBlur={() => { game.renameWorldTo(w.id, rename); setRename(null); }} />
+        ) : (
+          <strong>{w.name}</strong>
+        )}
+        <span class="world-badges">
+          <span class={`world-badge ${w.multiplayer ? 'mp' : ''}`}>{w.multiplayer ? (w.isPublic ? '👥 Multijoueur public' : '👥 Multijoueur privé') : '🧹 Solo'}</span>
+        </span>
+        <small>🪙 {formatNumber(w.coins)} · 🚪 {w.rooms}/14 pièces · 📜 {w.souvenirs} souvenirs · {ago(w.lastPlayed)}</small>
+      </div>
+      <div class="world-actions">
+        {confirm ? (
+          <>
+            <span class="world-confirm">Effacer « {w.name} » ?</span>
+            <button class="btn btn-danger btn-small" onClick={() => game.removeWorld(w.id)}>Oui</button>
+            <button class="btn btn-settings btn-small" onClick={() => setConfirm(false)}>Non</button>
+          </>
+        ) : (
+          <>
+            <button class="btn btn-big btn-play" onClick={() => game.playWorld(w.id)}>▶ Jouer</button>
+            <button class="btn btn-settings btn-small" title="Renommer" onClick={() => setRename(w.name)}>✏️</button>
+            <button class="btn btn-settings btn-small" title="Effacer ce monde" onClick={() => setConfirm(true)}>🗑️</button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+function NewWorldForm({ game, first, onCancel }: { game: Game; first: boolean; onCancel?: () => void }) {
+  const [name, setName] = useState(first ? 'Mon château' : `Château n°${store.worlds.value.length + 1}`);
+  const [mp, setMp] = useState(false);
+  const [pub, setPub] = useState(true);
+  return (
+    <div class="new-world-form">
+      <h2 class="worlds-title">{first ? '🏰 Ton premier monde' : '🏰 Nouveau monde'}</h2>
+      <label class="nw-name">
+        Nom du monde
+        <input value={name} maxLength={32} onInput={(e) => setName((e.target as HTMLInputElement).value)} />
+      </label>
+      <label class="toggle nw-toggle">
+        <input type="checkbox" checked={mp} onChange={(e) => setMp((e.target as HTMLInputElement).checked)} />
+        <span>👥 Ouvrir ce monde au multijoueur <small>Tes amis peuvent venir t’aider : l’argent et les améliorations sont partagés.</small></span>
+      </label>
+      {mp && (
+        <div class="nw-public">
+          <label><input type="radio" checked={pub} onChange={() => setPub(true)} /> Public (visible dans la liste des parties)</label>
+          <label><input type="radio" checked={!pub} onChange={() => setPub(false)} /> Privé (seulement avec le code)</label>
+        </div>
+      )}
+      <p class="nw-hint">Tu pourras changer ça plus tard : Échap → Réglages → Monde.</p>
+      <div class="pause-row">
+        <button class="btn btn-big" onClick={() => game.newWorld(name, mp, pub)}>{first ? 'Au boulot !' : 'Créer et jouer'}</button>
+        {onCancel && <button class="btn btn-settings" onClick={onCancel}>Annuler</button>}
       </div>
     </div>
   );
@@ -369,12 +455,13 @@ function NetScreen({ game }: { game: Game }) {
                 </div>
               </div>
               <div>
-                <h3>🏰 Héberger mon château</h3>
-                <label class="toggle">
-                  <input type="checkbox" checked={n.isPublic} onChange={(e) => net.setPublic((e.target as HTMLInputElement).checked)} />
-                  Visible dans la liste des parties
-                </label>
-                <button class="btn btn-big" onClick={() => { saveName(); void net.host(); }}>Ouvrir ma partie</button>
+                <h3>🏰 Inviter des amis chez moi</h3>
+                <p class="net-empty">Ouvre ton monde au multijoueur : l’argent et les améliorations y sont partagés.</p>
+                {store.started.value ? (
+                  <button class="btn btn-big" onClick={() => { saveName(); game.setWorldMultiplayer(true, n.isPublic); }}>Ouvrir « {store.world.value.name} »</button>
+                ) : (
+                  <p class="net-empty">Lance un monde « 👥 Multijoueur » depuis l’écran d’accueil (ou ouvre-le dans Échap → Réglages → Monde).</p>
+                )}
               </div>
             </section>
           </>
@@ -390,11 +477,11 @@ function NetScreen({ game }: { game: Game }) {
             </div>
             <p class="net-empty">{n.isPublic ? 'Elle apparaît dans la liste des parties en ligne.' : 'Partie privée : donne le code à tes amis.'} Tu valides chaque demande (touche O pour accepter, N pour refuser). 4 joueurs au maximum.</p>
             <label class="toggle">
-              <input type="checkbox" checked={n.isPublic} onChange={(e) => net.setPublic((e.target as HTMLInputElement).checked)} />
+              <input type="checkbox" checked={n.isPublic} onChange={(e) => game.setWorldMultiplayer(true, (e.target as HTMLInputElement).checked)} />
               Visible dans la liste des parties
             </label>
             <PlayerList />
-            <button class="btn btn-settings" onClick={() => net.leave('')}>Fermer ma partie</button>
+            <button class="btn btn-settings" onClick={() => game.setWorldMultiplayer(false, n.isPublic)}>Fermer ce monde au multijoueur</button>
           </section>
         )}
 
@@ -407,7 +494,7 @@ function NetScreen({ game }: { game: Game }) {
         )}
 
         {n.status && <p class="net-status">{n.status}</p>}
-        <p class="net-note">Connexion directe entre joueurs (pair-à-pair). Chacun garde sa propre progression : tu gagnes les pièces de la poussière que tu pousses, avec tes améliorations.</p>
+        <p class="net-note">Connexion directe entre joueurs (pair-à-pair). Dans un monde partagé, l’argent et les améliorations sont ceux du monde de l’hôte ; tes propres mondes ne sont pas touchés.</p>
         <button class="btn" onClick={() => game.toggleNet()}>Fermer (P)</button>
       </div>
     </div>
@@ -485,6 +572,7 @@ function PauseScreen({ game }: { game: Game }) {
     <div class="title-screen">
       <div class="title-card pause-card">
         <h2 class="pause-title">Pause</h2>
+        <p class="pause-world">🏰 {store.world.value.name}{store.net.value.role === 'host' ? <> · 👥 code <strong>{store.net.value.code}</strong></> : store.net.value.visiting ? ' · 👥 chez un ami' : ''}</p>
         <p class="tagline">La poussière t'attend. Elle est patiente.</p>
         <button class="btn btn-big" onClick={() => game.start()}>Reprendre le ménage</button>
         <div class="pause-row">
@@ -523,12 +611,12 @@ function GpuWarning() {
   );
 }
 
-type SettingsTab = 'graphics' | 'controls' | 'sound' | 'save';
+type SettingsTab = 'world' | 'graphics' | 'controls' | 'sound' | 'save';
 
 function SettingsPanel({ game }: { game: Game }) {
-  const [tab, setTab] = useState<SettingsTab>('graphics');
+  const [tab, setTab] = useState<SettingsTab>(store.started.value ? 'world' : 'graphics');
   const close = () => (store.settingsOpen.value = false);
-  const tabs: [SettingsTab, string][] = [['graphics', '🖼️ Graphismes'], ['controls', '🖱️ Contrôles'], ['sound', '🔊 Son'], ['save', '💾 Sauvegarde']];
+  const tabs: [SettingsTab, string][] = [['world', '🌍 Monde'], ['graphics', '🖼️ Graphismes'], ['controls', '🖱️ Contrôles'], ['sound', '🔊 Son'], ['save', '💾 Sauvegarde']];
   return (
     <div class="settings-backdrop" onClick={close}>
       <div class="settings-card" onClick={(e) => e.stopPropagation()}>
@@ -538,12 +626,48 @@ function SettingsPanel({ game }: { game: Game }) {
             <button key={id} class={`settings-tab ${tab === id ? 'selected' : ''}`} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
+        {tab === 'world' && <WorldSettings game={game} />}
         {tab === 'graphics' && <GraphicsSettings game={game} />}
         {tab === 'controls' && <ControlSettings game={game} />}
         {tab === 'sound' && <SoundSettings game={game} />}
         {tab === 'save' && <SaveSettings game={game} />}
         <button class="btn" onClick={close}>OK</button>
       </div>
+    </div>
+  );
+}
+
+/** Réglages du monde : son nom et le multijoueur (argent et améliorations partagés). */
+function WorldSettings({ game }: { game: Game }) {
+  const w = store.world.value;
+  const n = store.net.value;
+  const [name, setName] = useState(w.name);
+  if (n.visiting) return <p class="settings-note">Tu joues dans le monde d’un ami : seuls ses réglages comptent. Pour revenir chez toi : touche P → « Rentrer dans mon château ».</p>;
+  return (
+    <div class="world-settings">
+      <label class="nw-name">
+        Nom du monde
+        <input value={name} maxLength={32} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={() => game.renameWorldTo(store.currentWorld.value, name)} onKeyDown={(e) => e.key === 'Enter' && game.renameWorldTo(store.currentWorld.value, name)} />
+      </label>
+      <label class="toggle nw-toggle">
+        <input type="checkbox" checked={w.multiplayer} onChange={(e) => game.setWorldMultiplayer((e.target as HTMLInputElement).checked, w.isPublic)} />
+        <span>👥 Ouvrir ce monde au multijoueur <small>Tes amis peuvent venir t’aider : l’argent et les améliorations sont partagés. Tu acceptes chaque demande (O / N).</small></span>
+      </label>
+      {w.multiplayer && (
+        <div class="nw-public">
+          <label><input type="radio" checked={w.isPublic} onChange={() => game.setWorldMultiplayer(true, true)} /> Public (visible dans la liste des parties)</label>
+          <label><input type="radio" checked={!w.isPublic} onChange={() => game.setWorldMultiplayer(true, false)} /> Privé (seulement avec le code)</label>
+        </div>
+      )}
+      {n.role === 'host' && (
+        <div class="net-code">
+          <span>Code</span>
+          <strong>{n.code}</strong>
+          <button class="btn btn-settings" onClick={() => navigator.clipboard?.writeText(n.code)}>📋 Copier</button>
+        </div>
+      )}
+      {n.role === 'host' && <PlayerList />}
+      {w.multiplayer && n.role !== 'host' && <p class="settings-note">{store.started.value ? (n.status || 'Ouverture de la partie…') : 'La partie s’ouvrira quand tu entreras dans ce monde.'}</p>}
     </div>
   );
 }

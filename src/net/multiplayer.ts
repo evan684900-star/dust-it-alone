@@ -2,7 +2,7 @@ import { NetSession, MAX_PLAYERS } from './session';
 import { Lobby, type LobbyGame } from './lobby';
 import { applySnapshot, encodeSnapshot, newMemory, type SnapshotMemory } from './snapshot';
 import { newBroomState, type BroomInput, type BroomState, type RoomSim } from '../sim/roomSim';
-import type { DirtId, ToolId } from '../data/dirtTypes';
+import type { ToolId } from '../data/dirtTypes';
 import { ROOMS, type RoomDef } from '../data/rooms';
 import * as store from '../state/store';
 
@@ -32,6 +32,15 @@ export interface Pose {
   grip: number;
 }
 
+/** Argent et améliorations du monde (partagés par tous les joueurs). */
+export interface Economy {
+  coins: number;
+  total: number;
+  cps: number;
+  sparks: number;
+  tree: Record<string, number>;
+}
+
 export interface RemotePlayer {
   slot: number;
   name: string;
@@ -52,8 +61,13 @@ export interface MpGame {
   setHostUnlocked(unlocked: string[]): void;
   /** Fin de la partie à plusieurs (le jeu recharge mon propre château). */
   endVisit(reason: string): void;
-  /** Côté invité : grains que j'ai fait tomber chez l'hôte (je les compte avec mes améliorations). */
-  creditGrains(roomIndex: number, counts: Partial<Record<DirtId, number>>): void;
+  /** Économie du monde (argent et améliorations partagés) : l'hôte l'envoie, l'invité l'affiche. */
+  economy(): Economy;
+  applyEconomy(e: Economy): void;
+  /** Côté hôte : un invité achète, rembourse ou ouvre une porte avec l'argent du monde. */
+  hostBuy(id: string, n: number, who: string): void;
+  hostRefund(id: string, who: string): void;
+  hostUnlock(roomId: string, who: string): void;
   toast(title: string, text: string): void;
   sound(kind: 'join' | 'leave' | 'request'): void;
 }
@@ -67,7 +81,10 @@ type Msg =
   | { t: 'pose'; pose: Pose }
   | { t: 'poses'; list: { slot: number; pose: Pose }[] }
   | { t: 'snap'; room: number; data: ArrayBuffer }
-  | { t: 'grains'; room: number; counts: Partial<Record<DirtId, number>> }
+  | { t: 'eco'; eco: Economy }
+  | { t: 'buy'; id: string; n: number }
+  | { t: 'refund'; id: string }
+  | { t: 'unlock'; room: string }
   | { t: 'castle'; unlocked: string[] }
   | { t: 'ping'; at: number }
   | { t: 'pong'; at: number }
@@ -119,7 +136,7 @@ export class Multiplayer {
   /** Côté hôte : balai de chaque invité, par pièce. */
   private brooms = new Map<number, BroomState>();
   private memories = new Map<string, { mem: SnapshotMemory; lastFull: number }>();
-  private credits = new Map<number, Map<number, Partial<Record<DirtId, number>>>>();
+  private ecoTimer = 0;
   private poseTimer = 0;
   private snapTimer = 0;
   private slowTimer = 0;
@@ -255,6 +272,7 @@ export class Multiplayer {
       unlocked: this.game.unlockedIds(),
       spawn: { x: me.x + Math.cos(slot * 2) * 90, z: me.z + Math.sin(slot * 2) * 90, y: me.y, yaw: me.yaw },
     } satisfies Msg);
+    s.send(slot, { t: 'eco', eco: this.game.economy() } satisfies Msg);
     this.game.toast('👥 Nouveau joueur', `${p.name} a rejoint ta partie !`);
     this.game.sound('join');
     this.sendPlayers();
@@ -284,6 +302,17 @@ export class Multiplayer {
       case 'pose': {
         const p = this.players.get(from);
         if (p) p.pose = m.pose;
+        break;
+      }
+      case 'buy':
+      case 'refund':
+      case 'unlock': {
+        const p = this.players.get(from);
+        if (!p) break;
+        if (m.t === 'buy') this.game.hostBuy(String(m.id), Math.max(1, Math.min(1e6, Number(m.n) || 1)), p.name);
+        else if (m.t === 'refund') this.game.hostRefund(String(m.id), p.name);
+        else this.game.hostUnlock(String(m.room), p.name);
+        this.pushEconomy();
         break;
       }
       case 'ping':
@@ -343,8 +372,8 @@ export class Multiplayer {
         if (r && buf) applySnapshot(r.sim, buf);
         break;
       }
-      case 'grains':
-        this.game.creditGrains(m.room, m.counts);
+      case 'eco':
+        this.game.applyEconomy(m.eco);
         break;
       case 'castle':
         this.game.setHostUnlocked(m.unlocked);
@@ -407,15 +436,6 @@ export class Multiplayer {
     }
   }
 
-  /** Côté hôte : un grain est tombé grâce à un invité. */
-  credit(slot: number, roomIndex: number, type: DirtId): void {
-    let rooms = this.credits.get(slot);
-    if (!rooms) this.credits.set(slot, (rooms = new Map()));
-    let c = rooms.get(roomIndex);
-    if (!c) rooms.set(roomIndex, (c = {}));
-    c[type] = (c[type] ?? 0) + 1;
-  }
-
   update(dt: number): void {
     if (this.role === 'off' || !this.session) return;
     const s = this.session;
@@ -434,10 +454,15 @@ export class Multiplayer {
       }
     }
 
+    this.ecoTimer -= dt;
+    if (this.role === 'host' && this.ecoTimer <= 0) {
+      this.ecoTimer = 0.25;
+      this.pushEconomy();
+    }
+
     if (this.role === 'host' && this.snapTimer <= 0) {
       this.snapTimer = 1 / SNAP_HZ;
       this.sendSnapshots();
-      this.flushCredits();
     }
 
     if (this.slowTimer <= 0) {
@@ -481,11 +506,15 @@ export class Multiplayer {
     }
   }
 
-  private flushCredits(): void {
-    for (const [slot, rooms] of this.credits) {
-      for (const [room, counts] of rooms) this.session!.send(slot, { t: 'grains', room, counts } satisfies Msg);
-    }
-    this.credits.clear();
+  /** Côté hôte : envoie l'argent et les améliorations du monde à tout le monde. */
+  pushEconomy(): void {
+    if (this.role !== 'host' || !this.session || this.players.size === 0) return;
+    this.session.broadcast({ t: 'eco', eco: this.game.economy() } satisfies Msg);
+  }
+
+  /** Côté invité : demande à l'hôte d'acheter / rembourser / ouvrir une porte avec l'argent du monde. */
+  request(m: { t: 'buy'; id: string; n: number } | { t: 'refund'; id: string } | { t: 'unlock'; room: string }): void {
+    if (this.role === 'guest') this.session?.send(0, m satisfies Msg);
   }
 
   private sendPlayers(): void {

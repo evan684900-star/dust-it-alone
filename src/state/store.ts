@@ -1,4 +1,4 @@
-import { DEFAULT_SETTINGS, type Settings } from '../save/save';
+import { DEFAULT_SETTINGS, type Settings, type WorldMeta } from '../save/save';
 import { signal } from '@preact/signals';
 import type { QualityLevel, QualitySetting } from '../render/quality';
 
@@ -162,6 +162,10 @@ export const net = signal<{
 /** Côté hôte : demandes pour rejoindre (à accepter ou refuser). */
 export const netRequests = signal<{ slot: number; name: string; color: string }[]>([]);
 export const netOpen = signal(false);
+/** Mondes (plusieurs sauvegardes) : la liste, celui qui est chargé, et ses réglages. */
+export const worlds = signal<WorldMeta[]>([]);
+export const currentWorld = signal('main');
+export const world = signal<{ name: string; multiplayer: boolean; isPublic: boolean }>({ name: 'Mon château', multiplayer: false, isPublic: true });
 /** Barre rapide (3 outils) et coffre des combles (tous les outils). */
 export const hotbar = signal<string[]>(['broom', '', '']);
 export const inventoryOpen = signal(false);

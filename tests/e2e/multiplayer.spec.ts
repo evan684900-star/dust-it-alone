@@ -32,7 +32,8 @@ test('héberger, voir la partie en ligne, demander, accepter, jouer ensemble', a
   await host.click('.btn-big', { force: true });
   await host.keyboard.press('KeyP');
   await host.fill('.net-profile input', 'Hôte');
-  await host.click('text=Ouvrir ma partie', { force: true });
+  // Ouvrir son monde au multijoueur (argent et améliorations partagés).
+  await host.click('text=Ouvrir «', { force: true });
   await expect(host.locator('.net-code strong')).toHaveText(/^[A-Z0-9]{5}$/, { timeout: 30_000 });
   const code = (await host.locator('.net-code strong').textContent())!;
   await host.keyboard.press('KeyP');
@@ -40,7 +41,7 @@ test('héberger, voir la partie en ligne, demander, accepter, jouer ensemble', a
   // L'invité ouvre l'écran multijoueur depuis l'écran titre : la partie est dans la liste.
   await guest.goto(URL);
   await guest.waitForSelector('#loading', { state: 'detached', timeout: 120_000 });
-  await guest.click('text=👥 Multijoueur', { force: true });
+  await guest.click('text=👥 Rejoindre un ami', { force: true });
   await guest.fill('.net-profile input', 'Invité');
   await expect(guest.locator('.net-games li')).toContainText('Château de Hôte', { timeout: 40_000 });
   await guest.click('.net-games li button', { force: true });
@@ -73,6 +74,14 @@ test('héberger, voir la partie en ligne, demander, accepter, jouer ensemble', a
   }
   await dust(guest, 'press', false);
   await expect.poll(async () => (await dust(guest, 'coins')) as number, { timeout: 20_000 }).toBeGreaterThan(before);
+  // Argent partagé : l'invité voit la cagnotte du monde (celle de l'hôte).
+  await expect.poll(async () => Math.abs(((await dust(host, 'coins')) as number) - ((await dust(guest, 'coins')) as number)), { timeout: 10_000 }).toBeLessThan(50);
+  // Améliorations partagées : l'invité achète avec l'argent du monde, l'arbre de l'hôte change.
+  await dust(host, 'earn', 5000);
+  await guest.waitForTimeout(1500);
+  await dust(guest, 'buy', 'broom-wide-1', 1);
+  await expect.poll(async () => host.evaluate(() => JSON.parse(localStorage.getItem('dust-it-alone:save') ?? '{}').tree?.['broom-wide-1'] ?? 0), { timeout: 15_000 }).toBe(1);
+  await expect.poll(async () => guest.evaluate(() => (window as unknown as { __dust: { net: () => unknown } }).__dust && document.querySelector('.coins')?.textContent), { timeout: 5_000 }).toBeTruthy();
   await guest.screenshot({ path: 'test-results/mp-invite.png' });
   // On regarde l'autre joueur de près (son avatar, son nom, son balai).
   await dust(guest, 'teleport', 500, 675, 400, Math.PI / 2, -0.4);
