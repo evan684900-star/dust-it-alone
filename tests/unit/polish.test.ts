@@ -98,3 +98,12 @@ describe('Export / import de sauvegarde', () => {
     expect(s.stats.playTime).toBe(0);
   });
 });
+
+describe('Barre rapide (3 cases) et coffre', () => {
+  it('toujours 3 cases, chaque outil au plus une fois, outils inconnus retirés', () => {
+    expect(defaultSave().hotbar).toEqual(['broom', '', '']);
+    expect(migrate({ coins: 1 }).hotbar).toEqual(['broom', '', '']);
+    expect(migrate({ coins: 1, hotbar: ['whirl', 'whirl', 'laser', 'broom', 'sponge'] }).hotbar).toEqual(['whirl', '', '']);
+    expect(migrate({ coins: 1, hotbar: ['duster', 'broom'] }).hotbar).toEqual(['duster', 'broom', '']);
+  });
+});

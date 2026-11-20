@@ -810,3 +810,26 @@ kbd {
 .net-request { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; top: 110px; display: flex; gap: 12px; align-items: center; padding: 12px 16px; background: var(--cream); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 5px 6px 0 var(--ink); z-index: 30; font-weight: 800; }
 .net-request .net-dot { width: 22px; height: 22px; }
 .net-request-buttons { display: flex; gap: 8px; margin-top: 6px; }
+
+/* ───────── Barre rapide et coffre ───────── */
+.tool.empty { background: #e4d6bc; opacity: 0.7; border-style: dashed; }
+.chest-card { width: min(820px, calc(100vw - 32px)); }
+.chest-card h3 { font: 19px var(--font-display); font-weight: normal; margin: 12px 0 8px; }
+.chest-help { font-weight: 700; margin: 0 0 6px; }
+.chest-bar { display: flex; gap: 12px; }
+.chest-slot { position: relative; width: 120px; height: 104px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; border: 4px solid var(--ink); border-radius: 16px; background: #fffaf0; cursor: pointer; font-family: var(--font-body); color: var(--ink); }
+.chest-slot.empty { border-style: dashed; background: #efe3cb; }
+.chest-slot.selected { background: var(--sun, #ffd35a); box-shadow: 3px 4px 0 var(--ink); transform: translateY(-2px); }
+.chest-slot .tool-icon { font-size: 36px; }
+.chest-slot small { font-weight: 800; font-size: 12px; }
+.chest-slot .tool-key { position: absolute; right: 6px; bottom: 4px; font: 14px var(--font-display); }
+.chest-remove { position: absolute; top: -10px; right: -10px; width: 24px; height: 24px; border-radius: 50%; background: var(--tomato); color: #fff; border: 3px solid var(--ink); font-size: 12px; display: grid; place-items: center; }
+.chest-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(175px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.chest-item { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 10px; text-align: left; border: 3px solid var(--ink); border-radius: 14px; background: #fffaf0; cursor: pointer; font-family: var(--font-body); color: var(--ink); }
+.chest-item:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 2px 3px 0 var(--ink); }
+.chest-item .tool-icon { font-size: 30px; }
+.chest-item strong { font: 16px var(--font-display); font-weight: normal; }
+.chest-item small { font-size: 11px; font-weight: 700; opacity: 0.8; }
+.chest-item.locked { background: #e4d6bc; opacity: 0.6; cursor: default; }
+.chest-item.in-bar { background: #e8f6dc; }
+.chest-badge { position: absolute; top: 6px; right: 8px; font: 12px var(--font-display); background: var(--apple); border: 2px solid var(--ink); border-radius: 8px; padding: 0 6px; }

@@ -21,6 +21,15 @@ export function App({ game }: { game: Game }) {
       {store.started.value ? <Hud game={game} /> : <TitleScreen game={game} />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <Crosshair />}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <DoorPrompt />}
+      {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.inventoryOpen.value && store.chestPrompt.value && (
+        <div class="door-prompt ok bench-prompt">
+          <span class="lock">🧰</span>
+          <div>
+            <strong>Le coffre des combles</strong>
+            <span><kbd>E</kbd> Ouvrir : ranger tes outils</span>
+          </div>
+        </div>
+      )}
       {store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && store.benchPrompt.value && (
         <div class="door-prompt ok bench-prompt">
           <span class="lock">🛠️</span>
@@ -37,6 +46,7 @@ export function App({ game }: { game: Game }) {
       {store.albumOpen.value && <Album game={game} />}
       {store.journalOpen.value && <Journal game={game} />}
       {store.netOpen.value && <NetScreen game={game} />}
+      {store.inventoryOpen.value && <Inventory game={game} />}
       {store.started.value && store.net.value.role !== 'off' && !store.netOpen.value && <NetHud />}
       {store.netRequests.value.length > 0 && <NetRequest game={game} />}
       {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
@@ -203,6 +213,75 @@ function Credits() {
         <CreditsList />
         <p class="credits-list">Merci d'avoir joué ! 🧹✨</p>
         <button class="btn btn-big" onClick={() => (store.credits.value = false)}>Continuer à faire le ménage</button>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── Coffre (inventaire) ─────────────────────────────
+
+/** Le coffre des combles : tous les outils, et la barre rapide de 3 cases à remplir. */
+function Inventory({ game }: { game: Game }) {
+  const bar = store.hotbar.value;
+  const slot = store.inventorySlot.value;
+  const unlocked = store.unlockedTools.value;
+  const [drag, setDrag] = useState<string | null>(null);
+  const place = (k: number, id: string) => game.setHotbarSlot(k, id);
+  return (
+    <div class="settings-backdrop" onClick={() => game.toggleInventory()}>
+      <div class="settings-card chest-card" onClick={(e) => e.stopPropagation()}>
+        <h2>🧰 Le coffre des combles</h2>
+        <p class="chest-help">Choisis une case de ta barre, puis clique sur un outil pour l’y ranger (ou fais-le glisser). Tu en portes 3 sur toi ; les autres restent bien au chaud ici.</p>
+        <h3>Ta barre (touches 1 à 3)</h3>
+        <div class="chest-bar">
+          {bar.map((id, k) => {
+            const t = TOOLS.find((x) => x.id === id);
+            return (
+              <button
+                key={k}
+                class={`chest-slot ${slot === k ? 'selected' : ''} ${t ? '' : 'empty'}`}
+                onClick={() => (store.inventorySlot.value = k)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={() => drag && place(k, drag)}
+                title={t ? t.name : 'Case vide'}
+              >
+                <span class="tool-icon">{t?.icon ?? '＋'}</span>
+                {t?.id === 'widebroom' && <span class="tool-xl">XL</span>}
+                <span class="tool-key">{k + 1}</span>
+                <small>{t?.name ?? 'vide'}</small>
+                {t && (
+                  <span class="chest-remove" title="Remettre dans le coffre" onClick={(e) => { e.stopPropagation(); place(k, ''); }}>✕</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <h3>Dans le coffre</h3>
+        <div class="chest-grid">
+          {TOOLS.map((t, i) => {
+            const ok = unlocked[i];
+            const inBar = bar.indexOf(t.id);
+            return (
+              <button
+                key={t.id}
+                class={`chest-item ${ok ? '' : 'locked'} ${inBar >= 0 ? 'in-bar' : ''}`}
+                disabled={!ok}
+                draggable={ok}
+                onDragStart={() => setDrag(t.id)}
+                onDragEnd={() => setDrag(null)}
+                onClick={() => ok && place(slot, t.id)}
+                title={ok ? t.hint : 'À débloquer dans l’Arbre des Souvenirs'}
+              >
+                <span class="tool-icon">{ok ? t.icon : '?'}</span>
+                {ok && t.id === 'widebroom' && <span class="tool-xl">XL</span>}
+                <strong>{ok ? t.name : '???'}</strong>
+                <small>{ok ? t.hint : 'À débloquer dans l’Arbre des Souvenirs'}</small>
+                {inBar >= 0 && <span class="chest-badge">case {inBar + 1}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <button class="btn" onClick={() => game.toggleInventory()}>Fermer (E)</button>
       </div>
     </div>
   );
@@ -395,7 +474,7 @@ function Controls() {
       <span><kbd>J</kbd> album des souvenirs</span>
       <span><kbd>K</kbd> carnet et succès</span>
       <span><kbd>P</kbd> multijoueur</span>
-      <span><kbd>1</kbd>…<kbd>8</kbd> changer d'outil</span>
+      <span><kbd>1</kbd>…<kbd>3</kbd> barre d'outils (le reste dans le coffre)</span>
       <span><kbd>Échap</kbd> pause</span>
     </div>
   );
@@ -867,18 +946,19 @@ function Hud({ game }: { game: Game }) {
 
       <div class="bottom-bar">
         <div class="panel tools tilt-r">
-          {TOOLS.map((t, k) => {
-            const unlocked = store.unlockedTools.value[k];
+          {store.hotbar.value.map((id, k) => {
+            const t = TOOLS.find((x) => x.id === id);
+            const active = !!t && TOOLS[store.selectedTool.value]?.id === id;
             return (
-            <div
-              key={t.id}
-              class={`tool ${unlocked ? (store.selectedTool.value === k ? 'active' : '') : 'locked'} ${store.toolShake.value?.index === k ? 'shake-' + (Math.floor(store.toolShake.value.at) % 2) : ''}`}
-              title={unlocked ? `${t.name} : ${t.hint}` : 'À débloquer dans l’Arbre des Souvenirs'}
-            >
-              <span class="tool-icon">{unlocked ? t.icon : '?'}</span>
-              {unlocked && t.id === 'widebroom' && <span class="tool-xl">XL</span>}
-              <span class="tool-key">{k + 1}</span>
-            </div>
+              <div
+                key={k}
+                class={`tool ${t ? (active ? 'active' : '') : 'empty'} ${store.toolShake.value?.index === k ? 'shake-' + (Math.floor(store.toolShake.value.at) % 2) : ''}`}
+                title={t ? `${t.name} : ${t.hint}` : 'Case vide : range un outil ici depuis le coffre des combles'}
+              >
+                <span class="tool-icon">{t ? t.icon : ''}</span>
+                {t?.id === 'widebroom' && <span class="tool-xl">XL</span>}
+                <span class="tool-key">{k + 1}</span>
+              </div>
             );
           })}
         </div>

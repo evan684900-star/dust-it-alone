@@ -1,6 +1,6 @@
 import { isQualitySetting, type QualitySetting } from '../render/quality';
 import { NODE_BY_ID } from '../data/tree';
-import { DIRT_ORDER, type DirtId } from '../data/dirtTypes';
+import { DIRT_ORDER, TOOLS, type DirtId } from '../data/dirtTypes';
 
 export const SAVE_KEY = 'dust-it-alone:save';
 export const SAVE_VERSION = 3;
@@ -92,6 +92,8 @@ export interface SaveData {
   achievements: string[];
   /** Bulles d'aide déjà montrées. */
   tips: string[];
+  /** Barre rapide : 3 outils ("" = case vide) ; les autres attendent dans le coffre des combles. */
+  hotbar: string[];
 }
 
 export function defaultSave(): SaveData {
@@ -118,6 +120,7 @@ export function defaultSave(): SaveData {
     stats: defaultStats(),
     achievements: [],
     tips: [],
+    hotbar: ['broom', '', ''],
   };
 }
 
@@ -184,7 +187,23 @@ export function migrate(raw: unknown): SaveData {
     stats: cleanStats(r.stats),
     achievements: strings(r.achievements),
     tips: strings(r.tips),
+    hotbar: cleanHotbar(r.hotbar),
   };
+}
+
+/** Barre rapide : exactement 3 cases, chaque outil au plus une fois. */
+export const HOTBAR_SIZE = 3;
+function cleanHotbar(v: unknown): string[] {
+  const ids = new Set(TOOLS.map((t) => t.id as string));
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const x of Array.isArray(v) ? v : ['broom']) {
+    const id = typeof x === 'string' && ids.has(x) && !seen.has(x) ? x : '';
+    if (id) seen.add(id);
+    out.push(id);
+  }
+  while (out.length < HOTBAR_SIZE) out.push('');
+  return out.slice(0, HOTBAR_SIZE);
 }
 
 function cleanSettings(v: unknown): Settings {

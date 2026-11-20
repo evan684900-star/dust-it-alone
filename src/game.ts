@@ -83,6 +83,7 @@ export class Game {
     this.mods = computeModifiers(this.save.tree, 0, this.save.sparks);
     this.applyTree();
     this.offlineGains();
+    this.storeNewTools(false);
 
     store.coins.value = this.save.coins;
     store.sparks.value = this.save.sparks;
@@ -363,6 +364,7 @@ export class Game {
     if (node.kind !== 'small') store.pushToast(`${node.icon} ${node.name}`, node.effect(1), 3500);
     if (refund > 0) store.pushToast('Fourche changée', `L'autre choix a été remboursé (${formatNumber(refund)} 🪙).`, 3000);
     this.applyTree();
+    if (TOOLS.some((t) => t.node === id)) this.storeNewTools(true);
     this.persist();
     return count;
   }
@@ -658,7 +660,7 @@ export class Game {
         {
           id: 'tool',
           icon: '🧰',
-          text: 'Un nouvel outil ! Change d’outil avec les touches 1 à 8 ou la molette. Certaines saletés ne partent qu’avec le bon outil, crois-moi.',
+          text: 'Un nouvel outil ! Change d’outil avec les touches 1 à 3 ou la molette. Ta barre n’a que 3 cases : les autres outils t’attendent dans le coffre des combles (E devant le coffre). Certaines saletés ne partent qu’avec le bon outil, crois-moi.',
           when: () => {
             const n = toolCount();
             const more = n > tools;
@@ -754,7 +756,7 @@ export class Game {
   }
 
   private get playing(): boolean {
-    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value && this.cinematicT < 0;
+    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value && !store.inventoryOpen.value && this.cinematicT < 0;
   }
 
   // ───────────────────────────── Commandes ─────────────────────────────
@@ -765,7 +767,7 @@ export class Game {
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === canvas;
       if (locked) lockedAt = performance.now();
-      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value) {
+      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value && !store.inventoryOpen.value) {
         store.paused.value = true;
         this.input.pressed = false;
         this.player.clearKeys();
@@ -815,6 +817,10 @@ export class Game {
         this.toggleTree();
         return;
       }
+      if ((e.code === 'Escape' || e.code === 'KeyE' || e.code === 'KeyI') && store.inventoryOpen.value) {
+        this.toggleInventory();
+        return;
+      }
       if (e.code === 'Escape' && store.treeOpen.value) {
         this.toggleTree();
         return;
@@ -825,10 +831,14 @@ export class Game {
         this.toggleTree();
         return;
       }
+      if (e.code === 'KeyE' && store.chestPrompt.value) {
+        this.toggleInventory();
+        return;
+      }
       if (e.code === 'KeyE' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
-      const digit = /^(?:Digit|Numpad)([1-8])$/.exec(e.code);
-      if (digit) this.selectTool(Number(digit[1]) - 1);
+      const digit = /^(?:Digit|Numpad)([1-3])$/.exec(e.code);
+      if (digit) this.selectSlot(Number(digit[1]) - 1);
       if (this.debug && e.code === 'KeyG') this.earn(10000);
       if (this.debug && e.code === 'KeyC') {
         const r = this.currentRoom && this.runtime(this.currentRoom);
@@ -838,14 +848,15 @@ export class Game {
     window.addEventListener('keyup', (e) => this.player.setKey(e.code, false));
     window.addEventListener('wheel', (e) => {
       if (!this.playing) return;
-      // Molette : outil débloqué suivant (ou précédent), en sautant les cases verrouillées.
-      const n = TOOLS.length;
-      let k = store.selectedTool.value;
+      // Molette : case suivante (ou précédente) de la barre rapide, en sautant les cases vides.
+      const bar = this.save.hotbar;
+      const n = bar.length;
+      let k = Math.max(0, bar.indexOf(TOOLS[store.selectedTool.value].id));
       for (let step = 0; step < n; step++) {
         k = (k + (e.deltaY > 0 ? 1 : n - 1)) % n;
-        if (this.toolUnlocked(k)) break;
+        if (bar[k]) break;
       }
-      this.selectTool(k);
+      this.selectSlot(k);
     }, { passive: true });
     window.addEventListener('blur', () => this.player.clearKeys());
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -909,6 +920,75 @@ export class Game {
     store.selectedTool.value = index;
     this.world.setTool(TOOLS[index].id);
     store.toolHint.value = TOOLS[index].hint;
+  }
+
+  // ───────────────────────────── Barre rapide et coffre ─────────────────────────────
+
+  /** Prend l'outil de la case k de la barre rapide (1, 2 ou 3). */
+  selectSlot(k: number): void {
+    const id = this.save.hotbar[k];
+    const index = TOOLS.findIndex((t) => t.id === id);
+    if (!id || index < 0) {
+      store.toolShake.value = { index: k, at: performance.now() };
+      this.synth.denied();
+      store.pushToast('Case vide', 'Range un outil ici depuis le coffre des combles (E devant le coffre).', 2500);
+      return;
+    }
+    this.selectTool(index);
+  }
+
+  /** Range un outil dans une case de la barre (s'il y était déjà ailleurs, les deux cases s'échangent). */
+  setHotbarSlot(slot: number, id: string): void {
+    const bar = [...this.save.hotbar];
+    const t = TOOLS.findIndex((x) => x.id === id);
+    if (id && (t < 0 || !this.toolUnlocked(t))) return;
+    const from = id ? bar.indexOf(id) : -1;
+    if (from >= 0) bar[from] = bar[slot];
+    bar[slot] = id;
+    this.save.hotbar = bar;
+    store.hotbar.value = bar;
+    // L'outil en main n'est plus dans la barre : on prend le premier outil de la barre.
+    if (!bar.includes(TOOLS[store.selectedTool.value].id)) {
+      const first = bar.find((x) => x);
+      if (first) this.selectTool(TOOLS.findIndex((x) => x.id === first));
+    }
+    this.synth.tool();
+    this.persistSoon();
+  }
+
+  /** Un nouvel outil arrive : dans la barre s'il y a une case libre, sinon dans le coffre. */
+  private storeNewTools(announce: boolean): void {
+    const bar = [...this.save.hotbar];
+    TOOLS.forEach((t, i) => {
+      if (!this.toolUnlocked(i) || bar.includes(t.id)) return;
+      const free = bar.indexOf('');
+      if (free >= 0) {
+        bar[free] = t.id;
+        if (announce) store.pushToast(`${t.icon} ${t.name}`, `Rangé dans ta barre (touche ${free + 1}).`, 3500);
+      } else if (announce && !this.save.seen.includes(`chest:${t.id}`)) {
+        store.pushToast(`${t.icon} ${t.name}`, 'Ta barre est pleine : l’outil t’attend dans le coffre des combles (E devant le coffre).', 5000);
+      }
+      if (announce) this.save.seen.push(`chest:${t.id}`);
+    });
+    this.save.hotbar = bar;
+    store.hotbar.value = bar;
+  }
+
+  /** Le coffre des combles : tous mes outils, à ranger dans la barre rapide. */
+  toggleInventory(): void {
+    const open = !store.inventoryOpen.value;
+    store.inventoryOpen.value = open;
+    this.player.clearKeys();
+    this.input.pressed = false;
+    if (open) {
+      this.synth.open();
+      store.inventorySlot.value = Math.max(0, this.save.hotbar.indexOf(''));
+      store.paused.value = false;
+      document.exitPointerLock?.();
+    } else {
+      this.synth.close();
+      this.start();
+    }
   }
 
   /** Vider l'aspirateur : il faut être près d'une pelle de la pièce. */
@@ -1159,14 +1239,16 @@ export class Game {
     } else if (store.doorPrompt.value) {
       store.doorPrompt.value = null;
     }
-    const bench = !door && this.playing && this.nearBench();
+    const bench = !door && this.playing && this.nearProp('workbench');
     if (bench !== store.benchPrompt.value) store.benchPrompt.value = bench;
+    const chest = !door && !bench && this.playing && this.nearProp('trunk');
+    if (chest !== store.chestPrompt.value) store.chestPrompt.value = chest;
   }
 
-  /** Le joueur est-il devant l'établi de Gustave (dans les combles) ? */
-  private nearBench(): boolean {
+  /** Le joueur est-il devant un meuble des combles (l'établi de Gustave, le coffre) ? */
+  private nearProp(kind: 'workbench' | 'trunk'): boolean {
     const attic = ROOMS[0];
-    const b = attic.obstacles.find((o) => o.kind === 'workbench');
+    const b = attic.obstacles.find((o) => o.kind === kind);
     if (!b) return false;
     const p = this.player;
     if (Math.abs(p.y - attic.floorY) > 60) return false;

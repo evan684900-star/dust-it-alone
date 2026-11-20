@@ -116,7 +116,7 @@ export const unlockedRooms = signal<string[]>(['attic']);
 /** Un nœud est achetable : pastille sur le bouton de l'arbre. */
 export const treeBuyable = signal(false);
 
-/** Outils débloqués (dans l'ordre des touches 1 à 8). */
+/** Outils débloqués (dans l'ordre de TOOLS). */
 export const unlockedTools = signal<boolean[]>([true, false, false, false, false]);
 /** Petite aide sur l'outil en main. */
 export const toolHint = signal('');
@@ -162,6 +162,13 @@ export const net = signal<{
 /** Côté hôte : demandes pour rejoindre (à accepter ou refuser). */
 export const netRequests = signal<{ slot: number; name: string; color: string }[]>([]);
 export const netOpen = signal(false);
+/** Barre rapide (3 outils) et coffre des combles (tous les outils). */
+export const hotbar = signal<string[]>(['broom', '', '']);
+export const inventoryOpen = signal(false);
+/** Case de la barre choisie dans le coffre (pour y ranger un outil). */
+export const inventorySlot = signal(0);
+/** Le joueur est devant le coffre des combles. */
+export const chestPrompt = signal(false);
 
 /** Panneau « Crédits » (écran titre). */
 export const creditsPanel = signal(false);
