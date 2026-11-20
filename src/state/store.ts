@@ -145,6 +145,24 @@ export const albumOpen = signal(false);
 export const settings = signal<Settings>({ ...DEFAULT_SETTINGS });
 /** Carnet : statistiques et succès. */
 export const journalOpen = signal(false);
+/** Multijoueur : état affiché (rôle, code, joueurs avec leur ping, parties en ligne). */
+export interface NetPlayer { slot: number; name: string; color: string; ping: number; me: boolean }
+export interface NetGame { code: string; host: string; players: number; max: number; place: string; rooms: number }
+export const net = signal<{
+  role: 'off' | 'host' | 'guest';
+  code: string;
+  isPublic: boolean;
+  status: string;
+  profile: { name: string; color: string };
+  players: NetPlayer[];
+  visiting: boolean;
+  games: NetGame[];
+  lobby: 'connecting' | 'online' | 'offline';
+}>({ role: 'off', code: '', isPublic: true, status: '', profile: { name: '', color: '#ff7a5c' }, players: [], visiting: false, games: [], lobby: 'connecting' });
+/** Côté hôte : demandes pour rejoindre (à accepter ou refuser). */
+export const netRequests = signal<{ slot: number; name: string; color: string }[]>([]);
+export const netOpen = signal(false);
+
 /** Panneau « Crédits » (écran titre). */
 export const creditsPanel = signal(false);
 export const achievements = signal<string[]>([]);

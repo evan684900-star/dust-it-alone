@@ -61,6 +61,30 @@ interface RoomView {
   dustMessage?: THREE.Mesh;
 }
 
+/** Un autre joueur (multijoueur). */
+interface Avatar {
+  g: THREE.Group;
+  body: THREE.Group;
+  head: THREE.Group;
+  arms: THREE.Group;
+  hand: THREE.Object3D;
+  legL: THREE.Group;
+  legR: THREE.Group;
+  eyes: THREE.Object3D[];
+  broom: THREE.Group;
+  stick: THREE.Mesh;
+  name: string;
+  color: string;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  bx: number;
+  by: number;
+  bz: number;
+  walk: number;
+}
+
 const DUST_COLORS = REALISTIC ? REAL_DUST_COLORS : [0x9e95a6, 0xaea197, 0x938c9f, 0xb7adb9, 0xa69ca8];
 /** Nombre de lumières dynamiques (torches, lampes) : fixe pour éviter de recompiler les matériaux. */
 const LIGHT_POOL = 4;
@@ -1019,6 +1043,226 @@ export class World3D {
       (this.ringFill.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.14 : 0.03;
       (this.ringEdge.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.6 : 0.2;
     }  }
+
+  // ───────────────────────────── Multijoueur : les autres joueurs ─────────────────────────────
+
+  private avatars = new Map<number, Avatar>();
+
+  /** Affiche et anime les autres joueurs (positions lissées entre deux messages). */
+  setRemotePlayers(list: { slot: number; name: string; color: string; pose: { x: number; y: number; z: number; yaw: number; bx: number; by: number; bz: number; pressed: boolean } | null }[], dt: number): void {
+    const keep = new Set<number>();
+    for (const p of list) {
+      if (!p.pose) continue;
+      keep.add(p.slot);
+      let a = this.avatars.get(p.slot);
+      if (!a || a.name !== p.name || a.color !== p.color) {
+        if (a) this.scene.remove(a.g, a.broom);
+        a = this.buildAvatar(p.name, p.color, p.pose);
+        this.avatars.set(p.slot, a);
+      }
+      const k = Math.min(1, dt * 12);
+      const q = p.pose;
+      const ox = a.x;
+      const oz = a.z;
+      a.x += (q.x - a.x) * k;
+      a.y += (q.y - a.y) * k;
+      a.z += (q.z - a.z) * k;
+      let dy = q.yaw - a.yaw;
+      dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+      a.yaw += dy * k;
+      a.bx += (q.bx - a.bx) * k;
+      a.by += (q.by - a.by) * k;
+      a.bz += (q.bz - a.bz) * k;
+      // Marche : les jambes et les bras se balancent selon la vitesse.
+      const speed = dt > 0 ? Math.hypot(a.x - ox, a.z - oz) / dt : 0;
+      a.walk += dt * Math.min(14, speed * 0.05);
+      const swing = Math.min(1, speed / 200) * 0.6;
+      a.legL.rotation.x = Math.sin(a.walk) * swing;
+      a.legR.rotation.x = -Math.sin(a.walk) * swing;
+      const bob = Math.abs(Math.sin(a.walk)) * swing * 5;
+      a.body.position.y = bob;
+      a.g.position.set(a.x, a.y, a.z);
+      a.g.rotation.y = a.yaw;
+      // Le balai : des mains jusqu'au point visé ; la brosse se pose au sol quand le joueur balaie.
+      const lift = q.pressed ? 0 : 10;
+      const scrub = q.pressed ? Math.sin(this.time * 9 + p.slot) * 0.12 : 0;
+      a.arms.rotation.x = 0.95 + scrub;
+      a.hand.updateWorldMatrix(true, false);
+      const hand = a.hand.getWorldPosition(new THREE.Vector3());
+      const foot = new THREE.Vector3(a.bx, a.by + 10 + lift, a.bz);
+      const len = Math.max(30, hand.distanceTo(foot));
+      a.broom.position.copy(foot);
+      a.broom.quaternion.setFromUnitVectors(this.up, hand.clone().sub(foot).normalize());
+      a.stick.scale.y = len + 30;
+      a.head.rotation.z = Math.sin(this.time * 1.7 + p.slot) * 0.05;
+      // Clignement des yeux de temps en temps.
+      const blink = (this.time + p.slot * 1.3) % 4 < 0.12 ? 0.15 : 1;
+      for (const e of a.eyes) e.scale.y = blink;
+    }
+    for (const [slot, a] of this.avatars) {
+      if (keep.has(slot)) continue;
+      this.scene.remove(a.g, a.broom);
+      this.avatars.delete(slot);
+    }
+  }
+
+  private buildAvatar(name: string, color: string, pose: { x: number; y: number; z: number; yaw: number; bx: number; by: number; bz: number }): Avatar {
+    const g = new THREE.Group();
+    const body = new THREE.Group();
+    g.add(body);
+    const tint = new THREE.Color(color);
+    const dark = tint.clone().multiplyScalar(0.6);
+    const skin = mat(0xf2c9a0, { roughness: 0.65 });
+    const cloth = mat(tint, { roughness: 0.85 });
+    const trousers = mat(0x4a3a5a, { roughness: 0.9 });
+    const white = mat(0xf6efe2, { roughness: 0.9 });
+    const shoe = mat(0x3a2a22, { roughness: 0.6 });
+    const ink = new THREE.MeshBasicMaterial({ color: 0x2b1a2e });
+    const cap = (r: number, len: number, m: THREE.Material) => new THREE.Mesh(new THREE.CapsuleGeometry(r, len, 6, 12), m);
+
+    // Jambes (pivot à la hanche) et chaussures.
+    const legs: THREE.Group[] = [];
+    for (const sx of [-1, 1]) {
+      const leg = new THREE.Group();
+      leg.position.set(sx * 9, 52, 0);
+      const l = cap(7, 30, trousers);
+      l.position.y = -22;
+      const s = new THREE.Mesh(new THREE.SphereGeometry(8, 12, 8).scale(1, 0.6, 1.5), shoe);
+      s.position.set(0, -44, -4);
+      leg.add(l, s);
+      body.add(leg);
+      legs.push(leg);
+    }
+    // Corps : tunique à la couleur du joueur, ceinture, tablier avec une poche.
+    const torso = cap(21, 34, cloth);
+    torso.position.y = 82;
+    torso.scale.set(1, 1, 0.85);
+    const skirt = new THREE.Mesh(new THREE.CylinderGeometry(20, 27, 26, 18), cloth);
+    skirt.position.y = 58;
+    const belt = new THREE.Mesh(new THREE.TorusGeometry(19.5, 2.2, 8, 24).rotateX(Math.PI / 2), mat(0x6a4a2a, { roughness: 0.6 }));
+    belt.position.y = 72;
+    const apron = new THREE.Mesh(new THREE.CylinderGeometry(21.6, 27.8, 52, 18, 1, true, -0.85, 1.7), white);
+    (apron.material as THREE.MeshStandardMaterial).side = THREE.DoubleSide;
+    apron.position.y = 68;
+    apron.rotation.y = Math.PI;
+    const pocket = new THREE.Mesh(new THREE.BoxGeometry(14, 9, 1.5), mat(0xe4dccb, { roughness: 0.9 }));
+    pocket.position.set(0, 60, -24.5);
+    body.add(torso, skirt, belt, apron, pocket);
+
+    // Bras (tous les deux tendus vers le manche du balai) ; la main droite tient le manche.
+    const arms = new THREE.Group();
+    arms.position.y = 104;
+    const hand = new THREE.Object3D();
+    for (const sx of [-1, 1]) {
+      const arm = new THREE.Group();
+      arm.position.set(sx * 21, 0, 0);
+      arm.rotation.z = sx * 0.12;
+      const sleeve = cap(6.5, 20, cloth);
+      sleeve.position.y = -14;
+      const forearm = cap(5.5, 14, skin);
+      forearm.position.y = -33;
+      const fist = new THREE.Mesh(new THREE.SphereGeometry(6.5, 10, 8), skin);
+      fist.position.y = -44;
+      arm.add(sleeve, forearm, fist);
+      arms.add(arm);
+    }
+    hand.position.set(0, -44, 0);
+    arms.add(hand);
+    body.add(arms);
+
+    // Tête : visage, yeux qui clignent, joues roses, sourire, cheveux et foulard noué.
+    const head = new THREE.Group();
+    head.position.y = 140;
+    const face = new THREE.Mesh(new THREE.SphereGeometry(19, 20, 16), skin);
+    const hair = new THREE.Mesh(new THREE.SphereGeometry(19.8, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.42), mat(0x5a3a22, { roughness: 0.8 }));
+    hair.rotation.x = 0.35;
+    const scarf = new THREE.Mesh(new THREE.SphereGeometry(20.6, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.36), cloth);
+    scarf.rotation.x = -0.15;
+    const knot = new THREE.Mesh(new THREE.SphereGeometry(5, 10, 8), mat(dark, { roughness: 0.85 }));
+    knot.position.set(0, 4, 19);
+    head.add(face, hair, scarf, knot);
+    for (const sx of [-1, 1]) {
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(4, 12, 8), mat(dark, { roughness: 0.85 }));
+      tail.position.set(sx * 4, -4, 22);
+      tail.rotation.set(0.5, 0, sx * 0.5);
+      head.add(tail);
+    }
+    const eyes: THREE.Object3D[] = [];
+    for (const sx of [-1, 1]) {
+      const eye = new THREE.Group();
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(4.2, 12, 10), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      const pupil = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 8), ink);
+      pupil.position.z = -2.6;
+      const shine = new THREE.Mesh(new THREE.SphereGeometry(0.9, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+      shine.position.set(0.8, 0.9, -4.6);
+      eye.add(ball, pupil, shine);
+      eye.position.set(sx * 7, 1, -16);
+      head.add(eye);
+      eyes.push(eye);
+      const cheek = new THREE.Mesh(new THREE.SphereGeometry(3.5, 10, 8).scale(1, 0.6, 0.4), new THREE.MeshBasicMaterial({ color: 0xff9a8a, transparent: true, opacity: 0.7 }));
+      cheek.position.set(sx * 11, -5, -14.8);
+      head.add(cheek);
+    }
+    const smile = new THREE.Mesh(new THREE.TorusGeometry(4.5, 1.1, 6, 12, Math.PI), ink);
+    smile.rotation.set(0, Math.PI, Math.PI);
+    smile.position.set(0, -6, -18.2);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(2.6, 8, 6), mat(0xeab08a, { roughness: 0.6 }));
+    nose.position.set(0, -1.5, -19);
+    head.add(smile, nose);
+    body.add(head);
+    g.traverse((o) => {
+      if ((o as THREE.Mesh).isMesh && !((o as THREE.Mesh).material instanceof THREE.MeshBasicMaterial)) o.castShadow = true;
+    });
+
+    // Nom (et petite pastille de couleur) au-dessus de la tête.
+    const cv = document.createElement('canvas');
+    cv.width = 320;
+    cv.height = 72;
+    const ctx = cv.getContext('2d')!;
+    ctx.font = '900 32px Nunito, sans-serif';
+    ctx.textBaseline = 'middle';
+    const tw = Math.min(260, ctx.measureText(name).width);
+    const w = tw + 60;
+    const x0 = 160 - w / 2;
+    ctx.fillStyle = 'rgba(255,247,230,0.95)';
+    ctx.strokeStyle = '#2b1a2e';
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.roundRect(x0, 8, w, 54, 22);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x0 + 26, 35, 10, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#2b1a2e';
+    ctx.fillText(name, x0 + 44, 36, 260);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    tag.scale.set(110, 25, 1);
+    tag.position.y = 190;
+    tag.renderOrder = 10;
+    g.add(tag);
+
+    // Son balai : brosse en paille + ligature + manche (orienté du sol vers les mains).
+    const broom = new THREE.Group();
+    const straw = mat(0xe2b553, { roughness: 0.85 });
+    const bristles = new THREE.Mesh(new THREE.BoxGeometry(62, 22, 18), straw);
+    bristles.position.y = 0;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(54, 8, 20), mat(tint, { roughness: 0.5 }));
+    band.position.y = 13;
+    const stick = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 1, 8).translate(0, 0.5, 0), mat(0xb8692a, { roughness: 0.45 }));
+    stick.position.y = 14;
+    broom.add(bristles, band, stick);
+    broom.traverse((o) => ((o as THREE.Mesh).isMesh ? (o.castShadow = true) : null));
+    this.scene.add(g, broom);
+    return {
+      g, body, head, arms, hand, legL: legs[0], legR: legs[1], eyes, broom, stick, name, color,
+      x: pose.x, y: pose.y, z: pose.z, yaw: pose.yaw, bx: pose.bx, by: pose.by, bz: pose.bz, walk: 0,
+    };
+  }
 
   /** Tourbillon du balai magique : des grains de lumière qui tournent en spirale. */
   private whirlFx: THREE.Points | null = null;

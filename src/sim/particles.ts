@@ -86,6 +86,32 @@ export class ParticlePool {
     this.aliveCount[id]--;
   }
 
+  /**
+   * Multijoueur : impose quels emplacements sont vivants (reçu de l'hôte) et
+   * reconstruit les piles d'emplacements libres. Renvoie les emplacements qui viennent d'apparaître.
+   */
+  setAlive(mask: Uint8Array): number[] {
+    const born: number[] = [];
+    DIRT_ORDER.forEach((id) => {
+      const { start, count } = this.ranges[id];
+      let top = 0;
+      let alive = 0;
+      // Même ordre que le constructeur : les premiers emplacements libres sortent en premier.
+      for (let k = count - 1; k >= 0; k--) {
+        const i = start + k;
+        const on = (mask[i >> 3] >> (i & 7)) & 1;
+        if (on) {
+          if (!this.alive[i]) born.push(i);
+          alive++;
+        } else this.free[id][top++] = i;
+        this.alive[i] = on;
+      }
+      this.freeTop[id] = top;
+      this.aliveCount[id] = alive;
+    });
+    return born;
+  }
+
   typeOf(i: number): DirtId {
     return DIRT_ORDER[this.type[i]];
   }

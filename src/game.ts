@@ -16,6 +16,8 @@ import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { StoryDirector, playLines } from './story/director';
 import { EventDirector, type EventKind } from './story/events';
 import { TipDirector } from './story/tips';
+import { Multiplayer, type MpGame, type Pose } from './net/multiplayer';
+import { NO_HELPERS } from './sim/helpers';
 import { ALL_SOUVENIRS, THRONE_SOUVENIRS } from './data/story';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
@@ -46,6 +48,12 @@ export class Game {
   private director!: StoryDirector;
   private events!: EventDirector;
   private tips!: TipDirector;
+  /** Multijoueur (pair-à-pair). */
+  net!: Multiplayer;
+  /** Invité chez un ami : les pièces ouvertes de son château. */
+  private hostUnlocked: Set<string> | null = null;
+  /** Mon château tel qu'il était avant la visite (pour ne pas l'écraser en sauvegardant). */
+  private preVisit: { rooms: SaveData['rooms']; player: SaveData['player'] } | null = null;
   private treeOpened = false;
   private albumOpened = false;
   private journalOpened = false;
@@ -89,7 +97,18 @@ export class Game {
   }
 
   isUnlocked(id: string): boolean {
+    // En visite chez un ami, ce sont ses portes qui comptent.
+    if (this.hostUnlocked) return this.hostUnlocked.has(id);
+    return this.ownUnlocked(id);
+  }
+
+  /** Mes propres pièces (pour l'arbre, même quand je suis chez quelqu'un). */
+  ownUnlocked(id: string): boolean {
     return this.save.rooms[id]?.unlocked === true;
+  }
+
+  get visiting(): boolean {
+    return this.hostUnlocked !== null;
   }
 
   mount(host: HTMLElement): void {
@@ -132,6 +151,17 @@ export class Game {
     this.applySettings();
     store.achievements.value = [...this.save.achievements];
     this.tips = this.makeTips();
+    this.net = new Multiplayer(this.mpGame());
+    this.net.publish();
+    try {
+      const why = sessionStorage.getItem('dust-it-alone:netReason');
+      if (why) {
+        sessionStorage.removeItem('dust-it-alone:netReason');
+        setTimeout(() => store.pushToast('🏠 De retour chez toi', why, 5000), 1500);
+      }
+    } catch {
+      /* rien */
+    }
     store.souvenirCount.value = this.save.souvenirs.length;
     this.bindInput();
     this.updatePlace(true);
@@ -158,7 +188,9 @@ export class Game {
       );
       this.updatePlace(false);
       this.updateHud(realDt);
-      if (store.started.value) this.director.update(realDt, this.player.room());
+      if (store.started.value && !this.visiting) this.director.update(realDt, this.player.room());
+      this.net?.update(realDt);
+      this.world.setRemotePlayers(this.net ? [...this.net.players.values()] : [], realDt);
       if (!store.paused.value && !document.hidden) this.autoQuality(realDt);
       requestAnimationFrame(frame);
     };
@@ -207,7 +239,9 @@ export class Game {
     this.rooms.forEach((r, i) => {
       const m = this.mods.room(r.def.id, r.def.valueMult);
       r.sim.applyModifiers(m);
-      r.sim.setHelpers(this.mods.helpers);
+      // En visite, la poussière vient de l'hôte : pas de réapparition ni d'assistants chez moi.
+      if (this.visiting) r.sim.mods.respawnMult = 0;
+      r.sim.setHelpers(this.visiting ? NO_HELPERS : this.mods.helpers);
       this.world?.setPanScale(i, m.panScale);
     });
     const pm = this.mods.player;
@@ -220,7 +254,7 @@ export class Game {
   }
 
   private treeState() {
-    return { levels: this.save.tree, roomUnlocked: (id: string) => this.isUnlocked(id) };
+    return { levels: this.save.tree, roomUnlocked: (id: string) => this.ownUnlocked(id) };
   }
 
   /** Y a-t-il au moins un nœud qu'on peut se payer ? (pastille sur le bouton de l'arbre) */
@@ -490,6 +524,22 @@ export class Game {
     location.reload();
   }
 
+  /** Écran multijoueur (liste des parties, héberger, rejoindre). */
+  toggleNet(): void {
+    const open = !store.netOpen.value;
+    store.netOpen.value = open;
+    this.player.clearKeys();
+    this.input.pressed = false;
+    if (open) {
+      this.net.openLobby();
+      store.paused.value = false;
+      document.exitPointerLock?.();
+    } else {
+      this.net.closeLobby();
+      if (store.started.value) this.start();
+    }
+  }
+
   toggleJournal(): void {
     const open = !store.journalOpen.value;
     if (open) this.journalOpened = true;
@@ -500,6 +550,91 @@ export class Game {
       store.paused.value = false;
       document.exitPointerLock?.();
     } else this.start();
+  }
+
+  // ───────────────────────────── Multijoueur ─────────────────────────────
+
+  /** Ce que le multijoueur peut demander au jeu. */
+  private mpGame(): MpGame {
+    return {
+      rooms: this.rooms,
+      localPose: () => this.localPose(),
+      unlockedIds: () => ROOMS.filter((r) => this.isUnlocked(r.id)).map((r) => r.id),
+      placeName: () => this.currentRoom?.name ?? ROOMS[0].name,
+      startVisit: (host, unlocked, spawn) => {
+        // On met mon château de côté : il ne sera pas modifié par la visite.
+        this.persist();
+        this.preVisit = { rooms: JSON.parse(JSON.stringify(this.save.rooms)), player: this.save.player ? { ...this.save.player } : null };
+        this.hostUnlocked = new Set(unlocked);
+        this.applyTree();
+        // La poussière de l'hôte va arriver : on vide mes pièces en attendant.
+        for (const r of this.rooms) for (let i = 0; i < r.sim.pool.cap; i++) r.sim.pool.kill(i);
+        this.world.setDoorState((d) => this.doorOpen(d), true);
+        Object.assign(this.player, { x: spawn.x, z: spawn.z, y: spawn.y, yaw: spawn.yaw });
+        (this.player as unknown as { smoothY: number }).smoothY = spawn.y;
+        this.visibleKey = '';
+        this.updatePlace(true);
+        this.publishCastle();
+        store.netOpen.value = false;
+        store.pushToast(`🏰 Chez ${host}`, 'Tu balaies dans son château : la poussière que tu pousses te rapporte des pièces, avec tes propres améliorations.', 6000);
+        this.synth.unlockDoor();
+        this.start();
+      },
+      setHostUnlocked: (unlocked) => {
+        if (!this.hostUnlocked) return;
+        this.hostUnlocked = new Set(unlocked);
+        this.world.setDoorState((d) => this.doorOpen(d));
+        this.visibleKey = '';
+        this.publishCastle();
+      },
+      endVisit: (reason) => {
+        this.persist();
+        this.prestiging = true;
+        try {
+          sessionStorage.setItem('dust-it-alone:netReason', reason || 'Tu es revenu dans ton château.');
+        } catch {
+          /* rien */
+        }
+        location.reload();
+      },
+      creditGrains: (ri, counts) => {
+        const r = this.rooms[ri];
+        if (!r) return;
+        // Je compte les grains avec MES améliorations pour cette pièce.
+        let coins = 0;
+        let n = 0;
+        for (const [type, c] of Object.entries(counts) as [DirtId, number][]) {
+          coins += r.sim.baseValue(type) * r.sim.mods.valueMultiplier * c;
+          n += c;
+          this.save.stats.grains[type] = (this.save.stats.grains[type] ?? 0) + c;
+        }
+        this.earn(coins);
+        if (r.def === this.currentRoom && n) this.synth.collect(counts.star ? 'star' : 'dust', 0, n);
+      },
+      toast: (title, text) => store.pushToast(title, text, 4000),
+      sound: (kind) => (kind === 'leave' ? this.synth.close() : kind === 'request' ? this.synth.chime() : this.synth.fanfare()),
+    };
+  }
+
+  private localPose(): Pose {
+    const p = this.player;
+    const bp = p.broomPoint();
+    return {
+      x: p.x,
+      y: p.y,
+      z: p.z,
+      yaw: p.yaw,
+      pitch: p.pitch,
+      tool: TOOLS[store.selectedTool.value].id,
+      pressed: this.playing && this.input.pressed,
+      bx: bp.x,
+      bz: bp.z,
+      by: bp.room ? bp.room.floorY : p.y,
+      broomRoom: bp.room ? this.rooms.findIndex((r) => r.def === bp.room) : -1,
+      width: this.mods.room('attic', 1).broomWidth,
+      depth: this.rooms[0].sim.broom.depth,
+      grip: this.mods.room('attic', 1).broomGrip,
+    };
   }
 
   /** Les bulles d'aide du tutoriel (chacune une seule fois). */
@@ -619,7 +754,7 @@ export class Game {
   }
 
   private get playing(): boolean {
-    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && this.cinematicT < 0;
+    return store.started.value && !store.paused.value && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value && this.cinematicT < 0;
   }
 
   // ───────────────────────────── Commandes ─────────────────────────────
@@ -630,7 +765,7 @@ export class Game {
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === canvas;
       if (locked) lockedAt = performance.now();
-      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value) {
+      if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value) {
         store.paused.value = true;
         this.input.pressed = false;
         this.player.clearKeys();
@@ -657,6 +792,15 @@ export class Game {
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyJ' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && this.cinematicT < 0) {
         this.toggleAlbum();
+        return;
+      }
+      // Demande pour rejoindre ma partie : O = oui, N = non.
+      if ((e.code === 'KeyO' || e.code === 'KeyN') && store.netRequests.value.length) {
+        this.net.answer(store.netRequests.value[0].slot, e.code === 'KeyO');
+        return;
+      }
+      if (e.code === 'KeyP' && store.started.value && !store.treeOpen.value && this.cinematicT < 0) {
+        this.toggleNet();
         return;
       }
       if (e.code === 'KeyK' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && !store.albumOpen.value && this.cinematicT < 0) {
@@ -723,6 +867,9 @@ export class Game {
           const room = this.player.room();
           if (room) this.events.trigger(kind, this.rooms.findIndex((r) => r.def === room));
         },
+        net: () => ({ ...store.net.value, requests: store.netRequests.value }),
+        dirt: (ri: number) => ({ ...this.rooms[ri].sim.pool.aliveCount }),
+        coins: () => store.coins.value,
         rooms: () => ROOMS.map((r) => ({ id: r.id, name: r.name, x: r.origin.x, z: r.origin.z, w: r.width, h: r.height, y: r.floorY })),
         unlockAll: () => {
           for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
@@ -857,6 +1004,11 @@ export class Game {
   private tryUnlock(): void {
     const d = this.nav.lockedDoorNear(this.player.x, this.player.z, this.player.y);
     if (!d || !d.room) return;
+    if (this.visiting) {
+      store.pushToast('Ce n’est pas ton château 🙂', 'Seul l’hôte peut ouvrir ses portes.', 2500);
+      this.synth.denied();
+      return;
+    }
     const room = roomById(d.room)!;
     if (room.id === 'throne' && !this.director.throneOpenable()) {
       store.pushToast('La porte ne bouge pas…', `Elle s'ouvrira quand le château se souviendra assez : ${this.director.souvenirCount()} / ${THRONE_SOUVENIRS} souvenirs.`, 3500);
@@ -888,7 +1040,7 @@ export class Game {
       const px = this.player.x;
       const pz = this.player.z;
       this.player.update(dt);
-      this.events.update(dt);
+      if (!this.visiting) this.events.update(dt);
       this.tips.update(dt);
       const st = this.save.stats;
       st.playTime += dt;
@@ -916,21 +1068,36 @@ export class Game {
       this.input.yaw = this.player.yaw;
       this.input.pushBonus = this.player.movingForward ? this.mods.player.marchBonus : 0;
       this.input.tool = TOOLS[store.selectedTool.value].id;
+      this.net?.applyRemoteBrooms(ri, r.sim, stepDt);
       r.sim.step(stepDt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
       // Pas léger : en marchant, les pieds écartent la poussière.
       if (this.playing && this.mods.player.feet && this.player.moving && r.def === this.player.room()) r.sim.kickFeet(this.player.x - r.def.origin.x, this.player.z - r.def.origin.z);
       // Les assistants : « en vrai » près du joueur, « en résumé » ailleurs.
-      if (near) r.sim.stepHelpers(stepDt);
+      if (this.visiting) {
+        /* les assistants de l'hôte travaillent chez lui */
+      } else if (near) r.sim.stepHelpers(stepDt);
       else r.sim.abstractHelpers(stepDt);
       const events = r.sim.drainEvents();
       if (events.length === 0) continue;
       let gained = 0;
       const counts: Partial<Record<DirtId, number>> = {};
       for (const e of events) {
+        // Multijoueur : un grain poussé par un invité lui revient (il le compte avec ses améliorations).
+        if (e.owner && this.net?.role === 'host') {
+          this.net.credit(e.owner, ri, e.type);
+          this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', { ...e, byHelper: true });
+          continue;
+        }
+        // En visite, c'est l'hôte qui décide de ce qui est ramassé (il nous l'envoie).
+        if (this.visiting) {
+          this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', { ...e, byHelper: true });
+          continue;
+        }
         gained += e.coins;
         counts[e.type] = (counts[e.type] ?? 0) + 1;
         this.world.onCollect(ri, e.collector, e.coins, e.type === 'star', e);
       }
+      if (gained === 0 && Object.keys(counts).length === 0) continue;
       this.earn(gained);
       const grains = this.save.stats.grains;
       for (const [k, n] of Object.entries(counts) as [DirtId, number][]) grains[k] = (grains[k] ?? 0) + n;
@@ -1053,8 +1220,8 @@ export class Game {
       store.roomCleanedOnce.value = this.save.rooms[cur.def.id]?.cleaned === true;
     }
 
-    // Pièces impeccables (une fois chacune) : bonus + confettis.
-    for (let ri = 0; ri < this.rooms.length; ri++) {
+    // Pièces impeccables (une fois chacune) : bonus + confettis (pas chez un ami).
+    for (let ri = 0; ri < this.rooms.length && !this.visiting; ri++) {
       const r = this.rooms[ri];
       const rs = this.save.rooms[r.def.id];
       if (!rs?.unlocked || rs.cleaned || r.sim.cleanliness < CLEAN_THRESHOLD) continue;
@@ -1103,11 +1270,15 @@ export class Game {
       const rs = this.save.rooms[r.def.id];
       if (rs?.unlocked) rs.dirt = r.sim.dirtCounts();
     }
+    // En visite chez un ami : on garde mon château tel quel (seuls mes pièces, ma progression et mes stats changent).
+    if (this.preVisit) {
+      this.save.rooms = this.preVisit.rooms;
+    }
     this.save = {
       ...this.save,
       coins: store.coins.value,
       totalCoins: store.totalCoins.value,
-      player: { x: p.x, z: p.z, y: p.y, yaw: p.yaw },
+      player: this.preVisit ? this.preVisit.player : { x: p.x, z: p.z, y: p.y, yaw: p.yaw },
       muted: store.muted.value,
       quality: store.qualitySetting.value,
       showFps: store.showFps.value,

@@ -32,11 +32,15 @@ export interface CollectEvent {
   coins: number;
   x: number;
   y: number;
+  /** Multijoueur : joueur qui a poussé ou ramassé ce grain (0 = moi). */
+  owner?: number;
 }
 
 /** La brosse est un rectangle posé au sol (pas un cercle) : largeur × épaisseur. */
 /** Mémoire d'un balai entre deux pas (position précédente, vitesses lissées). */
 export interface BroomState {
+  /** Joueur qui tient ce balai (0 = moi / l'hôte ; 1 à 3 = invités en multijoueur). */
+  owner?: number;
   prev: { x: number; y: number; yaw: number; has: boolean };
   vel: { x: number; y: number };
   spin: number;
@@ -104,6 +108,10 @@ export class RoomSim {
   private time = 0;
   /** Dernier instant où le balai a touché chaque grain. */
   private touched: Float32Array;
+  /** Multijoueur : dernier joueur qui a touché chaque grain. */
+  readonly ownerOf: Uint8Array;
+  /** Joueur qui utilise l'outil en ce moment (pour attribuer les grains ramassés directement). */
+  private toolOwner = 0;
   private magnetCursor = 0;
 
   /** État du balai du joueur (les assistants ont chacun le leur). */
@@ -133,6 +141,7 @@ export class RoomSim {
     this.pool = new ParticlePool(room.capacity);
     this.stamp = new Uint32Array(this.pool.cap);
     this.touched = new Float32Array(this.pool.cap).fill(-99);
+    this.ownerOf = new Uint8Array(this.pool.cap);
     this.collectorRects = room.collectors.map((c) => ({ ...c.rect }));
     this.maxDirt = DIRT_ORDER.reduce((s, id) => s + (room.capacity[id] ?? 0) * DIRT_TYPES[id].dirtWeight, 0);
     this.patchTotal = room.patches.reduce((s, p) => s + p.weight, 0);
@@ -218,7 +227,7 @@ export class RoomSim {
     this.time += dt;
     this.toolActive = 0;
     const tool = input.tool ?? 'broom';
-    this.scoopTimer = Math.max(0, this.scoopTimer - dt);
+    for (const [k, v] of this.scoopTimers) this.scoopTimers.set(k, Math.max(0, v - dt));
     if (tool === 'broom') this.applyBroom(dt, input);
     else if (tool === 'widebroom') this.applyBroom(dt, input, this.player, this.broom.width * WIDE_BROOM.width, this.broom.depth, this.broom.grip * WIDE_BROOM.grip);
     else {
@@ -319,6 +328,7 @@ export class RoomSim {
         if (lt > hw + r * 0.5 || lt < -hw - r * 0.5 || ln > hd + r || ln < -hd - r) continue;
         stamp[i] = id;
         this.touched[i] = this.time;
+        this.ownerOf[i] = st.owner ?? 0;
 
         // Vitesse du point de la brosse qui touche le grain (translation + rotation).
         const px = bvx + w * ry;
@@ -568,7 +578,7 @@ export class RoomSim {
     const px = this.pool.x[i];
     const py = this.pool.y[i];
     this.pool.kill(i);
-    this.events.push({ collector: -1, type: id, coins, x: px, y: py, byHelper });
+    this.events.push({ collector: -1, type: id, coins, x: px, y: py, byHelper, owner: byHelper ? 0 : this.toolOwner });
   }
 
   /** Largeur réelle de la brosse avec l'outil en main (pour l'empreinte affichée). */
@@ -576,15 +586,15 @@ export class RoomSim {
     return tool === 'widebroom' ? this.broom.width * WIDE_BROOM.width : this.broom.width;
   }
 
-  /** Temps avant le prochain coup de pelle à main. */
-  private scoopTimer = 0;
+  /** Temps avant le prochain coup de pelle à main (un par joueur). */
+  private scoopTimers = new Map<number, number>();
   /** Dernier coup de pelle (pour l'animation). */
   scoopFlash = 0;
 
   /** Pelle à main : ramasse d'un coup les grains libres juste devant (pas besoin de les pousser). */
   private scoop(input: BroomInput): void {
-    if (this.scoopTimer > 0) return;
-    this.scoopTimer = HAND_PAN.every;
+    if ((this.scoopTimers.get(this.toolOwner) ?? 0) > 0) return;
+    this.scoopTimers.set(this.toolOwner, HAND_PAN.every);
     const R = HAND_PAN.radius * this.mods.handpan;
     const { x, y, alive, type } = this.pool;
     // On prend les plus proches d'abord.
@@ -676,6 +686,29 @@ export class RoomSim {
         this.toolActive++;
       }
     }
+  }
+
+  /**
+   * Multijoueur (chez l'hôte) : le balai ou l'outil d'un invité agit sur la poussière.
+   * Les grains qu'il pousse ou ramasse lui reviennent (owner).
+   */
+  applyRemote(dt: number, input: BroomInput, st: BroomState, owner: number, broom: { width: number; depth: number; grip: number }): void {
+    st.owner = owner;
+    const tool = input.tool ?? 'broom';
+    if (tool === 'broom' || tool === 'widebroom') {
+      const wide = tool === 'widebroom';
+      this.applyBroom(dt, input, st, broom.width * (wide ? WIDE_BROOM.width : 1), broom.depth, broom.grip * (wide ? WIDE_BROOM.grip : 1));
+      return;
+    }
+    st.prev.has = false;
+    // L'aspirateur a un réservoir propre à chacun : pour un invité, il se comporte comme le balai magique (en plus petit).
+    if (!input.active || !input.pressed || tool === 'vacuum') return;
+    const savedMove = this.toolMove;
+    this.toolMove = Math.min(40, dt * 600);
+    this.toolOwner = owner;
+    this.applyTool(tool, dt, input);
+    this.toolOwner = 0;
+    this.toolMove = savedMove;
   }
 
   /** Vide le réservoir de l'aspirateur (à faire près d'une pelle). */
@@ -782,8 +815,10 @@ export class RoomSim {
     const base = this.baseValue(id);
     const scoop = this.time - this.touched[i] < SCOOP_WINDOW ? 1 + this.mods.scoopBonus : 1;
     const coins = base * this.mods.valueMultiplier * scoop;
+    // Le grain revient à celui qui l'a poussé (s'il l'a touché il y a peu).
+    const owner = this.time - this.touched[i] < 4 ? this.ownerOf[i] : 0;
     this.pool.kill(i);
-    this.events.push({ collector, type: id, coins, x: px, y: py });
+    this.events.push({ collector, type: id, coins, x: px, y: py, owner });
   }
 
   /** Pelle aimantée : à chaque pas, une partie de la poussière glisse doucement vers la pelle la plus proche. */

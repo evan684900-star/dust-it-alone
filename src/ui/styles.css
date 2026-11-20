@@ -769,3 +769,44 @@ kbd {
 .style-option.selected { background: var(--apple); box-shadow: 2px 3px 0 var(--ink); }
 .tool { position: relative; }
 .tool-xl { position: absolute; top: 2px; left: 4px; font: 11px var(--font-display); background: var(--tomato); color: #fff; border: 2px solid var(--ink); border-radius: 6px; padding: 0 3px; line-height: 1.2; }
+
+/* ───────── Multijoueur ───────── */
+.net-card { width: min(760px, calc(100vw - 32px)); }
+.net-card h3 { font: 20px var(--font-display); font-weight: normal; margin: 0 0 8px; }
+.net-card h3 small { font: 800 12px var(--font-body); margin-left: 8px; }
+.lobby-online { color: #3a9a2a; } .lobby-connecting { color: #c08a1a; } .lobby-offline { color: #c0392b; }
+.net-profile { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 12px; }
+.net-profile label { display: flex; flex-direction: column; font-weight: 900; gap: 4px; }
+.net-profile input, .net-join input { padding: 7px 10px; border: 3px solid var(--ink); border-radius: 10px; font: 800 16px var(--font-body); background: #fffaf0; }
+.net-join input { width: 110px; text-transform: uppercase; letter-spacing: 2px; }
+.net-colors { display: flex; gap: 6px; }
+.net-color { width: 30px; height: 30px; border-radius: 50%; border: 3px solid var(--ink); cursor: pointer; }
+.net-color.selected { box-shadow: 0 0 0 3px #fffaf0, 0 0 0 6px var(--ink); }
+.net-section { padding: 12px; margin: 10px 0; border: 3px solid var(--ink); border-radius: 14px; background: #f3e3c3; }
+.net-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+@media (max-width: 640px) { .net-row { grid-template-columns: 1fr; } }
+.net-join { display: flex; gap: 8px; flex-wrap: wrap; }
+.net-empty { font-weight: 700; font-size: 14px; margin: 4px 0 8px; }
+.net-games { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; max-height: 240px; overflow: auto; }
+.net-games li { display: flex; align-items: center; gap: 10px; padding: 8px 10px; background: #fffaf0; border: 3px solid var(--ink); border-radius: 12px; }
+.net-games li > div { flex: 1; display: flex; flex-direction: column; }
+.net-games strong { font: 17px var(--font-display); font-weight: normal; }
+.net-games small { font-weight: 700; font-size: 12px; opacity: 0.75; }
+.net-count { font: 18px var(--font-display); }
+.net-code { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+.net-code span { font-weight: 900; }
+.net-code strong { font: 38px var(--font-display); letter-spacing: 6px; background: #fffaf0; padding: 0 14px; border: 3px dashed var(--ink); border-radius: 12px; }
+.net-status { font-weight: 900; color: #a0461a; margin: 8px 0; }
+.net-note { font-size: 12px; font-weight: 700; opacity: 0.7; margin: 8px 0 12px; }
+.net-players { list-style: none; margin: 6px 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.net-players li { display: flex; align-items: center; gap: 8px; font-weight: 800; }
+.net-dot { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--ink); flex: none; }
+.net-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ping { font: 800 12px var(--font-body); padding: 1px 7px; border-radius: 8px; border: 2px solid var(--ink); background: #e8e0d0; }
+.ping.good { background: #a8e890; } .ping.ok { background: #ffe08a; } .ping.bad { background: #ff9a8a; } .ping.host { background: #ffd35a; }
+.net-hud { position: fixed; right: 24px; top: 96px; min-width: 210px; padding: 8px 12px; pointer-events: none; z-index: 5; }
+.net-hud-title { font: 15px var(--font-display); margin-bottom: 2px; }
+.net-hud .net-players { margin: 4px 0 0; font-size: 14px; }
+.net-request { position: fixed; left: 0; right: 0; margin: 0 auto; width: fit-content; top: 110px; display: flex; gap: 12px; align-items: center; padding: 12px 16px; background: var(--cream); border: 4px solid var(--ink); border-radius: 18px; box-shadow: 5px 6px 0 var(--ink); z-index: 30; font-weight: 800; }
+.net-request .net-dot { width: 22px; height: 22px; }
+.net-request-buttons { display: flex; gap: 8px; margin-top: 6px; }

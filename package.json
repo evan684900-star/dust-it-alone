@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@preact/signals": "^2.9.0",
+    "peerjs": "^1.5.5",
     "preact": "^10.29.1",
     "three": "^0.187.0"
   },
@@ -20,6 +21,7 @@
     "@playwright/test": "^1.63.0",
     "@preact/preset-vite": "^2.10.6",
     "@types/three": "^0.187.0",
+    "peer": "^1.0.2",
     "typescript": "^5.9.3",
     "vite": "^7.3.8",
     "vitest": "^5.0.5"

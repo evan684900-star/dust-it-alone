@@ -12,6 +12,7 @@ import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 import { ACHIEVEMENTS } from '../data/achievements';
 import { REALISTIC } from '../render/realistic';
+import { PLAYER_COLORS } from '../net/multiplayer';
 import { DIRT_ORDER, DIRT_TYPES } from '../data/dirtTypes';
 
 export function App({ game }: { game: Game }) {
@@ -35,6 +36,9 @@ export function App({ game }: { game: Game }) {
       {store.prestigeConfirm.value && <PrestigeConfirm game={game} />}
       {store.albumOpen.value && <Album game={game} />}
       {store.journalOpen.value && <Journal game={game} />}
+      {store.netOpen.value && <NetScreen game={game} />}
+      {store.started.value && store.net.value.role !== 'off' && !store.netOpen.value && <NetHud />}
+      {store.netRequests.value.length > 0 && <NetRequest game={game} />}
       {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
       {store.credits.value && <Credits />}
       {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
@@ -72,6 +76,7 @@ function TitleScreen({ game }: { game: Game }) {
         {store.offlineReport.value && <OfflineReport />}
         <div class="pause-row">
           <SettingsButton />
+          <button class="btn btn-settings" onClick={() => game.toggleNet()}>👥 Multijoueur</button>
           <button class="btn btn-settings" onClick={() => (store.creditsPanel.value = true)}>🎬 Crédits</button>
         </div>
         <GpuWarning />
@@ -203,6 +208,161 @@ function Credits() {
   );
 }
 
+// ───────────────────────────── Multijoueur ─────────────────────────────
+
+function pingClass(ms: number): string {
+  return ms <= 0 ? '' : ms < 80 ? 'good' : ms < 180 ? 'ok' : 'bad';
+}
+
+function Ping({ ms, host }: { ms: number; host?: boolean }) {
+  if (host) return <span class="ping host">hôte</span>;
+  return <span class={`ping ${pingClass(ms)}`}>{ms > 0 ? `${ms} ms` : '…'}</span>;
+}
+
+function PlayerList() {
+  const n = store.net.value;
+  return (
+    <ul class="net-players">
+      {n.players.map((p) => (
+        <li key={p.slot}>
+          <span class="net-dot" style={{ background: p.color }} />
+          <span class="net-name">{p.name}{p.me ? ' (toi)' : ''}</span>
+          <Ping ms={p.ping} host={p.slot === 0} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** L'écran multijoueur : profil, parties en ligne, rejoindre avec un code, héberger. */
+function NetScreen({ game }: { game: Game }) {
+  const n = store.net.value;
+  const [name, setName] = useState(n.profile.name);
+  const [code, setCode] = useState('');
+  const [copied, setCopied] = useState(false);
+  const net = game.net;
+  const saveName = () => net.setProfile({ name, color: n.profile.color });
+  return (
+    <div class="settings-backdrop" onClick={() => game.toggleNet()}>
+      <div class="settings-card net-card" onClick={(e) => e.stopPropagation()}>
+        <h2>👥 Multijoueur</h2>
+        <div class="net-profile">
+          <label>
+            Ton pseudo
+            <input value={name} maxLength={16} onInput={(e) => setName((e.target as HTMLInputElement).value)} onBlur={saveName} onKeyDown={(e) => e.key === 'Enter' && saveName()} />
+          </label>
+          <div class="net-colors">
+            {PLAYER_COLORS.map((c) => (
+              <button key={c} class={`net-color ${n.profile.color === c ? 'selected' : ''}`} style={{ background: c }} onClick={() => net.setProfile({ name, color: c })} title="Ta couleur" />
+            ))}
+          </div>
+        </div>
+
+        {n.role === 'off' && (
+          <>
+            <section class="net-section">
+              <h3>🌍 Parties en ligne <small class={`lobby-${n.lobby}`}>{n.lobby === 'online' ? '● connecté' : n.lobby === 'connecting' ? '● recherche…' : '● hors ligne'}</small></h3>
+              {n.games.length === 0 ? (
+                <p class="net-empty">{n.lobby === 'online' ? 'Aucune partie ouverte pour l’instant. Héberge la tienne, tes amis la verront ici !' : 'Recherche des parties…'}</p>
+              ) : (
+                <ul class="net-games">
+                  {n.games.map((g) => (
+                    <li key={g.code}>
+                      <div>
+                        <strong>Château de {g.host}</strong>
+                        <small>{g.place} · {g.rooms} pièce{g.rooms > 1 ? 's' : ''} ouvertes</small>
+                      </div>
+                      <span class="net-count">{g.players}/{g.max}</span>
+                      <button class="btn btn-settings" disabled={g.players >= g.max} onClick={() => { saveName(); void net.join(g.code); }}>
+                        {g.players >= g.max ? 'Complet' : 'Demander à rejoindre'}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+            <section class="net-section net-row">
+              <div>
+                <h3>🔑 Rejoindre avec un code</h3>
+                <div class="net-join">
+                  <input placeholder="ABCDE" value={code} maxLength={8} onInput={(e) => setCode((e.target as HTMLInputElement).value.toUpperCase())} onKeyDown={(e) => e.key === 'Enter' && code && (saveName(), void net.join(code))} />
+                  <button class="btn btn-settings" disabled={!code.trim()} onClick={() => { saveName(); void net.join(code); }}>Envoyer la demande</button>
+                </div>
+              </div>
+              <div>
+                <h3>🏰 Héberger mon château</h3>
+                <label class="toggle">
+                  <input type="checkbox" checked={n.isPublic} onChange={(e) => net.setPublic((e.target as HTMLInputElement).checked)} />
+                  Visible dans la liste des parties
+                </label>
+                <button class="btn btn-big" onClick={() => { saveName(); void net.host(); }}>Ouvrir ma partie</button>
+              </div>
+            </section>
+          </>
+        )}
+
+        {n.role === 'host' && (
+          <section class="net-section">
+            <h3>🏰 Ta partie est ouverte</h3>
+            <div class="net-code">
+              <span>Code</span>
+              <strong>{n.code}</strong>
+              <button class="btn btn-settings" onClick={() => { navigator.clipboard?.writeText(n.code); setCopied(true); }}>{copied ? '✔ Copié' : '📋 Copier'}</button>
+            </div>
+            <p class="net-empty">{n.isPublic ? 'Elle apparaît dans la liste des parties en ligne.' : 'Partie privée : donne le code à tes amis.'} Tu valides chaque demande (touche O pour accepter, N pour refuser). 4 joueurs au maximum.</p>
+            <label class="toggle">
+              <input type="checkbox" checked={n.isPublic} onChange={(e) => net.setPublic((e.target as HTMLInputElement).checked)} />
+              Visible dans la liste des parties
+            </label>
+            <PlayerList />
+            <button class="btn btn-settings" onClick={() => net.leave('')}>Fermer ma partie</button>
+          </section>
+        )}
+
+        {n.role === 'guest' && (
+          <section class="net-section">
+            <h3>{n.visiting ? '🏰 Tu joues chez un ami' : '⏳ Demande envoyée'}</h3>
+            {n.visiting && <PlayerList />}
+            <button class="btn btn-settings" onClick={() => net.leave('Tu as quitté la partie.')}>{n.visiting ? 'Rentrer dans mon château' : 'Annuler la demande'}</button>
+          </section>
+        )}
+
+        {n.status && <p class="net-status">{n.status}</p>}
+        <p class="net-note">Connexion directe entre joueurs (pair-à-pair). Chacun garde sa propre progression : tu gagnes les pièces de la poussière que tu pousses, avec tes améliorations.</p>
+        <button class="btn" onClick={() => game.toggleNet()}>Fermer (P)</button>
+      </div>
+    </div>
+  );
+}
+
+/** En jeu : les joueurs connectés et leur ping. */
+function NetHud() {
+  const n = store.net.value;
+  return (
+    <div class="panel net-hud">
+      <div class="net-hud-title">{n.role === 'host' ? <>👥 Ta partie · code <strong>{n.code}</strong></> : '👥 Partie à plusieurs'}</div>
+      <PlayerList />
+    </div>
+  );
+}
+
+/** Côté hôte : quelqu'un demande à rejoindre. */
+function NetRequest({ game }: { game: Game }) {
+  const r = store.netRequests.value[0];
+  return (
+    <div class="net-request">
+      <span class="net-dot" style={{ background: r.color }} />
+      <div>
+        <strong>{r.name}</strong> veut rejoindre ta partie
+        <div class="net-request-buttons">
+          <button class="btn btn-settings" onClick={() => game.net.answer(r.slot, true)}>✔ Accepter (O)</button>
+          <button class="btn btn-settings" onClick={() => game.net.answer(r.slot, false)}>✖ Refuser (N)</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /** Qui a fait quoi. */
 function CreditsList() {
   return (
@@ -234,6 +394,7 @@ function Controls() {
       <span><kbd>M</kbd> carte du château</span>
       <span><kbd>J</kbd> album des souvenirs</span>
       <span><kbd>K</kbd> carnet et succès</span>
+      <span><kbd>P</kbd> multijoueur</span>
       <span><kbd>1</kbd>…<kbd>8</kbd> changer d'outil</span>
       <span><kbd>Échap</kbd> pause</span>
     </div>
@@ -251,6 +412,7 @@ function PauseScreen({ game }: { game: Game }) {
           <SettingsButton />
           <button class="btn btn-settings" onClick={() => game.toggleAlbum()}>📜 Album (J)</button>
           <button class="btn btn-settings" onClick={() => game.toggleJournal()}>📊 Carnet (K)</button>
+          <button class="btn btn-settings" onClick={() => game.toggleNet()}>👥 Multijoueur (P)</button>
         </div>
         <GpuWarning />
         <Controls />
