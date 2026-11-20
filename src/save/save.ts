@@ -27,6 +27,8 @@ export interface Settings {
   fov: number;
   /** Volume général (0 à 1). */
   volume: number;
+  /** Volume de la musique (0 à 1). */
+  music: number;
   /** Les personnages « parlent » (petits bips). */
   voices: boolean;
   /** Balancement de la tête en marchant. */
@@ -37,7 +39,7 @@ export interface Settings {
   realistic: boolean;
 }
 
-export const DEFAULT_SETTINGS: Settings = { sensitivity: 1, fov: 72, volume: 0.8, voices: true, headBob: true, invertY: false, realistic: false };
+export const DEFAULT_SETTINGS: Settings = { sensitivity: 1, fov: 72, volume: 0.8, music: 0.5, voices: true, headBob: true, invertY: false, realistic: false };
 
 /** Statistiques de la partie (depuis le tout début, Grands Ménages compris). */
 export interface Stats {
@@ -227,6 +229,7 @@ function cleanSettings(v: unknown): Settings {
     sensitivity: clamp(s.sensitivity, 0.2, 3, d.sensitivity),
     fov: clamp(s.fov, 55, 100, d.fov),
     volume: clamp(s.volume, 0, 1, d.volume),
+    music: clamp(s.music, 0, 1, d.music),
     voices: s.voices !== false,
     headBob: s.headBob !== false,
     invertY: s.invertY === true,

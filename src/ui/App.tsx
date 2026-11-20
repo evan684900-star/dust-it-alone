@@ -571,7 +571,7 @@ function CreditsList() {
       <dl>
         <dt>Idée, direction et tests</dt><dd>Le créateur du jeu</dd>
         <dt>Code, 3D, histoire et sons</dt><dd>Claude (Anthropic)</dd>
-        <dt>Musique</dt><dd>Bientôt !</dd>
+        <dt>Musique</dt><dd>« Poussière oubliée », par le créateur du jeu</dd>
         <dt>Moteur 3D</dt><dd>three.js</dd>
         <dt>Interface</dt><dd>Preact et Vite</dd>
         <dt>Polices</dt><dd>Lilita One et Nunito (Google Fonts, licence OFL)</dd>
@@ -766,7 +766,8 @@ function SoundSettings({ game }: { game: Game }) {
       <Slider label="Volume général" value={s.volume} min={0} max={1} step={0.01} show={(v) => `${Math.round(v * 100)} %`} onInput={(v) => game.setSetting('volume', v)} />
       <Toggle label="Voix des personnages (petits bips)" checked={s.voices} onChange={(v) => game.setSetting('voices', v)} />
       <Toggle label="Couper tout le son" checked={store.muted.value} onChange={() => game.toggleMute()} />
-      <p class="settings-note">🎵 La musique arrive bientôt !</p>
+      <Slider label="Musique" value={s.music} min={0} max={1} step={0.01} show={(v) => `${Math.round(v * 100)} %`} onInput={(v) => game.setSetting('music', v)} />
+      <p class="settings-note">🎵 Musique : « Poussière oubliée »</p>
     </>
   );
 }

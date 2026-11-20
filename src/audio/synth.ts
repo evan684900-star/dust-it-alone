@@ -270,6 +270,54 @@ export class Synth {
     for (let k = 0; k < 8; k++) this.tone(1046.5 * 2 ** (PENTA[k] / 12), t + k * 0.07, 0.3, 'triangle', 0.035);
   }
 
+  // ───────────────────────────── Musique de fond ─────────────────────────────
+
+  private music: { gain: GainNode; src: AudioBufferSourceNode | null; loading: boolean } | null = null;
+  private musicVolume = 0.5;
+
+  /**
+   * Musique de fond en boucle parfaite (sans blanc entre deux tours).
+   * Elle passe par le volume général : couper le son la coupe aussi, et la pause l'étouffe.
+   */
+  playMusic(url: string): void {
+    if (!this.ctx || this.music) return;
+    const ctx = this.ctx;
+    const gain = ctx.createGain();
+    gain.gain.value = 0;
+    gain.connect(this.master);
+    this.music = { gain, src: null, loading: true };
+    const m = this.music;
+    fetch(url)
+      .then((r) => r.arrayBuffer())
+      .then((data) => ctx.decodeAudioData(data))
+      .then((buf) => {
+        const src = ctx.createBufferSource();
+        src.buffer = buf;
+        src.loop = true;
+        src.connect(gain);
+        src.start();
+        m.src = src;
+        m.loading = false;
+        // Fondu d'entrée doux.
+        gain.gain.setTargetAtTime(this.musicVolume * 0.6, ctx.currentTime, 1.2);
+      })
+      .catch(() => {
+        // Pas de musique (hors ligne…) : le jeu continue sans.
+        this.music = null;
+      });
+  }
+
+  /** État de la musique (pour les tests). */
+  musicState(): 'off' | 'loading' | 'playing' {
+    return !this.music ? 'off' : this.music.loading ? 'loading' : 'playing';
+  }
+
+  /** Volume de la musique (0 à 1). */
+  setMusicVolume(v: number): void {
+    this.musicVolume = v;
+    if (this.ctx && this.music && !this.music.loading) this.music.gain.gain.setTargetAtTime(v * 0.6, this.ctx.currentTime, 0.1);
+  }
+
   /** Pause : tout le son devient étouffé (comme à travers une porte). */
   setMuffled(on: boolean): void {
     if (!this.ctx) return;

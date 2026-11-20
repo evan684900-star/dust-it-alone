@@ -439,6 +439,8 @@ export class Game {
   /** Lancement / reprise : on capture la souris pour la visée. */
   start(): void {
     this.synth.unlock();
+    // Musique de fond « Poussière oubliée » (elle ne peut démarrer qu'après un clic : règle des navigateurs).
+    this.synth.playMusic('/music/poussiere-oubliee.mp3');
     const firstTime = !store.started.value && !this.save.introSeen;
     store.started.value = true;
     if (firstTime) {
@@ -579,6 +581,7 @@ export class Game {
     this.player.headBob = s.headBob;
     this.world.setFov(s.fov);
     this.synth.setVolume(s.volume);
+    this.synth.setMusicVolume(s.music);
     this.synth.voices = s.voices;
   }
 
@@ -1001,6 +1004,7 @@ export class Game {
         dirt: (ri: number) => ({ ...this.rooms[ri].sim.pool.aliveCount }),
         coins: () => store.coins.value,
         treeIds: () => TREE_NODES.map((n) => n.id),
+        music: () => this.synth.musicState(),
         active: () => [...(this.net?.activeRooms() ?? [])],
         rooms: () => ROOMS.map((r) => ({ id: r.id, name: r.name, x: r.origin.x, z: r.origin.z, w: r.width, h: r.height, y: r.floorY })),
         unlockAll: () => {
