@@ -184,7 +184,8 @@ export class Game {
       const p = this.player;
       const bp = p.broomPoint();
       const broomRoom = this.playing ? bp.room : null;
-      this.world.render(
+      // L'arbre couvre tout l'écran : inutile de dessiner le château derrière (la simulation continue).
+      if (!store.treeOpen.value) this.world.render(
         dt,
         this.cinematicT >= 0 ? this.cinematicView(dt) : { x: p.x, z: p.z, eye: p.eye, yaw: p.yaw, pitch: p.pitch },
         { visible: store.started.value, x: bp.x, z: bp.z, y: bp.room ? bp.room.floorY : p.feet, pressed: this.input.pressed },

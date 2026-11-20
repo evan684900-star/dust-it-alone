@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'preact/hooks';
+import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import type { Game } from '../game';
 import { BRANCHES, GOLD_RING_DEPTH, NODE_BY_ID, TREE_NODES, type TreeNode } from '../data/tree';
 import { ROOMS } from '../data/rooms';
@@ -36,19 +36,42 @@ function arc(r: number, a0: number, a1: number): string {
   return `M ${p(a0)} A ${r} ${r} 0 ${a1 - a0 > Math.PI ? 1 : 0} 1 ${p(a1)}`;
 }
 
+/** Pièces affichées en direct (petit composant à part : lui seul se redessine à chaque grain). */
+function LiveCoins() {
+  return (
+    <div class="tree-coins">
+      🪙 {formatNumber(store.coins.value)} <small>+{formatNumber(store.coinsPerSecond.value)}/s</small>
+    </div>
+  );
+}
+
+const tf = (v: { x: number; y: number; k: number }) => `translate(${v.x} ${v.y}) scale(${v.k})`;
+
 export function SkillTree({ game }: { game: Game }) {
   const levels = store.treeLevels.value;
-  const coins = store.coins.value;
   const unlocked = store.unlockedRooms.value;
-  const st = { levels, roomUnlocked: (id: string) => unlocked.includes(id) };
+  // L'argent change à chaque grain : l'arbre ne se recalcule que 4 fois par seconde (sinon ça rame).
+  const [coins, setCoins] = useState(store.coins.peek());
+  useEffect(() => {
+    const t = setInterval(() => setCoins(store.coins.peek()), 250);
+    return () => clearInterval(t);
+  }, []);
+  useEffect(() => setCoins(store.coins.peek()), [levels]);
+  const st = useMemo(() => ({ levels, roomUnlocked: (id: string) => unlocked.includes(id) }), [levels, unlocked]);
   const [selected, setSelected] = useState<string>('broom-wide-1');
   const [hovered, setHovered] = useState<string | null>(null);
-  const [view, setView] = useState({ x: 0, y: 0, k: 0.6 });
+  // Vue (déplacement / zoom) : appliquée directement à l'image, sans tout redessiner.
+  const view = useRef({ x: 0, y: 0, k: 0.6 });
+  const gRef = useRef<SVGGElement>(null);
+  const setView = (v: { x: number; y: number; k: number } | ((v: { x: number; y: number; k: number }) => { x: number; y: number; k: number })) => {
+    view.current = typeof v === 'function' ? v(view.current) : v;
+    gRef.current?.setAttribute('transform', tf(view.current));
+  };
   void GOLD_RING_DEPTH;
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
-  // Molette : zoom autour du curseur.
+  // Molette : zoom.
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
     setView((v) => ({ ...v, k: Math.max(0.12, Math.min(2.2, v.k * (e.deltaY > 0 ? 0.9 : 1.1))) }));
@@ -69,74 +92,29 @@ export function SkillTree({ game }: { game: Game }) {
   // Seuls les nœuds achetés ou achetables maintenant sont visibles : les autres « poussent » plus tard.
   const goldOn = store.sparks.value > 0 || store.prestiges.value > 0;
   const wallet = (n: TreeNode) => (n.currency === 'sparks' ? store.sparks.value : coins);
-  const visible = new Set(
-    TREE_NODES.filter((n) => {
-      if (n.branch === 'gold') return goldOn;
-      if ((levels[n.id] ?? 0) > 0) return true;
-      const av = availability(n, st);
-      return av.ok || (!av.ok && av.reason === 'fork');
-    }).map((n) => n.id),
+  // Disponibilité de chaque nœud : calculée une fois par changement (pas à chaque image).
+  const avs = useMemo(() => new Map(TREE_NODES.map((n) => [n.id, availability(n, st)])), [st]);
+  const visible = useMemo(
+    () =>
+      new Set(
+        TREE_NODES.filter((n) => {
+          if (n.branch === 'gold') return goldOn;
+          if ((levels[n.id] ?? 0) > 0) return true;
+          const av = avs.get(n.id)!;
+          return av.ok || (!av.ok && av.reason === 'fork');
+        }).map((n) => n.id),
+      ),
+    [avs, levels, goldOn],
   );
   const hiddenCount = TREE_NODES.length - visible.size;
   const focusId = [hovered, selected].find((id) => id && visible.has(id)) ?? [...visible][0] ?? 'broom-wide-1';
   const focus = NODE_BY_ID.get(focusId)!;
   const rootActive = TREE_NODES.some((n) => (levels[n.id] ?? 0) > 0);
 
-  return (
-    <div class="tree-screen">
-      <div class="tree-header">
-        <h2>🌳 L'Arbre des Souvenirs</h2>
-        <div class="tree-coins">🪙 {formatNumber(coins)} <small>+{formatNumber(store.coinsPerSecond.value)}/s</small></div>
-        {goldOn && <div class="tree-coins sparks">✨ {formatNumber(store.sparks.value)} <small>+{store.sparks.value} % de valeur</small></div>}
-        {goldOn && (
-          <button class="btn tree-ring-btn" onClick={() => setView({ x: 0, y: 0, k: 0.17 })}>
-            Voir l'anneau doré
-          </button>
-        )}
-        {(store.prestigeReady.value || store.prestiges.value > 0) && (
-          <button class="btn btn-prestige" disabled={!store.prestigeReady.value} onClick={() => (store.prestigeConfirm.value = true)}>
-            ✨ Grand Ménage <small>+{formatNumber(store.prestigeGain.value)} Étincelles</small>
-          </button>
-        )}
-        <button class="btn tree-close" onClick={() => game.toggleTree()}>Fermer (B)</button>
-      </div>
-
-      <svg
-        ref={svgRef}
-        class="tree-svg"
-        viewBox="-760 -640 1520 1280"
-        onPointerDown={(e) => {
-          // Pas de capture de la souris ici : sinon le clic n'arriverait jamais jusqu'au nœud.
-          drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, moved: false };
-        }}
-        onPointerMove={(e) => {
-          const d = drag.current;
-          if (!d) return;
-          const sc = 1520 / (svgRef.current?.clientWidth || 1520) / view.k;
-          const dx = (e.clientX - d.x) * sc;
-          const dy = (e.clientY - d.y) * sc;
-          if (!d.moved && Math.abs(dx) + Math.abs(dy) > 6) {
-            // On glisse vraiment : maintenant seulement, on capture la souris pour déplacer l'arbre.
-            d.moved = true;
-            (e.currentTarget as Element).setPointerCapture(e.pointerId);
-          }
-          if (d.moved) setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }));
-        }}
-        onPointerUp={() => {
-          // Le clic du nœud passe juste après : on garde l'info « a glissé » le temps de ce clic.
-          const d = drag.current;
-          setTimeout(() => {
-            if (drag.current === d) drag.current = null;
-          }, 0);
-        }}
-      >
-        <defs>
-          <radialGradient id="tree-glow">
-            <stop offset="0" stop-color="#fff3c4" stop-opacity="0.35" />
-            <stop offset="1" stop-color="#fff3c4" stop-opacity="0" />
-          </radialGradient>
-        </defs>
-        <g transform={`translate(${view.x} ${view.y}) scale(${view.k})`}>
+  // Le dessin de l'arbre (centaines de nœuds) n'est refait que si quelque chose a changé.
+  const graph = useMemo(
+    () => (
+      <>
           <circle r={1500} fill="url(#tree-glow)" />
           {/* Anneaux de profondeur : plus on s'éloigne de Plume, plus c'est cher */}
           {[2, 4, 6, 8].map((d) => <circle key={d} r={d * RING} class="tree-ring" />)}
@@ -158,7 +136,7 @@ export function SkillTree({ game }: { game: Game }) {
             const p = POS.get(n.id)!;
             const parents = (n.parents.length ? n.parents : n.branch === 'gold' ? [] : ['__root']).filter((pid) => pid === '__root' || visible.has(pid));
             const lvl = levels[n.id] ?? 0;
-            const av = availability(n, st);
+            const av = avs.get(n.id)!;
             return parents.map((pid) => {
               const q = pid === '__root' ? { x: 0, y: 0 } : POS.get(pid)!;
               const cls = lvl > 0 ? 'lit' : av.ok ? 'open' : 'dim';
@@ -177,7 +155,7 @@ export function SkillTree({ game }: { game: Game }) {
           {TREE_NODES.filter((n) => visible.has(n.id)).map((n) => {
             const p = POS.get(n.id)!;
             const lvl = levels[n.id] ?? 0;
-            const av = availability(n, st);
+            const av = avs.get(n.id)!;
             const state = stateOf(n, av, lvl, wallet(n), revealed(n, st));
             const color = BRANCHES[n.branch].color;
             const R = n.kind === 'big' ? 34 : n.kind === 'junction' ? 26 : 28;
@@ -226,6 +204,67 @@ export function SkillTree({ game }: { game: Game }) {
               </g>
             );
           })}
+      </>
+    ),
+    [levels, avs, visible, coins, selected, goldOn, store.sparks.value, rootActive],
+  );
+
+  return (
+    <div class="tree-screen">
+      <div class="tree-header">
+        <h2>🌳 L'Arbre des Souvenirs</h2>
+        <LiveCoins />
+        {goldOn && <div class="tree-coins sparks">✨ {formatNumber(store.sparks.value)} <small>+{store.sparks.value} % de valeur</small></div>}
+        {goldOn && (
+          <button class="btn tree-ring-btn" onClick={() => setView({ x: 0, y: 0, k: 0.17 })}>
+            Voir l'anneau doré
+          </button>
+        )}
+        {(store.prestigeReady.value || store.prestiges.value > 0) && (
+          <button class="btn btn-prestige" disabled={!store.prestigeReady.value} onClick={() => (store.prestigeConfirm.value = true)}>
+            ✨ Grand Ménage <small>+{formatNumber(store.prestigeGain.value)} Étincelles</small>
+          </button>
+        )}
+        <button class="btn tree-close" onClick={() => game.toggleTree()}>Fermer (B)</button>
+      </div>
+
+      <svg
+        ref={svgRef}
+        class="tree-svg"
+        viewBox="-760 -640 1520 1280"
+        onPointerDown={(e) => {
+          // Pas de capture de la souris ici : sinon le clic n'arriverait jamais jusqu'au nœud.
+          drag.current = { x: e.clientX, y: e.clientY, vx: view.current.x, vy: view.current.y, moved: false };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const sc = 1520 / (svgRef.current?.clientWidth || 1520) / view.current.k;
+          const dx = (e.clientX - d.x) * sc;
+          const dy = (e.clientY - d.y) * sc;
+          if (!d.moved && Math.abs(dx) + Math.abs(dy) > 6) {
+            // On glisse vraiment : maintenant seulement, on capture la souris pour déplacer l'arbre.
+            d.moved = true;
+            (e.currentTarget as Element).setPointerCapture(e.pointerId);
+          }
+          if (d.moved) setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }));
+        }}
+        onPointerUp={() => {
+          // Le clic du nœud passe juste après : on garde l'info « a glissé » le temps de ce clic.
+          const d = drag.current;
+          setTimeout(() => {
+            if (drag.current === d) drag.current = null;
+          }, 0);
+        }}
+      >
+        <defs>
+          <radialGradient id="tree-glow">
+            <stop offset="0" stop-color="#fff3c4" stop-opacity="0.35" />
+            <stop offset="1" stop-color="#fff3c4" stop-opacity="0" />
+          </radialGradient>
+        </defs>
+        <g ref={gRef} transform={tf(view.current)}>
+          {graph}
         </g>
       </svg>
 

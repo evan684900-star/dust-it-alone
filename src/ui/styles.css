@@ -510,7 +510,8 @@ kbd {
 
 .tree-link { stroke: #5a4466; stroke-width: 6; stroke-linecap: round; }
 .tree-link.open { stroke: #b9a3c6; stroke-dasharray: 2 12; }
-.tree-link.lit { stroke-width: 9; stroke-dasharray: 14 10; animation: sap 1.4s linear infinite; filter: drop-shadow(0 0 6px rgba(255, 220, 140, 0.6)); }
+/* Pas d'ombre lumineuse animée (très coûteuse) : la sève qui coule suffit. */
+.tree-link.lit { stroke-width: 9; stroke-dasharray: 14 10; animation: sap 1.4s linear infinite; }
 .tree-link.junction { stroke-dasharray: 4 8; }
 @keyframes sap { to { stroke-dashoffset: -48; } }
 
@@ -530,15 +531,16 @@ kbd {
 .tree-node.poor .tree-icon { opacity: 0.8; }
 .tree-node.partial .shape { fill: color-mix(in srgb, var(--c) 45%, #3a2a44); }
 .tree-node.buyable .shape { fill: color-mix(in srgb, var(--c) 70%, #fff3d6); animation: node-pulse 1.3s ease-in-out infinite; }
-.tree-node.maxed .shape { fill: #ffd86a; stroke: #7a5a10; filter: drop-shadow(0 0 10px rgba(255, 220, 100, 0.8)); }
+.tree-node.maxed .shape { fill: #ffd86a; stroke: #b8902a; stroke-width: 7; }
 .tree-node.selected .shape { stroke: #fff; stroke-width: 7; }
-@keyframes node-pulse { 50% { filter: drop-shadow(0 0 14px var(--c)); } }
+/* Pulsation légère : on fait clignoter le contour plutôt qu'une ombre floue. */
+@keyframes node-pulse { 50% { stroke: #fff3c4; stroke-width: 8; } }
 .tree-icon { font-size: 28px; text-anchor: middle; pointer-events: none; }
 .tree-node.big .tree-icon { font-size: 32px; }
 .tree-flower { font-size: 22px; text-anchor: middle; pointer-events: none; }
 .tree-soon { font: 14px var(--font-body); font-weight: 900; fill: #c9b8d6; text-anchor: middle; pointer-events: none; }
 .lvl-seg { fill: none; stroke: #4a3a54; stroke-width: 6; stroke-linecap: round; }
-.lvl-seg.on { filter: drop-shadow(0 0 4px rgba(255, 230, 150, 0.7)); }
+.lvl-seg.on { stroke-width: 7; }
 
 .tree-detail {
   position: absolute;
