@@ -47,6 +47,7 @@ export function App({ game }: { game: Game }) {
       {store.journalOpen.value && <Journal game={game} />}
       {store.netOpen.value && <NetScreen game={game} />}
       {store.inventoryOpen.value && <Inventory game={game} />}
+      {store.recoverOpen.value && <RecoverPanel game={game} />}
       {store.started.value && store.net.value.role !== 'off' && !store.netOpen.value && <NetHud />}
       {store.netRequests.value.length > 0 && <NetRequest game={game} />}
       {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
@@ -97,6 +98,7 @@ function TitleScreen({ game }: { game: Game }) {
         <div class="pause-row">
           <button class="btn btn-settings" onClick={() => game.toggleNet()}>👥 Rejoindre un ami</button>
           <SettingsButton />
+          <button class="btn btn-settings" onClick={() => (store.recoverOpen.value = true)}>🛟 Une partie a disparu ?</button>
           <button class="btn btn-settings" onClick={() => (store.creditsPanel.value = true)}>🎬 Crédits</button>
         </div>
         <GpuWarning />
@@ -299,6 +301,38 @@ function Credits() {
         <CreditsList />
         <p class="credits-list">Merci d'avoir joué ! 🧹✨</p>
         <button class="btn btn-big" onClick={() => (store.credits.value = false)}>Continuer à faire le ménage</button>
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── Récupérer une partie ─────────────────────────────
+
+function RecoverPanel({ game }: { game: Game }) {
+  const saves = game.foundSaves();
+  const close = () => (store.recoverOpen.value = false);
+  const date = (t: number) => new Date(t).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return (
+    <div class="settings-backdrop" onClick={close}>
+      <div class="settings-card recover-card" onClick={(e) => e.stopPropagation()}>
+        <h2>🛟 Récupérer une partie</h2>
+        <p class="chest-help">Voici toutes les sauvegardes de Dust It Alone trouvées dans ce navigateur, y compris les copies de secours. « Restaurer » en fait un <b>nouveau monde</b> : rien n’est écrasé.</p>
+        {saves.length === 0 ? (
+          <p class="settings-note">Aucune sauvegarde trouvée dans ce navigateur. Si tu jouais sur une autre adresse (par exemple dust-it-alone.vercel.app au lieu de dustitalone.vercel.app), un autre navigateur ou une fenêtre de navigation privée, ta partie y est peut-être encore.</p>
+        ) : (
+          <ul class="recover-list">
+            {saves.map((s) => (
+              <li key={s.key}>
+                <div>
+                  <strong>{s.name}</strong> <span class={`world-badge ${s.kind === 'monde' ? '' : 'mp'}`}>{s.kind}</span>
+                  <small>🪙 {formatNumber(s.coins)} en poche · {formatNumber(s.totalCoins)} gagnées · 🚪 {s.rooms}/14 · 📜 {s.souvenirs}{s.prestiges ? ` · ✨ ${s.prestiges} Grand(s) Ménage(s)` : ''} · {date(s.savedAt)}</small>
+                </div>
+                <button class="btn btn-settings" onClick={() => game.restoreSave(s.key)}>Restaurer</button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <button class="btn" onClick={close}>Fermer</button>
       </div>
     </div>
   );
@@ -759,6 +793,7 @@ function SaveSettings({ game }: { game: Game }) {
         }} />
       </div>
       {msg && <p class="settings-note">{msg}</p>}
+      <button class="btn btn-settings" onClick={() => (store.recoverOpen.value = true)}>🛟 Récupérer une partie (copies de secours)</button>
       <div class="save-danger">
         {wipe ? (
           <>

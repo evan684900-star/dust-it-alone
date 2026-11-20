@@ -7,7 +7,7 @@ import { sfx } from './audio/synth';
 import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { createWorld, currentWorld, deleteWorld, exportSave, importSave, listWorlds, loadSave, renameWorld, setCurrentWorld, writeSave, type SaveData, type Settings } from './save/save';
+import { createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
@@ -490,6 +490,17 @@ export class Game {
     this.persist();
     createWorld(name, multiplayer, isPublic, this.save.settings);
     this.reloadInto();
+  }
+
+  /** Toutes les sauvegardes trouvées dans ce navigateur (« Récupérer une partie »). */
+  foundSaves(): FoundSave[] {
+    return findSaves();
+  }
+
+  /** Restaure une sauvegarde trouvée comme nouveau monde, et y entre. */
+  restoreSave(key: string): void {
+    this.persist();
+    if (restoreAsWorld(key)) this.reloadInto();
   }
 
   removeWorld(id: string): void {

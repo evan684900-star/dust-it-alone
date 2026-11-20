@@ -169,6 +169,8 @@ export const world = signal<{ name: string; multiplayer: boolean; isPublic: bool
 /** Barre rapide (3 outils) et coffre des combles (tous les outils). */
 export const hotbar = signal<string[]>(['broom', '', '']);
 export const inventoryOpen = signal(false);
+/** Fenêtre « Récupérer une partie ». */
+export const recoverOpen = signal(false);
 /** Case de la barre choisie dans le coffre (pour y ranger un outil). */
 export const inventorySlot = signal(0);
 /** Le joueur est devant le coffre des combles. */

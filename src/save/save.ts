@@ -410,6 +410,13 @@ export function createWorld(name: string, multiplayer: boolean, isPublic: boolea
 
 export function deleteWorld(id: string, store: StorageLike | null = storage()): void {
   if (!store) return;
+  // Un monde effacé est d'abord mis de côté : une fausse manip reste rattrapable (« Récupérer une partie »).
+  try {
+    const txt = store.getItem(worldKey(id));
+    if (txt) store.setItem(`${RESCUE_PREFIX}${Date.now()}`, txt);
+  } catch {
+    /* rien */
+  }
   store.removeItem?.(worldKey(id));
   store.removeItem?.(worldKey(id) + ':backup');
   const list = listWorlds(store).filter((w) => w.id !== id);
@@ -444,11 +451,103 @@ export function loadSave(store: StorageLike | null = storage(), id = currentWorl
   return defaultSave();
 }
 
+// ───────────────────────────── Filet de sécurité et récupération ─────────────────────────────
+
+const RESCUE_PREFIX = 'dust-it-alone:rescue:';
+const RESCUE_MAX = 6;
+
+/**
+ * Avant d'écraser une sauvegarde par une autre qui a BEAUCOUP moins de progression
+ * (et ce n'est pas un Grand Ménage), on met l'ancienne de côté : elle reste récupérable.
+ */
+function rescueIfLosing(prevText: string, next: SaveData, store: StorageLike, id: string): void {
+  try {
+    const prev = migrate(JSON.parse(prevText));
+    const lost = prev.totalCoins > 2000 && next.totalCoins < prev.totalCoins * 0.5 && next.prestiges <= prev.prestiges;
+    const fewerRooms = Object.values(prev.rooms).filter((r) => r.unlocked).length > Object.values(next.rooms).filter((r) => r.unlocked).length && next.prestiges <= prev.prestiges;
+    if (!lost && !fewerRooms) return;
+    store.setItem(`${RESCUE_PREFIX}${Date.now()}`, JSON.stringify({ ...prev, rescuedFrom: id }));
+    // On ne garde que les plus récentes.
+    const keys = allKeys(store).filter((k) => k.startsWith(RESCUE_PREFIX)).sort();
+    for (const k of keys.slice(0, Math.max(0, keys.length - RESCUE_MAX))) store.removeItem?.(k);
+  } catch {
+    /* rien */
+  }
+}
+
+function allKeys(store: StorageLike): string[] {
+  const s = store as unknown as { length?: number; key?: (i: number) => string | null; m?: Map<string, string> };
+  if (s.m instanceof Map) return [...s.m.keys()];
+  const out: string[] = [];
+  if (typeof s.length === 'number' && s.key) for (let i = 0; i < s.length; i++) {
+    const k = s.key(i);
+    if (k) out.push(k);
+  }
+  return out;
+}
+
+/** Une sauvegarde trouvée dans le navigateur (principale, copie de secours ou mise de côté). */
+export interface FoundSave {
+  key: string;
+  kind: 'monde' | 'secours' | 'mise de côté';
+  name: string;
+  savedAt: number;
+  coins: number;
+  totalCoins: number;
+  rooms: number;
+  souvenirs: number;
+  prestiges: number;
+}
+
+/** Toutes les sauvegardes de Dust It Alone présentes dans ce navigateur (pour « Récupérer une partie »). */
+export function findSaves(store: StorageLike | null = storage()): FoundSave[] {
+  if (!store) return [];
+  const out: FoundSave[] = [];
+  for (const key of allKeys(store)) {
+    if (!key.startsWith('dust-it-alone:') || key === WORLDS_KEY || key === CURRENT_KEY || key.startsWith('dust-it-alone:profile')) continue;
+    try {
+      const raw = JSON.parse(store.getItem(key) ?? 'null');
+      if (!raw || typeof raw !== 'object' || !('coins' in raw)) continue;
+      const d = migrate(raw);
+      out.push({
+        key,
+        kind: key.startsWith(RESCUE_PREFIX) ? 'mise de côté' : key.endsWith(':backup') ? 'secours' : 'monde',
+        name: d.world.name,
+        savedAt: d.savedAt,
+        coins: d.coins,
+        totalCoins: d.totalCoins,
+        rooms: Object.values(d.rooms).filter((r) => r.unlocked).length,
+        souvenirs: d.souvenirs.length,
+        prestiges: d.prestiges,
+      });
+    } catch {
+      /* pas une sauvegarde */
+    }
+  }
+  return out.sort((a, b) => b.totalCoins - a.totalCoins);
+}
+
+/** Restaure une sauvegarde trouvée en tant que NOUVEAU monde (rien n'est écrasé). Renvoie son identifiant. */
+export function restoreAsWorld(key: string, store: StorageLike | null = storage()): string | null {
+  if (!store) return null;
+  try {
+    const d = migrate(JSON.parse(store.getItem(key) ?? 'null'));
+    const id = createWorld(`${d.world.name} (récupéré)`, d.world.multiplayer, d.world.isPublic, d.settings, store);
+    d.world.name = `${d.world.name} (récupéré)`;
+    store.setItem(worldKey(id), JSON.stringify(d));
+    writeSave(d, store, id);
+    return id;
+  } catch {
+    return null;
+  }
+}
+
 export function writeSave(data: SaveData, store: StorageLike | null = storage(), id = currentWorld(store)): void {
   if (!store) return;
   const key = worldKey(id);
   try {
     const prev = store.getItem(key);
+    if (prev) rescueIfLosing(prev, data, store, id);
     if (prev) store.setItem(key + ':backup', prev);
     store.setItem(key, JSON.stringify({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
     const list = listWorlds(store);

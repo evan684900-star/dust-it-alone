@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWorld, currentWorld, deleteWorld, listWorlds, loadSave, migrate, renameWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
+import { createWorld, currentWorld, deleteWorld, findSaves, listWorlds, loadSave, migrate, renameWorld, restoreAsWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
 
 function memoryStore() {
   const m = new Map<string, string>();
@@ -100,5 +100,46 @@ describe('Mondes (plusieurs sauvegardes)', () => {
     expect(listWorlds(s).map((w) => w.id)).toEqual([a]);
     expect(currentWorld(s)).toBe(a);
     expect(s.getItem(worldKey(b))).toBeNull();
+  });
+});
+
+describe('Filet de sécurité et récupération', () => {
+  const mem = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), m };
+  };
+  it('une sauvegarde qui perdrait beaucoup de progression est d’abord mise de côté', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), coins: 5e6, totalCoins: 9e6 }, s);
+    writeSave({ ...migrate(null), coins: 0, totalCoins: 0 }, s); // partie « vide » qui écrase
+    writeSave({ ...migrate(null), coins: 1, totalCoins: 1 }, s); // et encore (la copie de secours est perdue)
+    const found = findSaves(s);
+    expect(found.some((f) => f.kind === 'mise de côté' && f.totalCoins === 9e6)).toBe(true);
+  });
+  it('pas de mise de côté pour une progression normale ni pour un Grand Ménage', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), totalCoins: 9e6 }, s);
+    writeSave({ ...migrate(null), totalCoins: 9.5e6 }, s);
+    writeSave({ ...migrate(null), totalCoins: 0, prestiges: 1 }, s);
+    expect(findSaves(s).some((f) => f.kind === 'mise de côté')).toBe(false);
+  });
+  it('restaurer crée un nouveau monde sans rien écraser', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), coins: 42, totalCoins: 9e6 }, s);
+    writeSave({ ...migrate(null), totalCoins: 0 }, s);
+    const lost = findSaves(s).find((f) => f.totalCoins === 9e6)!;
+    const id = restoreAsWorld(lost.key, s)!;
+    expect(currentWorld(s)).toBe(id);
+    expect(loadSave(s).coins).toBe(42);
+    expect(loadSave(s).world.name).toContain('récupéré');
+    expect(listWorlds(s).length).toBe(2);
+  });
+  it('un monde effacé reste récupérable', () => {
+    const s = mem();
+    const a = createWorld('A', false, true, null, s);
+    writeSave({ ...loadSave(s), totalCoins: 777 }, s);
+    createWorld('B', false, true, null, s);
+    deleteWorld(a, s);
+    expect(findSaves(s).some((f) => f.kind === 'mise de côté' && f.totalCoins === 777)).toBe(true);
   });
 });
