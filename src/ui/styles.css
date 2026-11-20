@@ -767,3 +767,5 @@ kbd {
 .style-buttons { display: flex; gap: 8px; }
 .style-option { flex: 1; padding: 8px; border: 3px solid var(--ink); border-radius: 12px; background: #fffaf0; font: 18px var(--font-display); color: var(--ink); cursor: pointer; }
 .style-option.selected { background: var(--apple); box-shadow: 2px 3px 0 var(--ink); }
+.tool { position: relative; }
+.tool-xl { position: absolute; top: 2px; left: 4px; font: 11px var(--font-display); background: var(--tomato); color: #fff; border: 2px solid var(--ink); border-radius: 6px; padding: 0 3px; line-height: 1.2; }

@@ -32,7 +32,7 @@ export type StatKey =
   | 'duster' | 'sponge' | 'blower' | 'vacuumCap'
   | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours'
   | 'startCoins' | 'keepHelpers' | 'keepRooms' | 'sparkGain'
-  | 'starRain' | 'feet';
+  | 'starRain' | 'feet' | 'handpan' | 'whirl';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
@@ -166,6 +166,17 @@ const BROOM: TreeNode[] = [
     flavor: 'Une invention moderne. Les portraits trouvent ça bruyant.', effect: () => 'Débloque l’aspirateur (touche 4) : aspire tout, vide-le à une pelle' },
   { id: 'tool-blower', name: 'Souffleur', icon: '💨', branch: 'broom', kind: 'big', parents: ['tool-vacuum'], maxLevel: 1, base: 6e7, growth: 1, depth: 6.8, side: -3.3, requires: { room: 'courtyard' }, stats: [],
     flavor: 'Le vent, en boîte. Les feuilles mortes n’ont aucune chance.', effect: () => 'Débloque le souffleur (touche 5) : souffle tout devant toi' },
+  // Outils pour la poussière ordinaire (de l'autre côté de la branche du balai).
+  { id: 'tool-widebroom', name: 'Grand balai-brosse', icon: '🧹', branch: 'broom', kind: 'big', parents: ['broom-wide-1'], maxLevel: 1, base: 1800, growth: 1, depth: 3.5, side: 2.7, requires: { room: 'gallery' }, stats: [],
+    flavor: 'Le balai des grandes salles de bal : il en faut, des bras, pour le pousser.', effect: () => 'Débloque le grand balai-brosse (touche 6) : brosse deux fois plus large' },
+  { id: 'tool-handpan', name: 'Pelle à main', icon: '🪣', branch: 'broom', kind: 'big', parents: ['tool-widebroom'], maxLevel: 1, base: 25000, growth: 1, depth: 4.6, side: 2.9, requires: { room: 'library' }, stats: [],
+    flavor: 'Hop, dans la pelle. Pas besoin d’aller jusqu’au bout de la pièce.', effect: () => 'Débloque la pelle à main (touche 7) : ramasse directement le tas devant toi' },
+  { id: 'tool-whirl', name: 'Balai magique de Gustave', icon: '🌪️', branch: 'broom', kind: 'big', parents: ['tool-handpan'], maxLevel: 1, base: 5e8, growth: 1, depth: 5.7, side: 3.1, requires: { room: 'banquet' }, stats: [],
+    flavor: 'Gustave disait qu’il tenait ce balai d’une sorcière. Personne ne l’a jamais cru… jusqu’ici.', effect: () => 'Débloque le balai magique (touche 8) : un tourbillon avale la poussière autour' },
+  { id: 'handpan-size', name: 'Pelle évasée', icon: '🪣', branch: 'broom', kind: 'small', parents: ['tool-handpan'], maxLevel: 5, base: 60000, growth: 1.9, depth: 5.1, side: 4, stats: [{ key: 'handpan', per: 0.2, mode: 'add' }],
+    flavor: 'Un peu plus large à chaque fois.', effect: (l) => `La pelle ramasse +20 % plus large par niveau (+${Math.round(20 * l)} %)` },
+  { id: 'whirl-power', name: 'Tourbillon furieux', icon: '🌪️', branch: 'broom', kind: 'small', parents: ['tool-whirl'], maxLevel: 5, base: 1e9, growth: 1.9, depth: 6.2, side: 4.2, stats: [{ key: 'whirl', per: 0.2, mode: 'add' }],
+    flavor: 'Gustave n’aurait jamais osé aller aussi loin.', effect: (l) => `Le tourbillon attire de +20 % plus loin par niveau (+${Math.round(20 * l)} %)` },
   { id: 'duster-power', name: 'Plumes d’autruche', icon: '🪶', branch: 'broom', kind: 'small', parents: ['tool-duster'], maxLevel: 5, base: 6000, growth: 1.9, depth: 4, side: -3.8, stats: [{ key: 'duster', per: 0.3, mode: 'add' }],
     flavor: 'Plus douces, plus efficaces.', effect: (l) => `Le plumeau va +30 % plus vite par niveau (+${Math.round(30 * l)} %)` },
   { id: 'sponge-power', name: 'Éponge magique', icon: '🫧', branch: 'broom', kind: 'small', parents: ['tool-sponge'], maxLevel: 5, base: 90000, growth: 1.9, depth: 5.1, side: -4, stats: [{ key: 'sponge', per: 0.3, mode: 'add' }],

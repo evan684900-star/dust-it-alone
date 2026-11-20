@@ -648,11 +648,51 @@ export function buildBroom(): { root: THREE.Group; head: THREE.Group; handle: TH
   const motor = solid(roundedBox(26, 22, 26, 6), plastic(0xd84a3a));
   motor.position.set(0, 26, 10);
   blower.add(cone, motor);
-  for (const h of [duster, sponge, vacuum, blower]) {
+  // Grand balai-brosse : une longue brosse à poils sombres sur un dos en bois.
+  const widebroom = new THREE.Group();
+  const backWood = mat(REALISTIC ? 0x7a5a3a : 0xa0663a, { roughness: 0.6 });
+  const back = solid(roundedBox(160, 14, 22, 4), backWood);
+  back.position.y = 22;
+  const brush = solid(roundedBox(156, 16, 18, 3), mat(REALISTIC ? 0x3a3028 : 0x5a3a2a, { roughness: 1 }));
+  brush.position.y = 8;
+  widebroom.add(back, brush);
+  for (let k = 0; k < 30; k++) {
+    const tuft = solid(new THREE.CylinderGeometry(1.2, 2, 8, 5), mat(REALISTIC ? 0x2e2620 : 0x4a3022, { roughness: 1 }));
+    tuft.position.set(-74 + k * 5.1, 1, (k % 2 ? 1 : -1) * 4);
+    widebroom.add(tuft);
+  }
+  // Pelle à main : une petite pelle en métal, rebord relevé à l'arrière.
+  const handpan = new THREE.Group();
+  const panMetal = REALISTIC ? metal(0x8a8a86, 0.45) : plastic(0x5ec8f2);
+  const plate = solid(roundedBox(56, 3, 44, 2), panMetal);
+  plate.position.set(0, 2, -6);
+  const rim = solid(roundedBox(58, 18, 4, 2), panMetal);
+  rim.position.set(0, 10, 16);
+  handpan.add(plate, rim);
+  for (const sx of [-1, 1]) {
+    const side = solid(roundedBox(4, 14, 40, 2), panMetal);
+    side.position.set(sx * 28, 8, -4);
+    side.scale.y = 1;
+    handpan.add(side);
+  }
+  // Balai magique : paille dorée qui brille un peu, ruban violet.
+  const whirl = new THREE.Group();
+  const gold = mat(0xf2c75a, { roughness: 0.4, emissive: 0xffb030, emissiveIntensity: 0.35 });
+  const wb = solid(roundedBox(64, 26, 20, 6), gold);
+  wb.position.y = 13;
+  const ribbon = solid(roundedBox(58, 10, 23, 4), fabric(0x8a4ac8));
+  ribbon.position.y = 30;
+  whirl.add(wb, ribbon);
+  for (let k = 0; k < 6; k++) {
+    const star = solid(new THREE.OctahedronGeometry(3), mat(0xfff0a0, { emissive: 0xffd040, emissiveIntensity: 1.2 }));
+    star.position.set(-25 + k * 10, 44 + (k % 2) * 6, 0);
+    whirl.add(star);
+  }
+  for (const h of [duster, sponge, vacuum, blower, widebroom, handpan, whirl]) {
     h.visible = false;
     head.add(h);
   }
-  const heads = { broom: broomHead, duster, sponge, vacuum, blower };
+  const heads = { broom: broomHead, duster, sponge, vacuum, blower, widebroom, handpan, whirl };
   const handle = new THREE.Group();
   // Manche de longueur fixe (pas d'étirement : ça perturbait le calcul des ombres).
   const stick = solid(new THREE.CylinderGeometry(3.5, 3.5, 260, 12).translate(0, 130, 0), mat(0xb8692a, { roughness: 0.45 }));

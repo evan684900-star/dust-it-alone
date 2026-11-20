@@ -971,7 +971,7 @@ export class World3D {
   private updateBroom(sim: RoomSim | null, dt: number, broom: BroomView): void {
     const { root, head, handle } = this.broom;
     root.visible = broom.visible;
-    this.ring.visible = broom.visible && sim !== null && this.tool === 'broom';
+    this.ring.visible = broom.visible && sim !== null && (this.tool === 'broom' || this.tool === 'widebroom');
     if (!broom.visible) return;
     const cam = this.camera;
     const yaw = cam.rotation.y;
@@ -993,8 +993,14 @@ export class World3D {
     const speed = Math.hypot(v.x, v.y);
     const squash = Math.min(0.22, speed / 7000) + (broom.pressed ? 0.12 : 0);
     // La brosse grandit en vrai avec l'arbre (Brosse large, Brosse géante).
-    const widthScale = sim && this.tool === 'broom' ? sim.broom.width / 74 : 1;
+    const widthScale = sim && (this.tool === 'broom' || this.tool === 'widebroom') ? sim.broom.width / 74 : 1;
     head.scale.set((1 + squash) * widthScale, 1 - squash, 1);
+    // Pelle à main : petit mouvement de « hop ! » à chaque coup de pelle.
+    if (this.tool === 'handpan' && sim) {
+      const t = this.time - sim.scoopFlash;
+      head.rotation.x += t < 0.35 ? -Math.sin((t / 0.35) * Math.PI) * 0.6 : 0;
+    }
+    this.updateWhirl(sim, broom, dt);
 
     const grip = this.tmpA.set(24, -42, -36).applyMatrix4(cam.matrixWorld);
     const base = this.tmpB.set(0, 34 * (1 - squash), 0);
@@ -1005,7 +1011,7 @@ export class World3D {
 
     if (sim) {
       // L'empreinte suit la brosse : même position, même orientation, même taille que la zone qui pousse.
-      const hw = sim.broom.width;
+      const hw = sim.toolWidth(this.tool === 'widebroom' ? 'widebroom' : 'broom');
       this.ring.position.set(broom.x, broom.y + 1.2, broom.z);
       this.ring.rotation.set(0, yaw, 0);
       // Le rectangle unitaire est dans le plan XY puis couché : X = largeur, Y (→ -Z) = épaisseur vers l'avant.
@@ -1013,6 +1019,35 @@ export class World3D {
       (this.ringFill.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.14 : 0.03;
       (this.ringEdge.material as THREE.MeshBasicMaterial).opacity = broom.pressed ? 0.6 : 0.2;
     }  }
+
+  /** Tourbillon du balai magique : des grains de lumière qui tournent en spirale. */
+  private whirlFx: THREE.Points | null = null;
+  private updateWhirl(sim: RoomSim | null, broom: BroomView, dt: number): void {
+    const on = this.tool === 'whirl' && broom.pressed && sim !== null;
+    if (!this.whirlFx) {
+      if (!on) return;
+      const n = 90;
+      const pos = new Float32Array(n * 3);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      this.glowTex ??= new THREE.CanvasTexture(softDot());
+      this.whirlFx = new THREE.Points(g, new THREE.PointsMaterial({ size: 9, map: this.glowTex, color: 0xffe08a, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+      this.scene.add(this.whirlFx);
+    }
+    const fx = this.whirlFx;
+    fx.visible = on;
+    if (!on || !sim) return;
+    const R = 220 * sim.mods.whirl;
+    const pos = fx.geometry.attributes.position as THREE.BufferAttribute;
+    for (let k = 0; k < pos.count; k++) {
+      const f = ((k * 0.618) + this.time * 0.35) % 1;
+      const r = R * (1 - f);
+      const a = k * 2.4 + this.time * (3 + 6 * f);
+      pos.setXYZ(k, broom.x + Math.cos(a) * r, broom.y + 6 + f * 70, broom.z + Math.sin(a) * r);
+    }
+    pos.needsUpdate = true;
+    void dt;
+  }
 
   private dummy = new THREE.Object3D();
   private updateFx(dt: number): void {

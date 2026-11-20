@@ -164,6 +164,37 @@ describe('outils', () => {
     for (let k = 0; k < 30; k++) sim.step(1 / 60, { ...at, tool: 'blower', x: 820, yaw: -Math.PI / 2 });
     expect(sim.pool.x[i]).toBeGreaterThan(1000);
   });
+
+  it('le grand balai-brosse pousse une rangée deux fois plus large', () => {
+    // Un grain sur le côté : trop loin pour le balai normal, touché par le grand balai-brosse.
+    const run = (tool: 'broom' | 'widebroom') => {
+      const sim = new RoomSim(room, 27);
+      const i = sim.pool.spawn('dust', 800, 450 - 70);
+      for (let k = 0; k < 40; k++) sim.step(1 / 60, { ...at, pressed: true, tool, x: 740 + k * 4, y: 450, yaw: -Math.PI / 2 });
+      return Math.hypot(sim.pool.vx[i], sim.pool.vy[i]) + Math.abs(sim.pool.x[i] - 800);
+    };
+    expect(run('broom')).toBeLessThan(1);
+    expect(run('widebroom')).toBeGreaterThan(5);
+  });
+
+  it('la pelle à main ramasse directement le petit tas devant soi', () => {
+    const sim = new RoomSim(room, 28);
+    for (let k = 0; k < 10; k++) sim.pool.spawn('dust', 800 + (k % 5) * 6, 450 + Math.floor(k / 5) * 6);
+    const far = sim.pool.spawn('dust', 1000, 450);
+    let coins = 0;
+    sim.step(1 / 60, { ...at, pressed: true, tool: 'handpan' });
+    coins += sim.drainEvents().reduce((t, e) => t + e.coins, 0);
+    expect(sim.pool.aliveCount.dust).toBe(1);
+    expect(sim.pool.alive[far]).toBe(1);
+    expect(coins).toBeGreaterThan(0);
+  });
+
+  it('le balai magique attire puis avale la poussière autour', () => {
+    const sim = new RoomSim(room, 29);
+    const ids = [sim.pool.spawn('dust', 950, 450), sim.pool.spawn('dust', 800, 600), sim.pool.spawn('bunny', 680, 420)];
+    for (let k = 0; k < 240; k++) sim.step(1 / 60, { ...at, pressed: true, tool: 'whirl' });
+    expect(ids.every((i) => sim.pool.alive[i] === 0)).toBe(true);
+  });
 });
 
 describe('assistants', () => {

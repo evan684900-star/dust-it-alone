@@ -1,7 +1,7 @@
 export type DirtId = 'dust' | 'bunny' | 'star' | 'crumb' | 'leaf' | 'rubble' | 'soot' | 'web' | 'stain';
 
 /** Outil nécessaire pour retirer une saleté « fixée » (toile, tache). */
-export type ToolId = 'broom' | 'duster' | 'sponge' | 'vacuum' | 'blower';
+export type ToolId = 'broom' | 'duster' | 'sponge' | 'vacuum' | 'blower' | 'widebroom' | 'handpan' | 'whirl';
 
 export interface DirtType {
   id: DirtId;
@@ -52,4 +52,7 @@ export const TOOLS: ToolDef[] = [
   { id: 'sponge', name: 'Éponge', icon: '🧽', node: 'tool-sponge', hint: 'Frotte une tache (va-et-vient, clic maintenu)' },
   { id: 'vacuum', name: 'Aspirateur', icon: '🌀', node: 'tool-vacuum', hint: 'Aspire tout seul ; vide le réservoir à une pelle (E)' },
   { id: 'blower', name: 'Souffleur', icon: '💨', node: 'tool-blower', hint: 'Souffle fort devant toi (parfait pour les feuilles)' },
+  { id: 'widebroom', name: 'Grand balai-brosse', icon: '🧹', node: 'tool-widebroom', hint: 'Une brosse deux fois plus large : idéale pour rabattre de grandes rangées' },
+  { id: 'handpan', name: 'Pelle à main', icon: '🪣', node: 'tool-handpan', hint: 'Clic maintenu : ramasse directement le petit tas devant toi' },
+  { id: 'whirl', name: 'Balai magique de Gustave', icon: '🌪️', node: 'tool-whirl', hint: 'Clic maintenu : un tourbillon attire et avale la poussière autour' },
 ];

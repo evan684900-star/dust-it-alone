@@ -28,6 +28,9 @@ export interface RoomModifiers {
   sponge: number;
   blower: number;
   vacuumCap: number;
+  /** Taille de la pelle à main et portée du balai magique (1 = de base). */
+  handpan: number;
+  whirl: number;
 }
 
 export interface PlayerModifiers {
@@ -102,6 +105,8 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number, spark
       sponge: 1 + A('sponge'),
       blower: 1 + A('blower'),
       vacuumCap: 300 + A('vacuumCap'),
+      handpan: 1 + A('handpan'),
+      whirl: 1 + A('whirl'),
     };
   };
 

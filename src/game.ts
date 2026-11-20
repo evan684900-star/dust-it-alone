@@ -523,7 +523,7 @@ export class Game {
         {
           id: 'tool',
           icon: '🧰',
-          text: 'Un nouvel outil ! Change d’outil avec les touches 1 à 5 ou la molette. Certaines saletés ne partent qu’avec le bon outil, crois-moi.',
+          text: 'Un nouvel outil ! Change d’outil avec les touches 1 à 8 ou la molette. Certaines saletés ne partent qu’avec le bon outil, crois-moi.',
           when: () => {
             const n = toolCount();
             const more = n > tools;
@@ -683,7 +683,7 @@ export class Game {
       }
       if (e.code === 'KeyE' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
-      const digit = /^Digit([1-5])$/.exec(e.code);
+      const digit = /^(?:Digit|Numpad)([1-8])$/.exec(e.code);
       if (digit) this.selectTool(Number(digit[1]) - 1);
       if (this.debug && e.code === 'KeyG') this.earn(10000);
       if (this.debug && e.code === 'KeyC') {
@@ -694,7 +694,14 @@ export class Game {
     window.addEventListener('keyup', (e) => this.player.setKey(e.code, false));
     window.addEventListener('wheel', (e) => {
       if (!this.playing) return;
-      this.selectTool((store.selectedTool.value + (e.deltaY > 0 ? 1 : 4)) % 5);
+      // Molette : outil débloqué suivant (ou précédent), en sautant les cases verrouillées.
+      const n = TOOLS.length;
+      let k = store.selectedTool.value;
+      for (let step = 0; step < n; step++) {
+        k = (k + (e.deltaY > 0 ? 1 : n - 1)) % n;
+        if (this.toolUnlocked(k)) break;
+      }
+      this.selectTool(k);
     }, { passive: true });
     window.addEventListener('blur', () => this.player.clearKeys());
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());

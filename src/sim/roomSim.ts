@@ -74,7 +74,16 @@ export interface Modifiers {
   sponge: number;
   blower: number;
   vacuumCap: number;
+  handpan: number;
+  whirl: number;
 }
+
+/** Grand balai-brosse : plus large, mais il « accroche » un peu moins. */
+export const WIDE_BROOM = { width: 2.2, grip: 0.8 };
+/** Pelle à main : un coup de pelle toutes les 0,6 s, dans un rayon de 42 cm, 35 grains au plus. */
+export const HAND_PAN = { every: 0.6, radius: 42, max: 35 };
+/** Balai magique : rayon d'attraction et rayon où les grains sont avalés. */
+export const WHIRL = { radius: 220, swallow: 24 };
 
 /** Un grain ramassé moins de 1,2 s après un coup de balai compte comme « poussé droit dans la pelle ». */
 const SCOOP_WINDOW = 1.2;
@@ -85,7 +94,7 @@ export class RoomSim {
   readonly pool: ParticlePool;
   readonly rng: Rng;
   broom: BroomStats = { width: 74, depth: 24, grip: 0.85 };
-  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, starValue: 1, respawnMult: 1, scoopBonus: 0, magnet: false, duster: 1, sponge: 1, blower: 1, vacuumCap: 300 };
+  mods: Modifiers = { valueMultiplier: 1, collectorPull: 120, pushPower: 1, bunnyValue: 5, starChance: 0.0015, starValue: 1, respawnMult: 1, scoopBonus: 0, magnet: false, duster: 1, sponge: 1, blower: 1, vacuumCap: 300, handpan: 1, whirl: 1 };
   /** Grains dans le réservoir de l'aspirateur. */
   vacuumLoad = 0;
   /** L'outil a touché quelque chose ce pas-ci (pour le son). */
@@ -147,6 +156,8 @@ export class RoomSim {
       sponge: m.sponge,
       blower: m.blower,
       vacuumCap: m.vacuumCap,
+      handpan: m.handpan,
+      whirl: m.whirl,
     };
     // Pelles agrandies autour de leur bouche, sans dépasser des murs.
     this.collectorRects = this.room.collectors.map((c) => {
@@ -207,7 +218,9 @@ export class RoomSim {
     this.time += dt;
     this.toolActive = 0;
     const tool = input.tool ?? 'broom';
+    this.scoopTimer = Math.max(0, this.scoopTimer - dt);
     if (tool === 'broom') this.applyBroom(dt, input);
+    else if (tool === 'widebroom') this.applyBroom(dt, input, this.player, this.broom.width * WIDE_BROOM.width, this.broom.depth, this.broom.grip * WIDE_BROOM.grip);
     else {
       this.trackTool(dt, input);
       if (input.active && input.pressed) this.applyTool(tool, dt, input);
@@ -558,7 +571,43 @@ export class RoomSim {
     this.events.push({ collector: -1, type: id, coins, x: px, y: py, byHelper });
   }
 
+  /** Largeur réelle de la brosse avec l'outil en main (pour l'empreinte affichée). */
+  toolWidth(tool: ToolId | undefined): number {
+    return tool === 'widebroom' ? this.broom.width * WIDE_BROOM.width : this.broom.width;
+  }
+
+  /** Temps avant le prochain coup de pelle à main. */
+  private scoopTimer = 0;
+  /** Dernier coup de pelle (pour l'animation). */
+  scoopFlash = 0;
+
+  /** Pelle à main : ramasse d'un coup les grains libres juste devant (pas besoin de les pousser). */
+  private scoop(input: BroomInput): void {
+    if (this.scoopTimer > 0) return;
+    this.scoopTimer = HAND_PAN.every;
+    const R = HAND_PAN.radius * this.mods.handpan;
+    const { x, y, alive, type } = this.pool;
+    // On prend les plus proches d'abord.
+    const near: [number, number][] = [];
+    for (let i = 0; i < this.pool.cap; i++) {
+      if (!alive[i]) continue;
+      const def = DIRT_TYPES[DIRT_ORDER[type[i]]];
+      if (def.fixed) continue;
+      const d = Math.hypot(x[i] - input.x, y[i] - input.y);
+      if (d <= R + def.radius * 0.5) near.push([d, i]);
+    }
+    near.sort((a, b) => a[0] - b[0]);
+    const max = Math.round(HAND_PAN.max * this.mods.handpan);
+    for (const [, i] of near.slice(0, max)) this.collectDirect(i, DIRT_ORDER[type[i]]);
+    if (near.length) this.scoopFlash = this.time;
+    this.toolActive += near.length;
+  }
+
   private applyTool(tool: ToolId, dt: number, input: BroomInput): void {
+    if (tool === 'handpan') {
+      this.scoop(input);
+      return;
+    }
     const { x, y, vx, vy, alive, type, hp } = this.pool;
     const yaw = input.yaw ?? 0;
     const fx = -Math.sin(yaw);
@@ -591,6 +640,23 @@ export class RoomSim {
         const pull = (1600 * (1 - d / R)) / Math.max(1, def.mass * 0.6);
         vx[i] += (-dx / d) * pull * dt * 8;
         vy[i] += (-dy / d) * pull * dt * 8;
+        this.toolActive++;
+      } else if (tool === 'whirl') {
+        if (def.fixed) continue;
+        const d = Math.hypot(dx, dy);
+        const R = WHIRL.radius * this.mods.whirl;
+        if (d > R) continue;
+        if (d < WHIRL.swallow + def.radius * 0.5) {
+          this.collectDirect(i, id);
+          continue;
+        }
+        // Tourbillon : on tourne autour du centre en s'en rapprochant.
+        // (l'attraction l'emporte sur la rotation, sinon les grains restent en orbite).
+        const k = (1 - d / R) / Math.max(1, def.mass * 0.5);
+        const inward = (700 + 1500 * k) / Math.max(1, def.mass * 0.5);
+        const swirl = 650 * k;
+        vx[i] += ((-dx / d) * inward + (-dy / d) * swirl) * dt * 5;
+        vy[i] += ((-dy / d) * inward + (dx / d) * swirl) * dt * 5;
         this.toolActive++;
       } else if (tool === 'blower') {
         if (def.fixed) continue;

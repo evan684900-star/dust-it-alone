@@ -116,7 +116,7 @@ export const unlockedRooms = signal<string[]>(['attic']);
 /** Un nœud est achetable : pastille sur le bouton de l'arbre. */
 export const treeBuyable = signal(false);
 
-/** Outils débloqués (dans l'ordre des touches 1 à 5). */
+/** Outils débloqués (dans l'ordre des touches 1 à 8). */
 export const unlockedTools = signal<boolean[]>([true, false, false, false, false]);
 /** Petite aide sur l'outil en main. */
 export const toolHint = signal('');

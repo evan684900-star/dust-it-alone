@@ -234,7 +234,7 @@ function Controls() {
       <span><kbd>M</kbd> carte du château</span>
       <span><kbd>J</kbd> album des souvenirs</span>
       <span><kbd>K</kbd> carnet et succès</span>
-      <span><kbd>1</kbd>…<kbd>5</kbd> changer d'outil</span>
+      <span><kbd>1</kbd>…<kbd>8</kbd> changer d'outil</span>
       <span><kbd>Échap</kbd> pause</span>
     </div>
   );
@@ -714,6 +714,7 @@ function Hud({ game }: { game: Game }) {
               title={unlocked ? `${t.name} : ${t.hint}` : 'À débloquer dans l’Arbre des Souvenirs'}
             >
               <span class="tool-icon">{unlocked ? t.icon : '?'}</span>
+              {unlocked && t.id === 'widebroom' && <span class="tool-xl">XL</span>}
               <span class="tool-key">{k + 1}</span>
             </div>
             );
