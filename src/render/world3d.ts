@@ -821,8 +821,9 @@ export class World3D {
   private makePickup(icon: string, glowColor: number): THREE.Group {
     let tex = this.emojiTex.get(icon);
     if (!tex) {
-      tex = new THREE.CanvasTexture(drawEmoji(icon));
-      tex.colorSpace = THREE.SRGBColorSpace;
+      const t: THREE.CanvasTexture = new THREE.CanvasTexture(drawEmoji(icon, () => (t.needsUpdate = true)));
+      t.colorSpace = THREE.SRGBColorSpace;
+      tex = t;
       this.emojiTex.set(icon, tex);
     }
     this.glowTex ??= new THREE.CanvasTexture(softDot());

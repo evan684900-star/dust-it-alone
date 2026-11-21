@@ -4,6 +4,10 @@ import { App } from './ui/App';
 import { installUiSounds } from './audio/uiSounds';
 import './ui/styles.css';
 import { REALISTIC } from './render/realistic';
+import { installIcons } from './ui/icons';
+
+// Les emojis sont remplacés par des icônes dessinées à la main, partout dans l'interface.
+installIcons();
 
 /** Écran de chargement (défini dans index.html) : étape en cours et barre de progression. */
 function loading(status: string, progress: number): Promise<void> {

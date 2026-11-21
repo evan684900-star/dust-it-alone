@@ -107,3 +107,16 @@ describe('Barre rapide (3 cases) et coffre', () => {
     expect(migrate({ coins: 1, hotbar: ['duster', 'broom'] }).hotbar).toEqual(['duster', 'broom', '']);
   });
 });
+
+describe('Icônes dessinées à la main', () => {
+  it('chaque emoji utilisé dans les données du jeu a son icône', async () => {
+    const { ICON_ART } = await import('../../src/ui/iconArt');
+    const { TREE_NODES, BRANCHES } = await import('../../src/data/tree');
+    const { TOOLS } = await import('../../src/data/dirtTypes');
+    const { ALL_SOUVENIRS } = await import('../../src/data/story');
+    const { ACHIEVEMENTS } = await import('../../src/data/achievements');
+    const icons = [...TREE_NODES.map((n) => n.icon), ...Object.values(BRANCHES).map((b) => b.icon), ...TOOLS.map((t) => t.icon), ...ALL_SOUVENIRS.map((s) => s.icon), ...ACHIEVEMENTS.map((a) => a.icon)];
+    const missing = [...new Set(icons.map((i) => i.replace(/️/g, '')))].filter((i) => !ICON_ART[i]);
+    expect(missing).toEqual([]);
+  });
+});

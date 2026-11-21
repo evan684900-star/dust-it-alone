@@ -73,7 +73,7 @@ test('album, carnet et événements', async ({ page }) => {
 
 test('réglages : export puis import d’une sauvegarde', async ({ page }) => {
   const errors = await boot(page, false);
-  await page.click('text=⚙️ Réglages', { force: true });
+  await page.getByRole('button', { name: 'Réglages', exact: true }).click();
   // Sans « force » : on attend que la fenêtre ait fini son animation d'ouverture avant de cliquer.
   await page.click('.settings-tab:has-text("Sauvegarde")');
   await page.click('.save-buttons .btn:has-text("Copier")');

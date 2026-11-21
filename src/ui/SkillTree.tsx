@@ -6,6 +6,7 @@ import { availability, canRefund, cost, costForN, maxAffordable, revealed, level
 import { formatNumber } from '../core/format';
 import { sfx } from '../audio/synth';
 import * as store from '../state/store';
+import { SvgIcon } from './icons';
 
 const RING = 150;
 const SIDE = 95;
@@ -154,9 +155,12 @@ export function SkillTree({ game }: { game: Game }) {
             const r = b === 'helpers' ? 330 : 1480;
             const ang = a;
             return (
-              <text key={b} class="tree-branch-label" x={Math.sin(ang) * r} y={-Math.cos(ang) * r} fill={BRANCHES[b].color}>
-                {BRANCHES[b].icon} {BRANCHES[b].name}
-              </text>
+              <g key={b} transform={`translate(${(Math.sin(ang) * r).toFixed(1)} ${(-Math.cos(ang) * r).toFixed(1)})`}>
+                <SvgIcon e={BRANCHES[b].icon} x={0} y={-62} size={60} />
+                <text class="tree-branch-label" fill={BRANCHES[b].color}>
+                  {BRANCHES[b].name}
+                </text>
+              </g>
             );
           })}
 
@@ -176,7 +180,7 @@ export function SkillTree({ game }: { game: Game }) {
           {/* Racine : Plume */}
           <g class={`tree-root ${rootActive ? 'active' : ''}`}>
             <circle r={58} />
-            <text class="tree-root-icon" y={6}>🌳</text>
+            <SvgIcon e="🌳" x={0} y={-8} size={52} />
             <text class="tree-root-name" y={34}>Plume</text>
           </g>
 
@@ -228,8 +232,18 @@ export function SkillTree({ game }: { game: Game }) {
                     const a1 = ((k + 1) / n.maxLevel) * Math.PI * 2 - gap / 2;
                     return <path key={k} d={arc(R + 8, a0, a1)} class={`lvl-seg ${k < lvl ? 'on' : ''}`} style={{ stroke: k < lvl ? color : undefined }} />;
                   })}
-                <text class="tree-icon" y={9}>{state === 'hidden' ? '?' : n.icon}</text>
-                {state === 'maxed' && <text class="tree-flower" x={R * 0.7} y={-R * 0.7}>🌼</text>}
+                {state === 'hidden' ? (
+                  <text class="tree-icon" y={9}>?</text>
+                ) : (
+                  <g class="tree-icon">
+                    <SvgIcon e={n.icon} x={0} y={0} size={n.kind === 'big' ? R * 1.45 : R * 1.35} />
+                  </g>
+                )}
+                {state === 'maxed' && (
+                  <g class="tree-flower">
+                    <SvgIcon e="🌼" x={R * 0.75} y={-R * 0.75} size={22} />
+                  </g>
+                )}
                 {n.requires && 'soon' in n.requires && <text class="tree-soon" y={R + 26}>bientôt</text>}
                 </g>
               </g>

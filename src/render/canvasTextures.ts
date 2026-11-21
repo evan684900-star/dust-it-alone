@@ -1,3 +1,4 @@
+import { iconSvg } from '../ui/iconArt';
 import { PAL } from './palette';
 
 /** Petit tremblement « fait main » pour les lignes. */
@@ -392,11 +393,26 @@ export function drawDustMessage(text: string): HTMLCanvasElement {
 }
 
 /** Une icône (emoji) sur fond transparent, pour les souvenirs. */
-export function drawEmoji(emoji: string): HTMLCanvasElement {
+/**
+ * Une icône dessinée à la main (à la place de l'emoji) sur une texture 128 × 128.
+ * Le dessin SVG se charge en un instant : `onReady` prévient pour mettre la texture à jour.
+ */
+export function drawEmoji(emoji: string, onReady?: () => void): HTMLCanvasElement {
   const { c, g } = canvas(128, 128);
-  g.textAlign = 'center';
-  g.textBaseline = 'middle';
-  g.font = '92px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
-  g.fillText(emoji, 64, 70);
+  const svg = iconSvg(emoji, 128);
+  if (!svg) {
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.font = '92px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif';
+    g.fillText(emoji, 64, 70);
+    return c;
+  }
+  const img = new Image();
+  img.onload = () => {
+    g.clearRect(0, 0, 128, 128);
+    g.drawImage(img, 6, 6, 116, 116);
+    onReady?.();
+  };
+  img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   return c;
 }

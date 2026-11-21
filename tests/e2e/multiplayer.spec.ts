@@ -41,7 +41,7 @@ test('héberger, voir la partie en ligne, demander, accepter, jouer ensemble', a
   // L'invité ouvre l'écran multijoueur depuis l'écran titre : la partie est dans la liste.
   await guest.goto(URL);
   await guest.waitForSelector('#loading', { state: 'detached', timeout: 120_000 });
-  await guest.click('text=👥 Rejoindre un ami', { force: true });
+  await guest.getByRole('button', { name: 'Rejoindre un ami' }).click();
   await guest.fill('.net-profile input', 'Invité');
   await expect(guest.locator('.net-games li')).toContainText('Château de Hôte', { timeout: 40_000 });
   await guest.click('.net-games li button', { force: true });
