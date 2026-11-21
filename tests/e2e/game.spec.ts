@@ -81,16 +81,30 @@ test('réglages : export puis import d’une sauvegarde', async ({ page }) => {
   await page.click('.settings-tab:has-text("Sauvegarde")');
   await page.click('.save-buttons .btn:has-text("Copier")');
   const code = await page.locator('.save-code').inputValue();
-  expect(code.startsWith('DUST1:')).toBe(true);
-  const mod = await page.evaluate((c) => {
+  expect(code.startsWith('DUST2:')).toBe(true);
+  // Un code modifié à la main (triche) est refusé.
+  const forged = await page.evaluate((c) => {
     const s = JSON.parse(decodeURIComponent(escape(atob(c.slice(6)))));
     s.coins = 4242;
-    return 'DUST1:' + btoa(unescape(encodeURIComponent(JSON.stringify(s))));
+    return 'DUST2:' + btoa(unescape(encodeURIComponent(JSON.stringify(s))));
   }, code);
-  await page.fill('.save-code', mod);
+  await page.fill('.save-code', forged);
+  await page.click('.save-buttons .btn:has-text("Charger ce code")', { force: true });
+  await expect(page.locator('.settings-note')).toContainText('refusé');
+  // Le vrai code, lui, se recharge.
+  await page.fill('.save-code', code);
   await page.click('.save-buttons .btn:has-text("Charger ce code")', { force: true });
   await page.waitForLoadState('load');
   await expect(page.locator('.btn-big')).toBeVisible({ timeout: 30_000 });
-  expect(await page.evaluate((k) => JSON.parse(localStorage.getItem(k)!).coins, SAVE)).toBe(4242);
+  expect(await page.evaluate((k) => typeof JSON.parse(localStorage.getItem(k)!).sig, SAVE)).toBe('string');
+  // Modifier la sauvegarde dans le navigateur ne marche pas non plus : le jeu reprend la version valide.
+  await page.evaluate((k) => {
+    const s = JSON.parse(localStorage.getItem(k)!);
+    s.coins = 999999;
+    localStorage.setItem(k, JSON.stringify(s));
+  }, SAVE);
+  await page.reload();
+  await page.waitForSelector('#loading', { state: 'detached', timeout: 120_000 });
+  expect(await page.evaluate((k) => JSON.parse(localStorage.getItem(k + ':backup') ?? localStorage.getItem(k)!).coins, SAVE)).not.toBe(999999);
   expect(errors).toEqual([]);
 });

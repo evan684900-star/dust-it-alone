@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createWorld, currentWorld, deleteWorld, findSaves, listWorlds, loadSave, migrate, renameWorld, restoreAsWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
+import { lastLoadTampered, createWorld, currentWorld, deleteWorld, findSaves, listWorlds, loadSave, migrate, renameWorld, restoreAsWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
 
 function memoryStore() {
   const m = new Map<string, string>();
@@ -69,7 +69,8 @@ describe('Mondes (plusieurs sauvegardes)', () => {
   };
   it('l’ancienne sauvegarde unique devient le monde « Mon château »', () => {
     const s = mem();
-    s.setItem('dust-it-alone:save', JSON.stringify({ ...migrate(null), coins: 77 }));
+    // Ancienne sauvegarde (non signée, d'avant la signature).
+    s.setItem('dust-it-alone:save', JSON.stringify({ ...migrate(null), coins: 77, savedAt: 1000 }));
     const list = listWorlds(s);
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ id: 'main', name: 'Mon château', coins: 77, multiplayer: false });
@@ -141,5 +142,48 @@ describe('Filet de sécurité et récupération', () => {
     createWorld('B', false, true, null, s);
     deleteWorld(a, s);
     expect(findSaves(s).some((f) => f.kind === 'mise de côté' && f.totalCoins === 777)).toBe(true);
+  });
+});
+
+describe('Signature anti-triche', () => {
+  const mem = () => {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), m };
+  };
+  it('une sauvegarde modifiée à la main est écartée : on reprend la copie de secours', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), coins: 100 }, s);
+    writeSave({ ...migrate(null), coins: 200 }, s);
+    const raw = JSON.parse(s.getItem(SAVE_KEY)!);
+    raw.coins = 9e15;
+    s.setItem(SAVE_KEY, JSON.stringify(raw));
+    expect(loadSave(s).coins).toBe(100);
+    expect(lastLoadTampered).toBe(true);
+  });
+  it('retirer la signature ne marche pas non plus', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), coins: 100 }, s);
+    const raw = JSON.parse(s.getItem(SAVE_KEY)!);
+    delete raw.sig;
+    raw.coins = 9e15;
+    s.setItem(SAVE_KEY, JSON.stringify(raw));
+    s.removeItem(SAVE_KEY + ':backup');
+    expect(loadSave(s).coins).toBe(0);
+  });
+  it('une sauvegarde normale se recharge sans souci, et une ancienne est acceptée puis signée', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), coins: 123.456, totalCoins: 1e20 }, s);
+    expect(loadSave(s).coins).toBe(123.456);
+    expect(lastLoadTampered).toBe(false);
+    s.setItem(SAVE_KEY, JSON.stringify({ ...migrate(null), coins: 5, savedAt: 1000 }));
+    const d = loadSave(s);
+    expect(d.coins).toBe(5);
+    writeSave(d, s);
+    expect(typeof JSON.parse(s.getItem(SAVE_KEY)!).sig).toBe('string');
+  });
+  it('une sauvegarde trafiquée ne se « récupère » pas', () => {
+    const s = mem();
+    s.setItem('dust-it-alone:rescue:1', JSON.stringify({ ...migrate(null), coins: 9e15, savedAt: Date.now() }));
+    expect(findSaves(s).some((f) => f.coins === 9e15)).toBe(false);
   });
 });

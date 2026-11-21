@@ -786,11 +786,11 @@ function SaveSettings({ game }: { game: Game }) {
       </div>
       <textarea class="save-code" placeholder="Colle ici un code de sauvegarde (DUST1:…) pour le charger" value={code} onInput={(e) => setCode((e.target as HTMLTextAreaElement).value)} />
       <div class="save-buttons">
-        <button class="btn btn-settings" onClick={() => { if (!game.loadCode(code)) setMsg('Ce code ne ressemble pas à une sauvegarde 😕'); }} disabled={!code.trim()}>⬆️ Charger ce code</button>
+        <button class="btn btn-settings" onClick={() => { if (!game.loadCode(code)) setMsg('Code refusé : ce n’est pas une sauvegarde valide (ou elle a été modifiée à la main) 😕'); }} disabled={!code.trim()}>⬆️ Charger ce code</button>
         <button class="btn btn-settings" onClick={() => fileRef.current?.click()}>📂 Charger un fichier</button>
         <input ref={fileRef} type="file" accept=".txt,.json" style={{ display: 'none' }} onChange={async (e) => {
           const f = (e.target as HTMLInputElement).files?.[0];
-          if (f && !game.loadCode(await f.text())) setMsg('Ce fichier ne ressemble pas à une sauvegarde 😕');
+          if (f && !game.loadCode(await f.text())) setMsg('Fichier refusé : ce n’est pas une sauvegarde valide (ou elle a été modifiée à la main) 😕');
         }} />
       </div>
       {msg && <p class="settings-note">{msg}</p>}

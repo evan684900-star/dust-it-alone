@@ -255,20 +255,84 @@ function cleanStats(v: unknown): Stats {
   };
 }
 
-/** Texte à copier / fichier à télécharger pour garder sa partie ailleurs. */
-export function exportSave(data: SaveData): string {
-  const json = JSON.stringify({ ...data, version: SAVE_VERSION, savedAt: Date.now() });
-  return 'DUST1:' + btoa(unescape(encodeURIComponent(json)));
+// ───────────────────────────── Signature (anti-triche) ─────────────────────────────
+
+/**
+ * Chaque sauvegarde porte une signature calculée sur tout son contenu. Si quelqu'un change
+ * un chiffre à la main (pièces, arbre…), la signature ne correspond plus et la sauvegarde
+ * est refusée (on reprend la dernière version valide). Ce n'est pas inviolable — le jeu
+ * tourne dans le navigateur — mais ça décourage les bidouilles faciles.
+ */
+const SALT = 'Plume-a-balaye-les-combles-du-donjon/v2';
+/** Les sauvegardes non signées ne sont acceptées que si elles datent d'avant la signature. */
+export const SIGNED_SINCE = 1795296949000; // le moment où la signature a été mise en ligne
+
+/** Empreinte 2 × 32 bits (cyrb53 doublé) d'un texte, avec le sel. */
+export function signText(text: string): string {
+  const s = SALT + text + SALT.length;
+  let h1 = 0xdeadbeef ^ s.length;
+  let h2 = 0x41c6ce57 ^ s.length;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761);
+    h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (h2 >>> 0).toString(36) + '.' + (h1 >>> 0).toString(36);
 }
 
-/** Relit une sauvegarde exportée (code « DUST1: » ou JSON brut). Renvoie null si illisible. */
+/** Texte à enregistrer : la sauvegarde + sa signature. */
+export function sealSave(data: object): string {
+  const { sig: _old, ...rest } = data as Record<string, unknown>;
+  void _old;
+  const body = JSON.stringify(rest);
+  return body.slice(0, -1) + (body.length > 2 ? ',' : '') + `"sig":${JSON.stringify(signText(body))}}`;
+}
+
+export type SaveCheck = 'ok' | 'legacy' | 'tampered';
+
+/** Vérifie un texte de sauvegarde. Renvoie l'objet brut et le verdict. */
+export function checkSave(text: string): { raw: Record<string, unknown>; check: SaveCheck } | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!raw || typeof raw !== 'object' || !('coins' in (raw as object))) return null;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.sig !== 'string') {
+    // Ancienne sauvegarde (avant la signature) : acceptée une fois, puis signée.
+    const at = typeof r.savedAt === 'number' ? r.savedAt : 0;
+    return { raw: r, check: at > 0 && at < SIGNED_SINCE ? 'legacy' : 'tampered' };
+  }
+  const { sig, ...rest } = r;
+  return { raw: r, check: signText(JSON.stringify(rest)) === sig ? 'ok' : 'tampered' };
+}
+
+/** Lit une sauvegarde seulement si elle est valide (signée, ou ancienne). */
+export function readVerified(text: string | null): SaveData | null {
+  if (!text) return null;
+  const c = checkSave(text);
+  return c && c.check !== 'tampered' ? migrate(c.raw) : null;
+}
+
+/** La dernière lecture a écarté une sauvegarde modifiée à la main (le jeu prévient le joueur). */
+export let lastLoadTampered = false;
+
+/** Texte à copier / fichier à télécharger pour garder sa partie ailleurs (signé). */
+export function exportSave(data: SaveData): string {
+  const sealed = sealSave({ ...data, version: SAVE_VERSION, savedAt: Date.now() });
+  return 'DUST2:' + btoa(unescape(encodeURIComponent(sealed)));
+}
+
+/** Relit une sauvegarde exportée. Renvoie null si illisible, ancienne ou modifiée à la main. */
 export function importSave(text: string): SaveData | null {
   const t = text.trim();
+  if (!t.startsWith('DUST2:')) return null;
   try {
-    const json = t.startsWith('DUST1:') ? decodeURIComponent(escape(atob(t.slice(6)))) : t;
-    const raw = JSON.parse(json);
-    if (!raw || typeof raw !== 'object' || !('coins' in raw)) return null;
-    return migrate(raw);
+    return readVerified(decodeURIComponent(escape(atob(t.slice(6)))));
   } catch {
     return null;
   }
@@ -370,7 +434,7 @@ export function listWorlds(store: StorageLike | null = storage()): WorldMeta[] {
   }
   if (!list.some((w) => w.id === FIRST_WORLD) && store.getItem(SAVE_KEY)) {
     try {
-      const d = migrate(JSON.parse(store.getItem(SAVE_KEY)!));
+      const d = readVerified(store.getItem(SAVE_KEY)) ?? migrate(JSON.parse(store.getItem(SAVE_KEY)!));
       list.unshift({ ...summary(FIRST_WORLD, d), lastPlayed: d.savedAt, created: d.savedAt });
     } catch {
       /* rien */
@@ -404,7 +468,7 @@ export function createWorld(name: string, multiplayer: boolean, isPublic: boolea
   d.world = { name: name.trim().slice(0, 32) || 'Mon château', multiplayer, isPublic };
   if (settings) d.settings = { ...settings };
   if (store) {
-    store.setItem(worldKey(id), JSON.stringify(d));
+    store.setItem(worldKey(id), sealSave(d));
     saveIndex([...list.filter((w) => w.id !== id), summary(id, d)], store);
     setCurrentWorld(id, store);
   }
@@ -431,7 +495,8 @@ export function renameWorld(id: string, name: string, store: StorageLike | null 
   if (!store) return;
   const key = worldKey(id);
   try {
-    const d = migrate(JSON.parse(store.getItem(key) ?? 'null'));
+    const d = readVerified(store.getItem(key));
+    if (!d) return;
     d.world.name = name.trim().slice(0, 32) || d.world.name;
     writeSave(d, store, id);
   } catch {
@@ -443,13 +508,18 @@ export function renameWorld(id: string, name: string, store: StorageLike | null 
 export function loadSave(store: StorageLike | null = storage(), id = currentWorld(store)): SaveData {
   if (!store) return defaultSave();
   const key = worldKey(id);
+  lastLoadTampered = false;
   for (const k of [key, key + ':backup']) {
-    try {
-      const txt = store.getItem(k);
-      if (txt) return migrate(JSON.parse(txt));
-    } catch {
-      /* on essaie la copie suivante */
+    const txt = store.getItem(k);
+    if (!txt) continue;
+    const c = checkSave(txt);
+    if (!c) continue;
+    // Sauvegarde modifiée à la main : on l'écarte et on essaie la copie de secours.
+    if (c.check === 'tampered') {
+      lastLoadTampered = true;
+      continue;
     }
+    return migrate(c.raw);
   }
   return defaultSave();
 }
@@ -465,11 +535,13 @@ const RESCUE_MAX = 6;
  */
 function rescueIfLosing(prevText: string, next: SaveData, store: StorageLike, id: string): void {
   try {
-    const prev = migrate(JSON.parse(prevText));
+    const prev = readVerified(prevText);
+    // Une sauvegarde trafiquée n'est jamais mise de côté (sinon on la « blanchirait »).
+    if (!prev) return;
     const lost = prev.totalCoins > 2000 && next.totalCoins < prev.totalCoins * 0.5 && next.prestiges <= prev.prestiges;
     const fewerRooms = Object.values(prev.rooms).filter((r) => r.unlocked).length > Object.values(next.rooms).filter((r) => r.unlocked).length && next.prestiges <= prev.prestiges;
     if (!lost && !fewerRooms) return;
-    store.setItem(`${RESCUE_PREFIX}${Date.now()}`, JSON.stringify({ ...prev, rescuedFrom: id }));
+    store.setItem(`${RESCUE_PREFIX}${Date.now()}`, sealSave({ ...prev, rescuedFrom: id }));
     // On ne garde que les plus récentes.
     const keys = allKeys(store).filter((k) => k.startsWith(RESCUE_PREFIX)).sort();
     for (const k of keys.slice(0, Math.max(0, keys.length - RESCUE_MAX))) store.removeItem?.(k);
@@ -509,9 +581,9 @@ export function findSaves(store: StorageLike | null = storage()): FoundSave[] {
   for (const key of allKeys(store)) {
     if (!key.startsWith('dust-it-alone:') || key === WORLDS_KEY || key === CURRENT_KEY || key.startsWith('dust-it-alone:profile')) continue;
     try {
-      const raw = JSON.parse(store.getItem(key) ?? 'null');
-      if (!raw || typeof raw !== 'object' || !('coins' in raw)) continue;
-      const d = migrate(raw);
+      // Seulement les sauvegardes valides (une sauvegarde trafiquée ne se « récupère » pas).
+      const d = readVerified(store.getItem(key));
+      if (!d) continue;
       out.push({
         key,
         kind: key.startsWith(RESCUE_PREFIX) ? 'mise de côté' : key.endsWith(':backup') ? 'secours' : 'monde',
@@ -534,10 +606,11 @@ export function findSaves(store: StorageLike | null = storage()): FoundSave[] {
 export function restoreAsWorld(key: string, store: StorageLike | null = storage()): string | null {
   if (!store) return null;
   try {
-    const d = migrate(JSON.parse(store.getItem(key) ?? 'null'));
+    const d = readVerified(store.getItem(key));
+    if (!d) return null;
     const id = createWorld(`${d.world.name} (récupéré)`, d.world.multiplayer, d.world.isPublic, d.settings, store);
     d.world.name = `${d.world.name} (récupéré)`;
-    store.setItem(worldKey(id), JSON.stringify(d));
+    store.setItem(worldKey(id), sealSave(d));
     writeSave(d, store, id);
     return id;
   } catch {
@@ -552,7 +625,7 @@ export function writeSave(data: SaveData, store: StorageLike | null = storage(),
     const prev = store.getItem(key);
     if (prev) rescueIfLosing(prev, data, store, id);
     if (prev) store.setItem(key + ':backup', prev);
-    store.setItem(key, JSON.stringify({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
+    store.setItem(key, sealSave({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
     const list = listWorlds(store);
     const old = list.find((w) => w.id === id);
     saveIndex([...list.filter((w) => w.id !== id), summary(id, data, old)], store);

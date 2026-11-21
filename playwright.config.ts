@@ -13,8 +13,10 @@ export default defineConfig({
     launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
   webServer: {
-    command: 'npx vite preview --port 4173 --strictPort',
+    // Version spéciale pour les tests : le mode ?debug y est activé (jamais mise en ligne).
+    command: 'VITE_DEBUG=1 npx vite build --outDir dist-test --emptyOutDir && npx vite preview --outDir dist-test --port 4173 --strictPort',
     port: 4173,
-    reuseExistingServer: true,
+    reuseExistingServer: false,
+    timeout: 180_000,
   },
 });

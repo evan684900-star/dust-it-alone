@@ -74,15 +74,23 @@ describe('Export / import de sauvegarde', () => {
     s.stats.walked = 42;
     s.achievements = ['first-grain'];
     const code = exportSave(s);
-    expect(code.startsWith('DUST1:')).toBe(true);
+    expect(code.startsWith('DUST2:')).toBe(true);
     const back = importSave(code)!;
     expect(back.coins).toBe(12345);
     expect(back.souvenirs).toEqual(['attic-1']);
     expect(back.settings.fov).toBe(90);
     expect(back.stats.walked).toBe(42);
     expect(back.achievements).toEqual(['first-grain']);
-    // Le JSON brut marche aussi.
-    expect(importSave(JSON.stringify(s))!.coins).toBe(12345);
+    // Le JSON brut ou l'ancien format (non signés) ne sont plus acceptés : trop faciles à trafiquer.
+    expect(importSave(JSON.stringify(s))).toBeNull();
+    expect(importSave('DUST1:' + btoa(JSON.stringify(s)))).toBeNull();
+  });
+  it('un code modifié à la main est refusé', () => {
+    const code = exportSave({ ...defaultSave(), coins: 10 });
+    const json = JSON.parse(decodeURIComponent(escape(atob(code.slice(6)))));
+    json.coins = 1e15;
+    const forged = 'DUST2:' + btoa(unescape(encodeURIComponent(JSON.stringify(json))));
+    expect(importSave(forged)).toBeNull();
   });
   it('refuse un texte qui n’est pas une sauvegarde', () => {
     expect(importSave('bonjour')).toBeNull();

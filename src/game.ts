@@ -7,7 +7,7 @@ import { sfx } from './audio/synth';
 import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
+import { lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
@@ -41,7 +41,12 @@ export class Game {
   private save: SaveData;
   private earnedWindow: number[] = new Array(5).fill(0);
   private windowStart = performance.now();
-  readonly debug = new URLSearchParams(location.search).has('debug');
+  /**
+   * Mode test (?debug : argent, nettoyage instantané, commandes dans la console).
+   * Il n'existe que dans la version construite pour les tests automatiques (VITE_DEBUG=1) :
+   * sur le site en ligne, « ?debug » ne fait rien.
+   */
+  readonly debug = (import.meta as unknown as { env: Record<string, string | undefined> }).env.VITE_DEBUG === '1' && new URLSearchParams(location.search).has('debug');
   private fpsAcc = { frames: 0, time: 0 };
   private last = performance.now();
   private currentRoom: RoomDef | null = null;
@@ -66,6 +71,10 @@ export class Game {
 
   constructor() {
     this.save = loadSave();
+    // Sauvegarde modifiée à la main : écartée, on a repris la dernière version valide.
+    if (lastLoadTampered) {
+      setTimeout(() => store.pushToast('🛟 Sauvegarde modifiée', 'Elle avait été changée à la main : le jeu a repris ta dernière sauvegarde valide.', 7000), 1500);
+    }
     this.rooms = ROOMS.map((def, i) => {
       const sim = new RoomSim(def, ((Date.now() & 0xffff) + i * 7919) >>> 0);
       // On retrouve la pièce exactement comme on l'a laissée (sinon elle est pleine de poussière).
