@@ -58,6 +58,16 @@ test('anti-triche : un argent changé en dehors du jeu est remis à sa vraie val
   expect(errors).toEqual([]);
 });
 
+test('clavier AZERTY : la touche M ouvre la carte', async ({ page }) => {
+  const errors = await boot(page);
+  await page.click('.btn-big', { force: true });
+  await expect(page.locator('.coins')).toBeVisible();
+  // Sur un clavier AZERTY, la lettre M est à la place du « ; » d'un clavier QWERTY.
+  await page.evaluate(() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'm', code: 'Semicolon' })));
+  await expect(page.locator('.map-card')).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test('ouvrir une porte avec E', async ({ page }) => {
   const errors = await boot(page);
   await page.click('.btn-big', { force: true });

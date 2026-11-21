@@ -319,9 +319,9 @@ export function checkSave(text: string): { raw: Record<string, unknown>; check: 
   if (!raw || typeof raw !== 'object' || !('coins' in (raw as object))) return null;
   const r = raw as Record<string, unknown>;
   if (typeof r.sig !== 'string') {
-    // Ancienne sauvegarde (avant la signature) : acceptée une fois, puis signée.
-    const at = typeof r.savedAt === 'number' ? r.savedAt : 0;
-    return { raw: r, check: at > 0 && at < SIGNED_SINCE ? 'legacy' : 'tampered' };
+    // Sauvegarde sans signature : écrite par une ancienne version du jeu (un vieil onglet resté ouvert…).
+    // Toujours acceptée (son argent est vérifié à part, voir capToSeal) : on ne perd JAMAIS une vraie partie.
+    return { raw: r, check: 'legacy' };
   }
   const { sig, ...rest } = r;
   return { raw: r, check: signText(JSON.stringify(rest)) === sig ? 'ok' : 'tampered' };
@@ -525,18 +525,23 @@ export function loadSave(store: StorageLike | null = storage(), id = currentWorl
   if (!store) return defaultSave();
   const key = worldKey(id);
   lastLoadTampered = false;
+  let suspicious: Record<string, unknown> | null = null;
   for (const k of [key, key + ':backup']) {
     const txt = store.getItem(k);
     if (!txt) continue;
     const c = checkSave(txt);
     if (!c) continue;
-    // Sauvegarde modifiée à la main : on l'écarte et on essaie la copie de secours.
     if (c.check === 'tampered') {
+      // Signature qui ne correspond pas : on garde une copie (jamais rien de perdu) et on essaie la copie de secours.
       lastLoadTampered = true;
+      quarantine(txt, store);
+      suspicious ??= c.raw;
       continue;
     }
-    return migrate(c.raw);
+    return capToSeal(migrate(c.raw), store, key, c.check === 'legacy');
   }
+  // Seulement des sauvegardes suspectes : on garde la partie (pièces, arbre, souvenirs…) avec l'argent ramené au dernier connu.
+  if (suspicious) return capToSeal(migrate(suspicious), store, key, true);
   return defaultSave();
 }
 
@@ -597,12 +602,14 @@ export function findSaves(store: StorageLike | null = storage()): FoundSave[] {
   for (const key of allKeys(store)) {
     if (!key.startsWith('dust-it-alone:') || key === WORLDS_KEY || key === CURRENT_KEY || key.startsWith('dust-it-alone:profile')) continue;
     try {
-      // Seulement les sauvegardes valides (une sauvegarde trafiquée ne se « récupère » pas).
-      const d = readVerified(store.getItem(key));
-      if (!d) continue;
+      // Toutes les sauvegardes, même suspectes (mises de côté) : leur argent sera vérifié à la restauration.
+      if (key.startsWith(SEAL_PREFIX)) continue;
+      const c = checkSave(store.getItem(key) ?? '');
+      if (!c) continue;
+      const d = migrate(c.raw);
       out.push({
         key,
-        kind: key.startsWith(RESCUE_PREFIX) ? 'mise de côté' : key.endsWith(':backup') ? 'secours' : 'monde',
+        kind: key.startsWith(RESCUE_PREFIX) || key.startsWith(QUARANTINE_PREFIX) ? 'mise de côté' : key.endsWith(':backup') ? 'secours' : 'monde',
         name: d.world.name,
         savedAt: d.savedAt,
         coins: d.coins,
@@ -622,8 +629,11 @@ export function findSaves(store: StorageLike | null = storage()): FoundSave[] {
 export function restoreAsWorld(key: string, store: StorageLike | null = storage()): string | null {
   if (!store) return null;
   try {
-    const d = readVerified(store.getItem(key));
-    if (!d) return null;
+    const c = checkSave(store.getItem(key) ?? '');
+    if (!c) return null;
+    // L'argent d'une sauvegarde non signée ou suspecte est vérifié (pas plus d'argent en poche que gagné, plausible).
+    const d0 = migrate(c.raw);
+    const d = c.check === 'ok' ? d0 : auditMoney({ ...d0, coins: Math.min(d0.coins, d0.totalCoins), audit: null }).save;
     const id = createWorld(`${d.world.name} (récupéré)`, d.world.multiplayer, d.world.isPublic, d.settings, store);
     d.world.name = `${d.world.name} (récupéré)`;
     store.setItem(worldKey(id), sealSave(d));
@@ -642,6 +652,8 @@ export function writeSave(data: SaveData, store: StorageLike | null = storage(),
     if (prev) rescueIfLosing(prev, data, store, id);
     if (prev) store.setItem(key + ':backup', prev);
     store.setItem(key, sealSave({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
+    // Dernier argent connu (signé), pour vérifier une sauvegarde sans signature plus tard.
+    store.setItem(SEAL_PREFIX + key, sealSave({ coins: data.coins, total: data.totalCoins, rate: data.stats.bestRate, at: Date.now() }));
     const list = listWorlds(store);
     const old = list.find((w) => w.id === id);
     saveIndex([...list.filter((w) => w.id !== id), summary(id, data, old)], store);
@@ -681,4 +693,51 @@ export function auditMoney(d: SaveData): { save: SaveData; fixed: boolean } {
   const audit = d.audit ?? a;
   if (!fixed) return { save: { ...d, audit }, fixed: false };
   return { save: { ...d, coins, totalCoins: total, runCoins: Math.min(d.runCoins, total), audit }, fixed: true };
+}
+
+// ───────────────────────────── Jamais de partie perdue ─────────────────────────────
+
+const SEAL_PREFIX = 'dust-it-alone:seal:';
+const QUARANTINE_PREFIX = 'dust-it-alone:quarantine:';
+
+/** Garde une copie d'une sauvegarde écartée (« Une partie a disparu ? » la retrouve). */
+function quarantine(text: string, store: StorageLike): void {
+  try {
+    const id = signText(text).slice(0, 10);
+    if (store.getItem(QUARANTINE_PREFIX + id)) return;
+    store.setItem(QUARANTINE_PREFIX + id, text);
+  } catch {
+    /* rien */
+  }
+}
+
+/**
+ * Une sauvegarde sans signature (ou suspecte) garde toute sa partie, mais son argent ne peut pas
+ * dépasser de beaucoup le dernier argent connu et signé (plus ce qu'on a pu gagner depuis).
+ */
+function capToSeal(d: SaveData, store: StorageLike, key: string, check: boolean): SaveData {
+  if (!check) return d;
+  let coins = Math.min(d.coins, d.totalCoins * 1.001 + 1000);
+  let total = d.totalCoins;
+  const sealTxt = store.getItem(SEAL_PREFIX + key);
+  const seal = sealTxt ? checkSave(sealTxt.replace(/^\{/, '{"coins":0,')) : null;
+  void seal;
+  try {
+    const raw = sealTxt ? JSON.parse(sealTxt) : null;
+    if (raw && typeof raw.sig === 'string') {
+      const { sig, ...rest } = raw;
+      if (signText(JSON.stringify(rest)) === sig) {
+        const hours = Math.max(0, (Date.now() - rest.at) / 3600e3);
+        const allowed = rest.total + 5e6 + Math.max(rest.rate, 1) * 3600 * (hours * 10 + 8) * 2;
+        if (total > allowed) {
+          total = allowed;
+          lastLoadTampered = true;
+        }
+        coins = Math.min(coins, total);
+      }
+    }
+  } catch {
+    /* pas de repère : on garde */
+  }
+  return { ...d, coins, totalCoins: total };
 }

@@ -160,31 +160,55 @@ describe('Signature anti-triche', () => {
     expect(loadSave(s).coins).toBe(100);
     expect(lastLoadTampered).toBe(true);
   });
-  it('retirer la signature ne marche pas non plus', () => {
+  it('retirer la signature ne donne pas d’argent : il reste plafonné par le dernier argent connu', () => {
     const s = mem();
-    writeSave({ ...migrate(null), coins: 100 }, s);
+    writeSave({ ...migrate(null), coins: 100, totalCoins: 1000 }, s);
     const raw = JSON.parse(s.getItem(SAVE_KEY)!);
     delete raw.sig;
     raw.coins = 9e15;
+    raw.totalCoins = 9e15;
     s.setItem(SAVE_KEY, JSON.stringify(raw));
     s.removeItem(SAVE_KEY + ':backup');
-    expect(loadSave(s).coins).toBe(0);
+    expect(loadSave(s).coins).toBeLessThan(1e9);
+  });
+  it('JAMAIS de partie perdue : une sauvegarde sans signature d’un vieil onglet est gardée telle quelle', () => {
+    const s = mem();
+    const real = { ...migrate(null), coins: 4e6, totalCoins: 9e7, tree: { 'broom-wide-1': 5 }, souvenirs: ['attic-1'], savedAt: Date.now() };
+    s.setItem(SAVE_KEY, JSON.stringify(real));
+    const d = loadSave(s);
+    expect(d.coins).toBe(4e6);
+    expect(d.tree['broom-wide-1']).toBe(5);
+    expect(d.souvenirs).toEqual(['attic-1']);
+  });
+  it('JAMAIS de partie perdue : même une sauvegarde suspecte garde ses pièces, son arbre et ses souvenirs', () => {
+    const s = mem();
+    writeSave({ ...migrate(null), coins: 10, totalCoins: 50, tree: { 'value-1': 3 } }, s);
+    const raw = JSON.parse(s.getItem(SAVE_KEY)!);
+    raw.coins = 9e15;
+    s.setItem(SAVE_KEY, JSON.stringify(raw));
+    s.removeItem(SAVE_KEY + ':backup');
+    const d = loadSave(s);
+    expect(d.tree['value-1']).toBe(3);
+    expect(d.coins).toBeLessThanOrEqual(50 * 1.001 + 1000);
+    expect(findSaves(s).length).toBeGreaterThan(0);
   });
   it('une sauvegarde normale se recharge sans souci, et une ancienne est acceptée puis signée', () => {
     const s = mem();
     writeSave({ ...migrate(null), coins: 123.456, totalCoins: 1e20 }, s);
     expect(loadSave(s).coins).toBe(123.456);
     expect(lastLoadTampered).toBe(false);
-    s.setItem(SAVE_KEY, JSON.stringify({ ...migrate(null), coins: 5, savedAt: 1000 }));
+    s.setItem(SAVE_KEY, JSON.stringify({ ...migrate(null), coins: 5, totalCoins: 50, savedAt: 1000 }));
     const d = loadSave(s);
     expect(d.coins).toBe(5);
     writeSave(d, s);
     expect(typeof JSON.parse(s.getItem(SAVE_KEY)!).sig).toBe('string');
   });
-  it('une sauvegarde trafiquée ne se « récupère » pas', () => {
+  it('restaurer une sauvegarde non signée vérifie son argent', () => {
     const s = mem();
-    s.setItem('dust-it-alone:rescue:1', JSON.stringify({ ...migrate(null), coins: 9e15, savedAt: Date.now() }));
-    expect(findSaves(s).some((f) => f.coins === 9e15)).toBe(false);
+    s.setItem('dust-it-alone:rescue:1', JSON.stringify({ ...migrate(null), coins: 9e15, totalCoins: 100, savedAt: Date.now() }));
+    const f = findSaves(s).find((x) => x.key === 'dust-it-alone:rescue:1')!;
+    restoreAsWorld(f.key, s);
+    expect(loadSave(s).coins).toBeLessThanOrEqual(100);
   });
 });
 

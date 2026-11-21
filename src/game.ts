@@ -960,32 +960,34 @@ export class Game {
       if (e.button === 0) this.input.pressed = false;
     });
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'KeyJ' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && this.cinematicT < 0) {
+      // Raccourcis : on regarde la lettre tapée (la touche M d'un clavier AZERTY n'est pas au même endroit qu'en QWERTY).
+      const letter = e.key.length === 1 ? e.key.toLowerCase() : '';
+      if (letter === 'j' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && this.cinematicT < 0) {
         this.toggleAlbum();
         return;
       }
       // Demande pour rejoindre ma partie : O = oui, N = non.
-      if ((e.code === 'KeyO' || e.code === 'KeyN') && store.netRequests.value.length) {
-        this.net.answer(store.netRequests.value[0].slot, e.code === 'KeyO');
+      if ((letter === 'o' || letter === 'n') && store.netRequests.value.length) {
+        this.net.answer(store.netRequests.value[0].slot, letter === 'o');
         return;
       }
-      if (e.code === 'KeyP' && store.started.value && !store.treeOpen.value && this.cinematicT < 0) {
+      if (letter === 'p' && store.started.value && !store.treeOpen.value && this.cinematicT < 0) {
         this.toggleNet();
         return;
       }
-      if (e.code === 'KeyK' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && !store.albumOpen.value && this.cinematicT < 0) {
+      if (letter === 'k' && store.started.value && !store.treeOpen.value && !store.mapOpen.value && !store.albumOpen.value && this.cinematicT < 0) {
         this.toggleJournal();
         return;
       }
-      if (e.code === 'KeyM' && store.started.value && !store.treeOpen.value) {
+      if (letter === 'm' && store.started.value && !store.treeOpen.value) {
         this.toggleMap();
         return;
       }
-      if (e.code === 'KeyB' && store.started.value && !store.paused.value) {
+      if (letter === 'b' && store.started.value && !store.paused.value) {
         this.toggleTree();
         return;
       }
-      if ((e.code === 'Escape' || e.code === 'KeyE' || e.code === 'KeyI') && store.inventoryOpen.value) {
+      if ((e.code === 'Escape' || letter === 'e' || letter === 'i') && store.inventoryOpen.value) {
         this.toggleInventory();
         return;
       }
@@ -995,19 +997,19 @@ export class Game {
       }
       if (!this.playing) return;
       this.player.setKey(e.code, true);
-      if (e.code === 'KeyE' && store.benchPrompt.value && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) {
+      if (letter === 'e' && store.benchPrompt.value && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) {
         this.toggleTree();
         return;
       }
-      if (e.code === 'KeyE' && store.chestPrompt.value) {
+      if (letter === 'e' && store.chestPrompt.value) {
         this.toggleInventory();
         return;
       }
-      if (e.code === 'KeyE' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
+      if (letter === 'e' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
       const digit = /^(?:Digit|Numpad)([1-3])$/.exec(e.code);
       if (digit) this.selectSlot(Number(digit[1]) - 1);
-      if (this.debug && e.code === 'KeyG') this.earn(10000, 'test');
+      if (this.debug && letter === 'g') this.earn(10000, 'test');
       if (this.debug && e.code === 'KeyC') {
         const r = this.currentRoom && this.runtime(this.currentRoom);
         if (r) for (let i = 0; i < r.sim.pool.cap; i++) r.sim.pool.kill(i);
