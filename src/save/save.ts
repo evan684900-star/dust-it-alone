@@ -59,10 +59,13 @@ export interface Stats {
   walked: number;
   /** Meilleur gain par seconde. */
   bestRate: number;
+  /** Argent gagné hors-ligne et en bonus (pour vérifier qu'une sauvegarde est plausible). */
+  offlineEarned: number;
+  bonusEarned: number;
 }
 
 export function defaultStats(): Stats {
-  return { playTime: 0, grains: {}, doors: 0, events: 0, coinsFound: 0, levelsBought: 0, walked: 0, bestRate: 0 };
+  return { playTime: 0, grains: {}, doors: 0, events: 0, coinsFound: 0, levelsBought: 0, walked: 0, bestRate: 0, offlineEarned: 0, bonusEarned: 0 };
 }
 
 export interface SaveData {
@@ -96,6 +99,8 @@ export interface SaveData {
   tips: string[];
   /** Barre rapide : 3 outils ("" = case vide) ; les autres attendent dans le coffre des combles. */
   hotbar: string[];
+  /** Point de départ de la vérification de l'argent (les parties d'avant ne sont pas jugées sur leur passé). */
+  audit: { total: number; play: number; offline: number; bonus: number } | null;
   /** Le monde : son nom, et s'il est ouvert au multijoueur (argent et améliorations partagés). */
   world: { name: string; multiplayer: boolean; isPublic: boolean };
 }
@@ -126,6 +131,7 @@ export function defaultSave(): SaveData {
     tips: [],
     hotbar: ['broom', '', ''],
     world: { name: 'Mon château', multiplayer: false, isPublic: true },
+    audit: { total: 0, play: 0, offline: 0, bonus: 0 },
   };
 }
 
@@ -194,6 +200,7 @@ export function migrate(raw: unknown): SaveData {
     tips: strings(r.tips),
     hotbar: cleanHotbar(r.hotbar),
     world: cleanWorld(r.world),
+    audit: cleanAudit(r.audit),
   };
 }
 
@@ -210,6 +217,13 @@ function cleanHotbar(v: unknown): string[] {
   }
   while (out.length < HOTBAR_SIZE) out.push('');
   return out.slice(0, HOTBAR_SIZE);
+}
+
+function cleanAudit(v: unknown): SaveData['audit'] {
+  if (!v || typeof v !== 'object') return null;
+  const a = v as Record<string, unknown>;
+  const n = (x: unknown) => (typeof x === 'number' && Number.isFinite(x) && x >= 0 ? x : 0);
+  return { total: n(a.total), play: n(a.play), offline: n(a.offline), bonus: n(a.bonus) };
 }
 
 function cleanWorld(v: unknown): SaveData['world'] {
@@ -252,6 +266,8 @@ function cleanStats(v: unknown): Stats {
     levelsBought: n(s.levelsBought),
     walked: n(s.walked),
     bestRate: n(s.bestRate),
+    offlineEarned: n(s.offlineEarned),
+    bonusEarned: n(s.bonusEarned),
   };
 }
 
@@ -632,4 +648,37 @@ export function writeSave(data: SaveData, store: StorageLike | null = storage(),
   } catch {
     /* stockage plein ou bloqué : le jeu continue sans sauvegarder */
   }
+}
+
+/**
+ * L'argent d'une sauvegarde est-il possible ? (Protège même contre une sauvegarde écrite par
+ * une ancienne version du jeu dont la mémoire a été trafiquée.)
+ * - l'argent en poche ne dépasse jamais le total gagné (on ne fait que dépenser) ;
+ * - le total gagné reste cohérent avec le temps de jeu et le meilleur gain par seconde
+ *   (avec une large marge, plus les gains hors-ligne et les bonus, plus un départ de 5 millions).
+ * Renvoie la sauvegarde corrigée et vrai si elle a dû l'être.
+ */
+export function auditMoney(d: SaveData): { save: SaveData; fixed: boolean } {
+  const st = d.stats;
+  let total = d.totalCoins;
+  let coins = d.coins;
+  let fixed = false;
+  // Partie d'avant la vérification : on la prend telle quelle comme point de départ.
+  const a = d.audit ?? { total, play: st.playTime, offline: st.offlineEarned, bonus: st.bonusEarned };
+  const rate = Math.max(st.bestRate, 1);
+  // Ce qu'on a pu gagner depuis le point de départ (marges larges : 10× le meilleur rythme,
+  // une semaine d'absence à ce rythme, deux fois les gains hors-ligne et les bonus, et 5 millions).
+  const plausible =
+    a.total + 5e6 + rate * Math.max(0, st.playTime - a.play) * 10 + rate * 7 * 86400 + Math.max(0, st.offlineEarned - a.offline) * 2 + Math.max(0, st.bonusEarned - a.bonus) * 2;
+  if (total > plausible) {
+    total = plausible;
+    fixed = true;
+  }
+  if (coins > total * 1.001 + 1000) {
+    coins = total;
+    fixed = true;
+  }
+  const audit = d.audit ?? a;
+  if (!fixed) return { save: { ...d, audit }, fixed: false };
+  return { save: { ...d, coins, totalCoins: total, runCoins: Math.min(d.runCoins, total), audit }, fixed: true };
 }

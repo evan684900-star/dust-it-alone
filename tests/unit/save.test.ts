@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lastLoadTampered, createWorld, currentWorld, deleteWorld, findSaves, listWorlds, loadSave, migrate, renameWorld, restoreAsWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
+import { auditMoney, lastLoadTampered, createWorld, currentWorld, deleteWorld, findSaves, listWorlds, loadSave, migrate, renameWorld, restoreAsWorld, SAVE_KEY, setCurrentWorld, worldKey, writeSave } from '../../src/save/save';
 
 function memoryStore() {
   const m = new Map<string, string>();
@@ -185,5 +185,36 @@ describe('Signature anti-triche', () => {
     const s = mem();
     s.setItem('dust-it-alone:rescue:1', JSON.stringify({ ...migrate(null), coins: 9e15, savedAt: Date.now() }));
     expect(findSaves(s).some((f) => f.coins === 9e15)).toBe(false);
+  });
+});
+
+describe('Argent plausible au chargement', () => {
+  const play = (o: Partial<ReturnType<typeof migrate>['stats']> = {}, coins = 0, total = 0) => ({ ...migrate(null), coins, totalCoins: total, stats: { ...migrate(null).stats, ...o }, audit: { total: 0, play: 0, offline: 0, bonus: 0 } });
+  it('une partie normale n’est jamais touchée', () => {
+    const d = play({ bestRate: 2e4, playTime: 36000 }, 3e7, 5e8);
+    expect(auditMoney(d).fixed).toBe(false);
+    expect(auditMoney(play({}, 100, 5000)).fixed).toBe(false);
+  });
+  it('plus d’argent en poche que de total gagné : impossible', () => {
+    const r = auditMoney(play({ bestRate: 100, playTime: 3600 }, 9e12, 2e5));
+    expect(r.fixed).toBe(true);
+    expect(r.save.coins).toBeLessThanOrEqual(2e5);
+  });
+  it('un total gagné absurde pour le temps de jeu est ramené à un niveau possible', () => {
+    const r = auditMoney(play({ bestRate: 50, playTime: 600 }, 1e15, 1e15));
+    expect(r.fixed).toBe(true);
+    expect(r.save.totalCoins).toBeLessThan(1e9);
+    expect(r.save.coins).toBeLessThanOrEqual(r.save.totalCoins);
+  });
+  it('une ancienne partie (d’avant la vérification) n’est pas jugée sur son passé', () => {
+    const old = { ...play({ bestRate: 0, playTime: 0 }, 5e10, 9e11), audit: null };
+    const r = auditMoney(old);
+    expect(r.fixed).toBe(false);
+    expect(r.save.audit?.total).toBe(9e11);
+    // Mais un gros saut ensuite, oui.
+    expect(auditMoney({ ...r.save, totalCoins: 9e15, coins: 9e15 }).fixed).toBe(true);
+  });
+  it('les gains hors-ligne et les bonus comptent', () => {
+    expect(auditMoney(play({ bestRate: 10, playTime: 60, offlineEarned: 4e7, bonusEarned: 1e8 }, 1e8, 2e8)).fixed).toBe(false);
   });
 });

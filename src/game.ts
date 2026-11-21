@@ -7,7 +7,7 @@ import { sfx } from './audio/synth';
 import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
+import { auditMoney, lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
@@ -72,6 +72,12 @@ export class Game {
 
   constructor() {
     this.save = loadSave();
+    // Argent impossible (ex. mémoire trafiquée dans une ancienne version du jeu) : ramené à un niveau possible.
+    const audit = auditMoney(this.save);
+    this.save = audit.save;
+    if (audit.fixed) {
+      setTimeout(() => store.pushToast('🛟 Argent impossible', 'Ta sauvegarde contenait plus d’argent que ce qu’on peut gagner : il a été ramené à un niveau possible.', 7000), 2000);
+    }
     // Sauvegarde modifiée à la main : écartée, on a repris la dernière version valide.
     if (lastLoadTampered) {
       setTimeout(() => store.pushToast('🛟 Sauvegarde modifiée', 'Elle avait été changée à la main : le jeu a repris ta dernière sauvegarde valide.', 7000), 1500);
@@ -249,6 +255,7 @@ export class Game {
     if (coins < 1) return;
     ledger.add(coins, 'offline');
     this.save.runCoins += coins;
+    this.save.stats.offlineEarned += coins;
     store.offlineReport.value = { seconds: away, counted: t, coins };
   }
 
@@ -1382,6 +1389,7 @@ export class Game {
     // Le registre plafonne les gains de poussière impossibles.
     const got = ledger.add(amount, kind);
     this.save.runCoins += got;
+    if (kind === 'bonus' || kind === 'test') this.save.stats.bonusEarned += got;
     this.syncCoins();
     this.earnedWindow[this.earnedWindow.length - 1] += got;
   }
