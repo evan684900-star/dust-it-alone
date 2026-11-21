@@ -512,7 +512,7 @@ function placeRect(r: Rect, W: number, H: number): Rect {
 }
 
 /** Prix des portes (multiplicateur) : réglé avec le simulateur pour garder une partie d'au moins 10 h. */
-export const DOOR_PRICE_SCALE = 0.6;
+export const DOOR_PRICE_SCALE = 0.45;
 
 function scaleRoom(r: RoomDef): RoomDef {
   const W = r.width;
