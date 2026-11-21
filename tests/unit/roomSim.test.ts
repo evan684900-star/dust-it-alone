@@ -227,3 +227,18 @@ describe('assistants', () => {
     expect(n).toBe(30); // 3 grains/s × 10 s
   });
 });
+
+describe('hors-ligne', () => {
+  it('les assistants ramassent la poussière restée par terre (même sans réapparition)', () => {
+    const sim = new RoomSim({ ...ROOMS[0], respawn: {} }, 31);
+    sim.fill(1);
+    const before = sim.pool.aliveCount.dust + sim.pool.aliveCount.bunny;
+    const coins = sim.harvestOffline(500);
+    expect(coins).toBeGreaterThan(0);
+    expect(sim.pool.aliveCount.dust + sim.pool.aliveCount.bunny).toBe(before - 500);
+    // Pas plus que ce qu'il y a par terre.
+    sim.harvestOffline(1e9);
+    expect(sim.pool.aliveCount.dust).toBe(0);
+    expect(sim.drainEvents()).toHaveLength(0);
+  });
+});

@@ -230,6 +230,9 @@ export class Game {
       const respawn = Object.values(r.def.respawn).reduce((a, b) => a + (b ?? 0), 0) * r.sim.mods.respawnMult;
       const grains = Math.min(rate, respawn) * t * eff;
       coins += grains * r.sim.baseValue('dust') * r.sim.mods.valueMultiplier * 1.3;
+      // Le reste du temps, l'équipe ramasse la poussière encore par terre (même sans Courants d'air).
+      const spare = Math.max(0, rate - respawn) * t * eff;
+      if (spare >= 1) coins += r.sim.harvestOffline(spare);
     }
     if (coins < 1) return;
     store.coins.value += coins;

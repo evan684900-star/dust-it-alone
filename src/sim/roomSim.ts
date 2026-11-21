@@ -538,6 +538,25 @@ export class RoomSim {
     }
   }
 
+  /**
+   * Hors-ligne : les assistants ramassent jusqu'à `n` grains encore par terre (pas les toiles ni les taches).
+   * Les grains disparaissent vraiment ; renvoie les pièces gagnées (sans passer par les événements).
+   */
+  harvestOffline(n: number): number {
+    const { alive, type } = this.pool;
+    let coins = 0;
+    let left = Math.floor(n);
+    for (let i = 0; i < this.pool.cap && left > 0; i++) {
+      if (!alive[i]) continue;
+      const id = DIRT_ORDER[type[i]];
+      if (DIRT_TYPES[id].fixed) continue;
+      coins += this.baseValue(id) * this.mods.valueMultiplier;
+      this.pool.kill(i);
+      left--;
+    }
+    return coins;
+  }
+
   /** Grains par seconde que l'équipe ramasse dans une pièce (pour le hors-ligne). */
   helperRate(): number {
     const t = this.team;
