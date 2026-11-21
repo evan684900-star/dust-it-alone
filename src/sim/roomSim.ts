@@ -1,5 +1,5 @@
 import { DIRT_ORDER, DIRT_TYPES, type DirtId, type ToolId } from '../data/dirtTypes';
-import type { Rect, RoomDef } from '../data/rooms';
+import { panFit, type Rect, type RoomDef } from '../data/rooms';
 import { createRng, type Rng } from '../core/rng';
 import { ParticlePool } from './particles';
 import type { RoomModifiers } from '../economy/modifiers';
@@ -135,6 +135,8 @@ export class RoomSim {
   private readonly maxDirt: number;
   private readonly patchTotal: number;
 
+  private panFits: number[] | null = null;
+
   constructor(room: RoomDef, seed = Date.now() & 0xffff) {
     this.room = room;
     this.rng = createRng(seed);
@@ -169,9 +171,11 @@ export class RoomSim {
       whirl: m.whirl,
     };
     // Pelles agrandies autour de leur bouche, sans dépasser des murs.
-    this.collectorRects = this.room.collectors.map((c) => {
+    this.collectorRects = this.room.collectors.map((c, i) => {
       const r = c.rect;
-      const s = m.panScale;
+      // Sans recouvrir une porte ni sortir de la pièce (même taille que la pelle affichée).
+      this.panFits ??= this.room.collectors.map((col) => panFit(this.room, col));
+      const s = Math.min(m.panScale, this.panFits[i]);
       const x0 = c.mouth.x + (r.x - c.mouth.x) * s;
       const y0 = c.mouth.y + (r.y - c.mouth.y) * s;
       const x1 = c.mouth.x + (r.x + r.w - c.mouth.x) * s;

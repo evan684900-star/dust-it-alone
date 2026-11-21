@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { REALISTIC, REAL_DUST_COLORS, filmPass, sanitizePass, naturalize, realBunnyTuftGeometry, realDustGeometry, realDustTexture } from './realistic';
-import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
+import { panFit, type DoorDef, type RoomDef, type StairDef } from '../data/rooms';
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
 import { drawDustMessage, drawEmoji, drawStain, drawWeb, softDot } from './canvasTextures';
 import type { RoomSim } from '../sim/roomSim';
@@ -37,7 +37,7 @@ export interface BroomView {
   pressed: boolean;
 }
 
-interface Pan { obj: THREE.Group; bounce: number; pending: number; timer: number; textX: number; textZ: number; base: number }
+interface Pan { obj: THREE.Group; bounce: number; pending: number; timer: number; textX: number; textZ: number; base: number; fit: number; home: THREE.Vector3; back: THREE.Vector3 }
 interface Bit { x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number; vr: number; life: number }
 
 /** Tout ce qui s'affiche pour une pièce du château. */
@@ -320,7 +320,9 @@ export class World3D {
       group.add(obj);
       const dx = c.facing === 'right' ? 70 : c.facing === 'left' ? -70 : 0;
       const dz = c.facing === 'down' ? 70 : c.facing === 'up' ? -70 : 0;
-      pans.push({ obj, bounce: 0, pending: 0, timer: 0, textX: def.origin.x + c.mouth.x + dx, textZ: def.origin.z + c.mouth.y + dz, base: 1 });
+      // Direction du mur derrière la pelle : elle grandit en restant collée au mur.
+      const back = new THREE.Vector3(-Math.sign(dx), 0, -Math.sign(dz));
+      pans.push({ obj, bounce: 0, pending: 0, timer: 0, textX: def.origin.x + c.mouth.x + dx, textZ: def.origin.z + c.mouth.y + dz, base: 1, fit: panFit(def, c, doors), home: obj.position.clone(), back });
     }
 
     // Tout ce qui ne bouge pas est fusionné (les pelles rebondissent et les flammes vacillent : on les garde à part).
@@ -454,8 +456,9 @@ export class World3D {
     const v = this.views[roomIndex];
     if (!v) return;
     for (const p of v.pans) {
-      if (Math.abs(p.base - scale) > 0.001) p.bounce = Math.max(p.bounce, 0.8);
-      p.base = scale;
+      const s = Math.min(scale, p.fit);
+      if (Math.abs(p.base - s) > 0.001) p.bounce = Math.max(p.bounce, 0.8);
+      p.base = s;
     }
   }
 
@@ -929,7 +932,11 @@ export class World3D {
       const b = Math.sin(this.time * 30) * pan.bounce;
       const sx = Math.sign(pan.obj.scale.x) || 1;
       const k = pan.base;
-      pan.obj.scale.set(sx * k * (1 + b * 0.1 + pan.bounce * 0.06), k * (1 - b * 0.12 + pan.bounce * 0.1), k * (1 + b * 0.08));
+      // Plus large et plus profonde, mais pas trop haute (sinon le manche crève le plafond).
+      const ky = 1 + (k - 1) * 0.5;
+      pan.obj.scale.set(sx * k * (1 + b * 0.1 + pan.bounce * 0.06), ky * (1 - b * 0.12 + pan.bounce * 0.1), k * (1 + b * 0.08));
+      // Le dos de la pelle reste contre le mur (l'origine est la bouche, 18 cm devant le dos).
+      pan.obj.position.copy(pan.home).addScaledVector(pan.back, -(k - 1) * 18);
     }
   }
 

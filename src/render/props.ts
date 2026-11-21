@@ -581,9 +581,10 @@ export function buildDustpan(c: Collector): THREE.Group {
   const back = solid(roundedBox(8, 46, 100, 3), yellow);
   back.position.set(-14, 23, 0);
   g.add(back);
-  const handle = solid(new THREE.CylinderGeometry(7, 7, 120, 16), plastic(0xd9672c));
-  handle.rotation.z = Math.PI / 2.6;
-  handle.position.set(-40, 60, 0);
+  // Manche dressé contre le dos, légèrement penché vers le mur : il ne traverse plus la cloison.
+  const handle = solid(new THREE.CylinderGeometry(6, 6, 110, 16), plastic(0xd9672c));
+  handle.rotation.z = 0.12;
+  handle.position.set(-6, 76, 0);
   g.add(handle);
   if (c.facing === 'left' || c.facing === 'right') g.scale.x = dir;
   // Ouverture vers +z (« down ») ou vers -z (« up ») : on tourne la pelle.

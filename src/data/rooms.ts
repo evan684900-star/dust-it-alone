@@ -220,7 +220,7 @@ const RAW_ROOMS: RoomDef[] = [
     height: 2400,
     valueMult: 5,
     price: 120000000,
-    collectors: [pan('h-w1', 'right', 0, 700), pan('h-w2', 'right', 0, 1700), pan('h-n', 'down', 1400, 0), pan('h-s', 'up', 1400, 2400)],
+    collectors: [pan('h-w1', 'right', 0, 700), pan('h-w2', 'right', 0, 1700), pan('h-n', 'down', 700, 0), pan('h-s', 'up', 1400, 2400)],
     capacity: { dust: 5000, bunny: 100, star: 16, crumb: 1200, soot: 400, rubble: 150, web: 20, stain: 12 },
     respawn: { dust: 14, bunny: 0.3, crumb: 3, soot: 1, rubble: 0.4, web: 0.03, stain: 0.02 },
     patches: scatter(2800, 2400, 14, 5),
@@ -345,7 +345,7 @@ const RAW_ROOMS: RoomDef[] = [
     height: 1700,
     valueMult: 21,
     price: 2e10,
-    collectors: [pan('ce-w', 'right', 0, 850), pan('ce-n', 'down', 950, 0)],
+    collectors: [pan('ce-w', 'right', 0, 400), pan('ce-n', 'down', 950, 0)],
     capacity: { dust: 2500, bunny: 50, star: 8, rubble: 300, web: 30 },
     respawn: { dust: 7, bunny: 0.15, rubble: 0.8, web: 0.05 },
     patches: scatter(1900, 1700, 10, 47),
@@ -560,4 +560,58 @@ export const START = { x: 800 * S, z: 450 * S, yaw: Math.PI / 2 };
 
 export function roomById(id: string): RoomDef | undefined {
   return ROOMS.find((r) => r.id === id);
+}
+
+/** Demi-largeur (le long du mur) et profondeur de la grosse pelle 3D à la taille 1, marge comprise. */
+const PAN_HALF = 82;
+const PAN_DEPTH = 84;
+
+/**
+ * Taille maximale d'une pelle (« Pelles géantes ») : elle grandit, mais sans sortir de la pièce
+ * ni empiéter sur une porte (l'ouverture et la place que prend le battant en s'ouvrant).
+ */
+export function panFit(room: RoomDef, c: Collector, doors: DoorDef[] = DOORS, want = 3): number {
+  const alongX = c.facing === 'up' || c.facing === 'down';
+  const center = alongX ? c.mouth.x : c.mouth.y;
+  const wallLen = alongX ? room.width : room.height;
+  // Zones interdites, en coordonnées locales de la pièce.
+  const keepOut: Rect[] = [];
+  const ox = room.origin.x;
+  const oz = room.origin.z;
+  const near = (a: number, b: number) => Math.abs(a - b) < 40;
+  for (const d of doors) {
+    if (Math.abs(d.floorY - room.floorY) > 60) continue;
+    const span = d.to - d.from;
+    if (d.axis === 'x') {
+      const z0 = d.from - oz;
+      const z1 = d.to - oz;
+      if (z1 < 0 || z0 > room.height) continue;
+      if (near(d.at, ox)) keepOut.push({ x: 0, y: z0, w: span + 40, h: span });
+      else if (near(d.at, ox + room.width)) keepOut.push({ x: room.width - span - 40, y: z0, w: span + 40, h: span });
+    } else {
+      const x0 = d.from - ox;
+      const x1 = d.to - ox;
+      if (x1 < 0 || x0 > room.width) continue;
+      if (near(d.at, oz)) keepOut.push({ x: x0, y: 0, w: span, h: span + 40 });
+      else if (near(d.at, oz + room.height)) keepOut.push({ x: x0, y: room.height - span - 40, w: span, h: span + 40 });
+    }
+  }
+  const footprint = (s: number): Rect => {
+    const a0 = center - PAN_HALF * s;
+    const len = 2 * PAN_HALF * s;
+    const dep = PAN_DEPTH * s;
+    if (c.facing === 'right') return { x: 0, y: a0, w: dep, h: len };
+    if (c.facing === 'left') return { x: room.width - dep, y: a0, w: dep, h: len };
+    if (c.facing === 'down') return { x: a0, y: 0, w: len, h: dep };
+    return { x: a0, y: room.height - dep, w: len, h: dep };
+  };
+  const hit = (a: Rect, b: Rect) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (let s = want; s > 1; s -= 0.05) {
+    const f = footprint(s);
+    const along0 = alongX ? f.x : f.y;
+    if (along0 < 0 || along0 + 2 * PAN_HALF * s > wallLen) continue;
+    if (keepOut.some((k) => hit(f, k))) continue;
+    return s;
+  }
+  return 1;
 }
