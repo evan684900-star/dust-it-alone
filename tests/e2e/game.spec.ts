@@ -43,6 +43,21 @@ test('on gagne des pièces, on achète dans l’arbre, et tout est sauvegardé',
   expect(errors).toEqual([]);
 });
 
+test('anti-triche : un argent changé en dehors du jeu est remis à sa vraie valeur', async ({ page }) => {
+  const errors = await boot(page);
+  await page.click('.btn-big', { force: true });
+  await dust(page, 'earn', 500);
+  await page.waitForTimeout(1200);
+  const real = (await dust(page, 'coins')) as number;
+  await dust(page, 'cheatCoins', 1e12);
+  await expect.poll(async () => (await dust(page, 'coins')) as number, { timeout: 5000 }).toBe(real);
+  await expect(page.locator('.toast').filter({ hasText: 'Argent modifié' })).toBeVisible();
+  // La sauvegarde garde la vraie valeur.
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  expect(await page.evaluate((k) => JSON.parse(localStorage.getItem(k)!).coins, SAVE)).toBeLessThan(1e6);
+  expect(errors).toEqual([]);
+});
+
 test('ouvrir une porte avec E', async ({ page }) => {
   const errors = await boot(page);
   await page.click('.btn-big', { force: true });

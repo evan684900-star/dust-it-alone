@@ -11,6 +11,7 @@ import { lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, f
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
+import { ledger, type GainKind } from './economy/ledger';
 import { setPriceMultiplier, availability, canRefund, cost, maxAffordable, refundFork, level as treeLevel, costForN, sparksFor } from './economy/tree';
 import { NODE_BY_ID, TREE_NODES } from './data/tree';
 import { StoryDirector, playLines } from './story/director';
@@ -89,13 +90,15 @@ export class Game {
     this.player = new Player(this.nav, valid && p ? { ...p } : { x: START.x, z: START.z, y: ROOMS[0].floorY, yaw: START.yaw });
     this.mods = computeModifiers(this.save.tree, 0, this.save.sparks);
     this.applyTree();
+    // Le registre de l'argent d'abord : les gains hors-ligne s'y ajoutent (avant, ils étaient effacés juste après).
+    ledger.set(this.save.coins, this.save.totalCoins);
+    ledger.resetHistory(this.save.stats.bestRate);
     this.offlineGains();
     this.storeNewTools(false);
 
-    store.coins.value = this.save.coins;
+    this.syncCoins();
     store.sparks.value = this.save.sparks;
     store.prestiges.value = this.save.prestiges;
-    store.totalCoins.value = this.save.totalCoins;
     store.muted.value = this.save.muted;
     store.showFps.value = this.save.showFps;
     const urlQ = new URLSearchParams(location.search).get('quality');
@@ -150,7 +153,7 @@ export class Game {
       player: this.player,
       income: () => store.coinsPerSecond.value,
       starRain: () => this.mods.events.starRain,
-      earn: (v) => this.earn(v),
+      earn: (v) => this.earn(v, 'bonus'),
       world: this.world,
       sound: this.synth,
       onEvent: () => this.save.stats.events++,
@@ -244,8 +247,8 @@ export class Game {
       if (spare >= 1) coins += r.sim.harvestOffline(spare);
     }
     if (coins < 1) return;
-    store.coins.value += coins;
-    store.totalCoins.value += coins;
+    ledger.add(coins, 'offline');
+    this.save.runCoins += coins;
     store.offlineReport.value = { seconds: away, counted: t, coins };
   }
 
@@ -292,13 +295,34 @@ export class Game {
 
   /** Ce qu'on a en poche pour un nœud : des pièces, ou des Étincelles (anneau doré). */
   private wallet(n: { currency?: 'sparks' }): number {
-    return n.currency === 'sparks' ? this.save.sparks : store.coins.value;
+    return n.currency === 'sparks' ? this.save.sparks : ledger.coins;
   }
   private pay(n: { currency?: 'sparks' }, amount: number): void {
     if (n.currency === 'sparks') {
       this.save.sparks -= amount;
       store.sparks.value = this.save.sparks;
-    } else store.coins.value -= amount;
+    } else {
+      if (amount >= 0) ledger.spend(amount);
+      else ledger.refund(-amount);
+      this.syncCoins();
+    }
+  }
+
+  /** L'argent affiché suit le registre. */
+  private syncCoins(): void {
+    store.coins.value = ledger.coins;
+    store.totalCoins.value = ledger.total;
+  }
+
+  /** Vérifie chaque seconde que l'argent affiché n'a pas été trafiqué (sinon on remet la vraie valeur). */
+  private checkCoins(): void {
+    if (!ledger.matches(store.coins.value, store.totalCoins.value)) {
+      this.syncCoins();
+      store.pushToast('🛟 Argent modifié détecté', 'L’argent a été changé en dehors du jeu : on a remis la vraie valeur.', 5000);
+    }
+    if (ledger.takeFlags() > 0 && !this.visiting) {
+      store.pushToast('🛟 Gain impossible ignoré', 'Un gain beaucoup trop gros d’un coup a été ignoré.', 4000);
+    }
   }
 
   /** Étincelles que rapporterait un Grand Ménage maintenant. */
@@ -722,11 +746,11 @@ export class Game {
         }
         location.reload();
       },
-      economy: () => ({ coins: store.coins.value, total: store.totalCoins.value, cps: store.coinsPerSecond.value, sparks: this.save.sparks, tree: { ...this.save.tree } }),
+      economy: () => ({ coins: ledger.coins, total: ledger.total, cps: store.coinsPerSecond.value, sparks: this.save.sparks, tree: { ...this.save.tree } }),
       applyEconomy: (e) => {
         // Invité : l'argent et l'arbre affichés sont ceux du monde de l'hôte.
-        store.coins.value = e.coins;
-        store.totalCoins.value = e.total;
+        ledger.set(e.coins, e.total);
+        this.syncCoins();
         store.coinsPerSecond.value = e.cps;
         this.save.sparks = e.sparks;
         store.sparks.value = e.sparks;
@@ -816,8 +840,8 @@ export class Game {
 
   /** Contexte pour les succès. */
   achievementContext(): AchievementContext {
-    this.save.totalCoins = store.totalCoins.value;
-    this.save.coins = store.coins.value;
+    this.save.totalCoins = ledger.total;
+    this.save.coins = ledger.coins;
     const grains = Object.values(this.save.stats.grains).reduce((a, b) => a + (b ?? 0), 0);
     const rooms = Object.values(this.save.rooms);
     const h = this.mods.helpers;
@@ -976,7 +1000,7 @@ export class Game {
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
       const digit = /^(?:Digit|Numpad)([1-3])$/.exec(e.code);
       if (digit) this.selectSlot(Number(digit[1]) - 1);
-      if (this.debug && e.code === 'KeyG') this.earn(10000);
+      if (this.debug && e.code === 'KeyG') this.earn(10000, 'test');
       if (this.debug && e.code === 'KeyC') {
         const r = this.currentRoom && this.runtime(this.currentRoom);
         if (r) for (let i = 0; i < r.sim.pool.cap; i++) r.sim.pool.kill(i);
@@ -1004,7 +1028,7 @@ export class Game {
         key: (code: string, down: boolean) => this.player.setKey(code, down),
         press: (down: boolean) => (this.input.pressed = down),
         unlock: () => this.tryUnlock(),
-        earn: (n: number) => this.earn(n),
+        earn: (n: number) => this.earn(n, 'test'),
         buy: (id: string, n: number) => this.buyNode(id, n),
         refund: (id: string) => this.refundNode(id),
         giveSouvenirs: (n: number) => {
@@ -1018,6 +1042,8 @@ export class Game {
         net: () => ({ ...store.net.value, requests: store.netRequests.value }),
         dirt: (ri: number) => ({ ...this.rooms[ri].sim.pool.aliveCount }),
         coins: () => store.coins.value,
+        // Simule une triche : on change l'argent affiché sans passer par le jeu.
+        cheatCoins: (v: number) => (store.coins.value = v),
         treeIds: () => TREE_NODES.map((n) => n.id),
         music: () => this.synth.musicState(),
         active: () => [...(this.net?.activeRooms() ?? [])],
@@ -1241,8 +1267,8 @@ export class Game {
       this.synth.denied();
       return;
     }
-    if (store.coins.value < room.price) {
-      store.pushToast('Pas assez de pièces 🪙', `Il manque ${formatNumber(room.price - store.coins.value)} pièces pour ouvrir ${room.name}.`, 2500);
+    if (ledger.coins < room.price) {
+      store.pushToast('Pas assez de pièces 🪙', `Il manque ${formatNumber(room.price - ledger.coins)} pièces pour ouvrir ${room.name}.`, 2500);
       this.synth.denied();
       return;
     }
@@ -1257,8 +1283,8 @@ export class Game {
   /** Ouvre une pièce (moi, ou un invité avec l'argent du monde). Renvoie vrai si c'est fait. */
   private unlockRoom(room: RoomDef): boolean {
     if (room.id === 'throne' && !this.director.throneOpenable()) return false;
-    if (store.coins.value < room.price) return false;
-    store.coins.value -= room.price;
+    if (!ledger.spend(room.price)) return false;
+    this.syncCoins();
     this.save.rooms[room.id] = { unlocked: true, cleaned: false };
     this.save.stats.doors++;
     this.world.setDoorState((dd) => this.doorOpen(dd));
@@ -1350,13 +1376,14 @@ export class Game {
     }
   }
 
-  private earn(amount: number): void {
+  private earn(amount: number, kind: GainKind = 'dust'): void {
     // En visite, l'argent est celui du monde de l'hôte (il nous l'envoie).
     if (this.visiting) return;
-    this.save.runCoins += amount;
-    store.coins.value += amount;
-    store.totalCoins.value += amount;
-    this.earnedWindow[this.earnedWindow.length - 1] += amount;
+    // Le registre plafonne les gains de poussière impossibles.
+    const got = ledger.add(amount, kind);
+    this.save.runCoins += got;
+    this.syncCoins();
+    this.earnedWindow[this.earnedWindow.length - 1] += got;
   }
 
   /** Pièce actuelle, pièces à afficher, nom du lieu, porte devant soi. */
@@ -1472,6 +1499,7 @@ export class Game {
       this.windowStart = now;
       const w = this.earnedWindow;
       if (!this.visiting) store.coinsPerSecond.value = w.reduce((a, b) => a + b, 0) / w.length;
+      this.checkCoins();
       this.save.stats.bestRate = Math.max(this.save.stats.bestRate, store.coinsPerSecond.value);
       if (store.started.value) this.checkAchievements();
       w.shift();
@@ -1494,7 +1522,7 @@ export class Game {
       if (!rs?.unlocked || rs.cleaned || r.sim.cleanliness < CLEAN_THRESHOLD) continue;
       rs.cleaned = true;
       const bonus = Math.max(250, Math.round(r.def.price * 0.5)) * this.mods.cleanBonusMult(r.def.id);
-      this.earn(bonus);
+      this.earn(bonus, 'bonus');
       this.world.celebrate(ri);
       if (r.def.id === 'throne' && !this.save.endingSeen) setTimeout(() => this.startEnding(), 3000);
       else this.director.onRoomClean(ri);
@@ -1540,8 +1568,9 @@ export class Game {
     }
     this.save = {
       ...this.save,
-      coins: store.coins.value,
-      totalCoins: store.totalCoins.value,
+      // Toujours les valeurs du registre (jamais un argent trafiqué dans la mémoire).
+      coins: ledger.coins,
+      totalCoins: ledger.total,
       player: { x: p.x, z: p.z, y: p.y, yaw: p.yaw },
       muted: store.muted.value,
       quality: store.qualitySetting.value,
