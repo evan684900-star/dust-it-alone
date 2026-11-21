@@ -593,6 +593,8 @@ export interface FoundSave {
   rooms: number;
   souvenirs: number;
   prestiges: number;
+  /** Niveaux achetés dans l'arbre. */
+  levels: number;
 }
 
 /** Toutes les sauvegardes de Dust It Alone présentes dans ce navigateur (pour « Récupérer une partie »). */
@@ -617,6 +619,7 @@ export function findSaves(store: StorageLike | null = storage()): FoundSave[] {
         rooms: Object.values(d.rooms).filter((r) => r.unlocked).length,
         souvenirs: d.souvenirs.length,
         prestiges: d.prestiges,
+        levels: Object.values(d.tree).reduce((a, b) => a + b, 0),
       });
     } catch {
       /* pas une sauvegarde */
@@ -653,7 +656,7 @@ export function writeSave(data: SaveData, store: StorageLike | null = storage(),
     if (prev) store.setItem(key + ':backup', prev);
     store.setItem(key, sealSave({ ...data, version: SAVE_VERSION, savedAt: Date.now() }));
     // Dernier argent connu (signé), pour vérifier une sauvegarde sans signature plus tard.
-    store.setItem(SEAL_PREFIX + key, sealSave({ coins: data.coins, total: data.totalCoins, rate: data.stats.bestRate, at: Date.now() }));
+    store.setItem(SEAL_PREFIX + key, sealSave({ coins: data.coins, total: data.totalCoins, rate: data.stats.bestRate, at: Date.now(), progress: progressOf(data) }));
     const list = listWorlds(store);
     const old = list.find((w) => w.id === id);
     saveIndex([...list.filter((w) => w.id !== id), summary(id, data, old)], store);
@@ -727,6 +730,9 @@ function capToSeal(d: SaveData, store: StorageLike, key: string, check: boolean)
     if (raw && typeof raw.sig === 'string') {
       const { sig, ...rest } = raw;
       if (signText(JSON.stringify(rest)) === sig) {
+        // Une sauvegarde plus avancée que le repère (pièces, arbre, souvenirs) vient d'une autre partie,
+        // plus ancienne et vraie (ex. un vieil onglet) : on ne touche pas à son argent.
+        if (progressOf(d) > (rest.progress ?? 0)) return { ...d, coins };
         const hours = Math.max(0, (Date.now() - rest.at) / 3600e3);
         const allowed = rest.total + 5e6 + Math.max(rest.rate, 1) * 3600 * (hours * 10 + 8) * 2;
         if (total > allowed) {
@@ -740,4 +746,17 @@ function capToSeal(d: SaveData, store: StorageLike, key: string, check: boolean)
     /* pas de repère : on garde */
   }
   return { ...d, coins, totalCoins: total };
+}
+
+/** Avancement d'une partie : pièces ouvertes, niveaux de l'arbre et souvenirs. */
+export function progressOf(d: SaveData): number {
+  return Object.values(d.rooms).filter((r) => r.unlocked).length * 1000 + Object.values(d.tree).reduce((a, b) => a + b, 0) * 10 + d.souvenirs.length;
+}
+
+/** Tout ce que le jeu a enregistré dans ce navigateur (pour l'envoyer au développeur en cas de souci). */
+export function dumpAll(store: StorageLike | null = storage()): string {
+  if (!store) return '{}';
+  const out: Record<string, string | null> = {};
+  for (const k of allKeys(store)) if (k.startsWith('dust-it-alone:')) out[k] = store.getItem(k);
+  return JSON.stringify({ when: new Date().toISOString(), site: typeof location !== 'undefined' ? location.host : '', keys: out });
 }

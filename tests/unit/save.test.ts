@@ -203,6 +203,15 @@ describe('Signature anti-triche', () => {
     writeSave(d, s);
     expect(typeof JSON.parse(s.getItem(SAVE_KEY)!).sig).toBe('string');
   });
+  it('le repère d’une partie vide ne plafonne pas l’argent d’une vraie partie plus avancée (vieil onglet)', () => {
+    const s = mem();
+    writeSave(migrate(null), s); // partie vide écrite après le rechargement
+    const real = { ...migrate(null), coins: 8e9, totalCoins: 5e10, tree: { 'broom-wide-1': 5, 'value-1': 5 }, rooms: { attic: { unlocked: true, cleaned: true }, gallery: { unlocked: true, cleaned: false } }, savedAt: Date.now() };
+    s.setItem(SAVE_KEY, JSON.stringify(real));
+    const d = loadSave(s);
+    expect(d.coins).toBe(8e9);
+    expect(d.tree['value-1']).toBe(5);
+  });
   it('restaurer une sauvegarde non signée vérifie son argent', () => {
     const s = mem();
     s.setItem('dust-it-alone:rescue:1', JSON.stringify({ ...migrate(null), coins: 9e15, totalCoins: 100, savedAt: Date.now() }));

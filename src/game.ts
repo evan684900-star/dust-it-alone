@@ -7,7 +7,7 @@ import { sfx } from './audio/synth';
 import { TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { auditMoney, lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
+import { dumpAll, auditMoney, lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
@@ -543,6 +543,16 @@ export class Game {
   /** Toutes les sauvegardes trouvées dans ce navigateur (« Récupérer une partie »). */
   foundSaves(): FoundSave[] {
     return findSaves();
+  }
+
+  /** Télécharge toutes les sauvegardes du navigateur (pour me les envoyer si une partie a disparu). */
+  downloadAllSaves(): void {
+    const blob = new Blob([dumpAll()], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `dust-it-alone-toutes-les-sauvegardes-${Date.now()}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
   }
 
   /** Restaure une sauvegarde trouvée comme nouveau monde, et y entre. */

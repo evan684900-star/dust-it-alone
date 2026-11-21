@@ -325,14 +325,18 @@ function RecoverPanel({ game }: { game: Game }) {
               <li key={s.key}>
                 <div>
                   <strong>{s.name}</strong> <span class={`world-badge ${s.kind === 'monde' ? '' : 'mp'}`}>{s.kind}</span>
-                  <small>🪙 {formatNumber(s.coins)} en poche · {formatNumber(s.totalCoins)} gagnées · 🚪 {s.rooms}/14 · 📜 {s.souvenirs}{s.prestiges ? ` · ✨ ${s.prestiges} Grand(s) Ménage(s)` : ''} · {date(s.savedAt)}</small>
+                  <small>🪙 {formatNumber(s.coins)} en poche · {formatNumber(s.totalCoins)} gagnées · 🚪 {s.rooms}/14 · 🌳 {s.levels} niveaux · 📜 {s.souvenirs}{s.prestiges ? ` · ✨ ${s.prestiges} Grand(s) Ménage(s)` : ''} · {date(s.savedAt)}</small>
                 </div>
                 <button class="btn btn-settings" onClick={() => game.restoreSave(s.key)}>Restaurer</button>
               </li>
             ))}
           </ul>
         )}
-        <button class="btn" onClick={close}>Fermer</button>
+        <p class="chest-help">Toujours pas ta partie ? Télécharge ce fichier et envoie-le au développeur : il contient toutes les sauvegardes de ce navigateur, il pourra la reconstruire.</p>
+        <div class="pause-row">
+          <button class="btn btn-settings" onClick={() => game.downloadAllSaves()}>📤 Télécharger toutes mes sauvegardes</button>
+          <button class="btn" onClick={close}>Fermer</button>
+        </div>
       </div>
     </div>
   );
