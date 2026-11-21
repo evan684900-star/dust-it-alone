@@ -261,6 +261,7 @@ export class Game {
     this.player.reachMax = pm.reachMax;
     store.treeLevels.value = { ...this.save.tree };
     store.unlockedRooms.value = ROOMS.filter((r) => this.isUnlocked(r.id)).map((r) => r.id);
+    if (this.save.hotbar) this.storeNewTools(false);
     this.refreshBuyable();
   }
 
@@ -1086,7 +1087,12 @@ export class Game {
 
   /** Un nouvel outil arrive : dans la barre s'il y a une case libre, sinon dans le coffre. */
   private storeNewTools(announce: boolean): void {
-    const bar = [...this.save.hotbar];
+    // Outils perdus (Grand Ménage, remboursement, monde d'un ami) : ils quittent la barre.
+    const bar = this.save.hotbar.map((id) => {
+      const i = TOOLS.findIndex((t) => t.id === id);
+      return i >= 0 && this.toolUnlocked(i) ? id : '';
+    });
+    if (!bar.includes('broom') && !bar.some((x) => x)) bar[0] = 'broom';
     TOOLS.forEach((t, i) => {
       if (!this.toolUnlocked(i) || bar.includes(t.id)) return;
       const free = bar.indexOf('');
@@ -1100,6 +1106,11 @@ export class Game {
     });
     this.save.hotbar = bar;
     store.hotbar.value = bar;
+    // L'outil en main n'est plus disponible : on reprend le premier de la barre.
+    if (this.world && !this.toolUnlocked(store.selectedTool.value)) {
+      const first = bar.find((x) => x) ?? 'broom';
+      this.selectTool(Math.max(0, TOOLS.findIndex((t) => t.id === first)));
+    }
   }
 
   /** Le coffre des combles : tous mes outils, à ranger dans la barre rapide. */
@@ -1340,6 +1351,15 @@ export class Game {
   private updatePlace(force: boolean): void {
     const p = this.player;
     const room = p.room();
+    if (room && room !== this.currentRoom) {
+      // Le réservoir de l'aspirateur suit le joueur (avant, chaque pièce avait le sien).
+      const from = this.currentRoom ? this.runtime(this.currentRoom).sim : null;
+      const to = this.runtime(room).sim;
+      if (from && from !== to) {
+        to.vacuumLoad = from.vacuumLoad;
+        from.vacuumLoad = 0;
+      }
+    }
     if (room) this.currentRoom = room;
     this.world.setActiveRoom(this.currentRoom ?? ROOMS[0]);
 
