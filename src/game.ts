@@ -1008,6 +1008,7 @@ export class Game {
         treeIds: () => TREE_NODES.map((n) => n.id),
         music: () => this.synth.musicState(),
         active: () => [...(this.net?.activeRooms() ?? [])],
+        doors: () => DOORS.map((d) => ({ id: d.id, room: d.room, axis: d.axis, at: d.at, from: d.from, to: d.to, y: d.floorY, h: d.height })),
         rooms: () => ROOMS.map((r) => ({ id: r.id, name: r.name, x: r.origin.x, z: r.origin.z, w: r.width, h: r.height, y: r.floorY })),
         unlockAll: () => {
           for (const r of ROOMS) this.save.rooms[r.id] = { ...(this.save.rooms[r.id] ?? { cleaned: false }), unlocked: true };
@@ -1350,6 +1351,22 @@ export class Game {
       return Math.hypot(dx, dz) < 800 && Math.abs(r.floorY - p.y) < 330;
     };
     for (const r of ROOMS) if (this.isUnlocked(r.id) && (r === room || near(r))) visible.add(r.id);
+    // Près d'un escalier (ou dedans) : les pièces de ses deux bouts sont dessinées
+    // (sinon, du bas de l'escalier, on voyait le ciel à travers la porte du haut).
+    for (const st of STAIRS) {
+      const sr = st.rect;
+      const dx = Math.max(sr.x - p.x, 0, p.x - (sr.x + sr.w));
+      const dz = Math.max(sr.y - p.z, 0, p.z - (sr.y + sr.h));
+      const lo = Math.min(st.yAtMin, st.yAtMax);
+      const hi = Math.max(st.yAtMin, st.yAtMax);
+      if (Math.hypot(dx, dz) > 700 || p.y < lo - 60 || p.y > hi + 60) continue;
+      for (const r of ROOMS) {
+        if (!this.isUnlocked(r.id) || (Math.abs(r.floorY - lo) > 1 && Math.abs(r.floorY - hi) > 1)) continue;
+        const gx = Math.max(r.origin.x - (sr.x + sr.w), 0, sr.x - (r.origin.x + r.width));
+        const gz = Math.max(r.origin.z - (sr.y + sr.h), 0, sr.y - (r.origin.z + r.height));
+        if (gx < 2 && gz < 2) visible.add(r.id);
+      }
+    }
     if (this.currentRoom) visible.add(this.currentRoom.id);
     const key = [...visible].sort().join(',');
     if (force || key !== this.visibleKey) {

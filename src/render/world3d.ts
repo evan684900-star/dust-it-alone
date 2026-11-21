@@ -146,7 +146,7 @@ export class World3D {
     this.renderer.setPixelRatio(1);
     this.renderer.setClearColor(PAL.ink);
     this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = REALISTIC ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.renderer.toneMapping = REALISTIC ? THREE.AgXToneMapping : THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.1;
     this.renderer.info.autoReset = false;
@@ -284,14 +284,13 @@ export class World3D {
 
     for (const r of rooms) this.views.push(this.buildRoomView(r.def, r.sim, doors));
     for (const st of stairs) {
-      const b = buildStair(st);
+      const b = buildStair(st, doors);
       mergeStatic(b.group, new Set<THREE.Object3D>(b.flames));
       s.add(b.group);
       this.stairFlames.push(...b.flames);
       this.stairTorches.push(...b.torches);
     }
     for (const d of doors) {
-      if (d.room === null) continue;
       const v = buildDoor(d);
       s.add(v.group);
       this.doors.push(v);
@@ -440,9 +439,12 @@ export class World3D {
   setDoorState(isOpen: (d: DoorDef) => boolean, instant = false): void {
     for (const d of this.doors) {
       d.target = isOpen(d.def) ? 1 : 0;
-      if (instant) d.open = d.target;
+      if (instant) {
+        d.open = d.target;
+        // Sans ça, une porte déjà ouverte au chargement restait dessinée fermée.
+        d.pivot.rotation.y = -d.open * 1.75;
+      }
       d.lock.visible = d.target === 0;
-      d.lintel.visible = d.target === 0;
       d.pivot.children.forEach((c) => { if (c !== d.pivot.children[0]) c.visible = d.target === 0; });
     }
   }

@@ -7,6 +7,8 @@ async function boot(page: Page, debug = true) {
   page.on('pageerror', (e) => errors.push(e.message));
   await page.goto(`/?quality=minimal${debug ? '&debug' : ''}`);
   await expect(page.locator('.btn-big')).toBeVisible({ timeout: 30_000 });
+  // On attend la fin de l'écran de chargement (sinon les premiers clics et touches peuvent se perdre).
+  await page.waitForSelector('#loading', { state: 'detached', timeout: 120_000 });
   return errors;
 }
 
@@ -59,6 +61,7 @@ test('ouvrir une porte avec E', async ({ page }) => {
 test('album, carnet et événements', async ({ page }) => {
   const errors = await boot(page);
   await page.click('.btn-big', { force: true });
+  await expect(page.locator('.coins')).toBeVisible();
   await page.keyboard.press('KeyJ');
   await expect(page.locator('.album-card')).toBeVisible();
   await page.keyboard.press('KeyJ');

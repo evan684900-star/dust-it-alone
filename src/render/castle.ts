@@ -68,6 +68,8 @@ const T = {
     return t;
   },
 };
+/** Épaisseur apparente des murs au passage des portes (encadrements). */
+export const WALL_DEPTH = 64;
 /** Taille (cm) couverte par une répétition de texture. */
 const STONE_TILE = 320;
 
@@ -183,8 +185,8 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
 
   // Murs de pierre, avec leurs ouvertures de portes.
   const wallTex = st.wallTex === 'stone' ? T.stone : T.darkStone;
-  // Visible des deux côtés : depuis les escaliers, on voit le dos des murs (au-dessus des portes).
-  const wallMat = mat(0xffffff, { ...texParams(wallTex, 3, 0.9), side: THREE.DoubleSide });
+  // Une seule face : la pièce voisine a son propre mur exactement au même endroit (sinon les deux textures se battent).
+  const wallMat = mat(0xffffff, texParams(wallTex, 3, 0.9));
   const wainMat = mat(0xffffff, texParams(T.planks('wainscot', ['#6a3a22', '#5e321c', '#74422a']), 1, 0.6));
   const frameMat = mat(0x5a3220, { roughness: 0.6 });
   for (const side of ['n', 's', 'w', 'e'] as Side[]) {
@@ -201,15 +203,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
       place(lintel, (o.from + o.to) / 2, (o.height + C) / 2);
       lintel.receiveShadow = true;
       g.add(lintel);
-      // Encadrement en bois massif.
-      for (const x of [o.from - 8, o.to + 8]) {
-        const jamb = solid(roundedBox(16, o.height + 16, 34, 3), frameMat);
-        place(jamb, x, (o.height + 16) / 2, 0);
-        g.add(jamb);
-      }
-      const head = solid(roundedBox(o.to - o.from + 32, 18, 34, 3), frameMat);
-      place(head, (o.from + o.to) / 2, o.height + 9, 0);
-      g.add(head);
+      // L'encadrement (épais) est construit une seule fois avec la porte : voir buildDoor.
       u = o.to;
     }
     if (u < len) segs.push([u, len]);
@@ -537,7 +531,6 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
   const gableMat = gableTex
     ? mat(0xffffff, { map: gableTex, bumpMap: gableTex, bumpScale: 1.5, roughness: 0.8, side: THREE.DoubleSide })
     : realMat(H, RIDGE, { base: [112, 92, 76], plank: 18, px: 0.8, grime: 0.65, vertical: true, seed: 13 }, { side: THREE.DoubleSide });
-  const frameMat = mat(0x5a3220, { roughness: 0.6 });
   for (const [x, side] of [[0, 'w'], [W, 'e']] as const) {
     const ops = openingsFor(def, doors, side);
     const shape = new THREE.Shape();
@@ -562,16 +555,6 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
     gable.rotation.y = -Math.PI / 2;
     gable.position.set(x, 0, 0);
     g.add(gable);
-    for (const o of ops) {
-      for (const z of [o.from - 8, o.to + 8]) {
-        const jamb = solid(roundedBox(30, o.height + 16, 16, 3), frameMat);
-        jamb.position.set(x, (o.height + 16) / 2, z);
-        g.add(jamb);
-      }
-      const head = solid(roundedBox(30, 18, o.to - o.from + 32, 3), frameMat);
-      head.position.set(x, o.height + 9, (o.from + o.to) / 2);
-      g.add(head);
-    }
   }
 
   const beamMat = mat(0x6e3a1f, { roughness: 0.75 });
@@ -650,7 +633,7 @@ function buildAttic(def: RoomDef, doors: DoorDef[]): RoomShell {
 // ───────────────────────────── Escaliers ─────────────────────────────
 
 /** Escalier droit en pierre, fermé par des murs et un plafond en pente (coordonnées monde). */
-export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Vector3[]; flames: THREE.Object3D[] } {
+export function buildStair(s: StairDef, doors: DoorDef[] = []): { group: THREE.Group; torches: THREE.Vector3[]; flames: THREE.Object3D[] } {
   const g = new THREE.Group();
   const { x, y: z, w, h } = s.rect;
   const len = s.axis === 'x' ? w : h;
@@ -674,7 +657,9 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
   }
   // Murs latéraux et plafond en pente : de vrais parallélogrammes, coupés pile au début
   // et à la fin de l'escalier (ils ne dépassent plus dans les pièces).
-  const ceilH = 300;
+  // Plafond assez haut pour les portes des deux bouts (certaines font 3,40 m) : sinon on voyait le ciel au-dessus.
+  const endDoors = doors.filter((d) => d.axis === s.axis && (s.axis === 'x' ? [x, x + w] : [z, z + h]).some((e) => Math.abs(e - d.at) < 1));
+  const ceilH = Math.max(300, ...endDoors.map((d) => d.height + 60));
   const y0 = s.yAtMin;
   const y1 = s.yAtMax;
   const quad = (p: number[][], uv: number[][]) => {
@@ -702,6 +687,46 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
     mat(0xffffff, { ...texParams(T.planks('ceiling', ['#9a6a48', '#8a5c3c', '#a87856']), 1, 0.9), side: THREE.DoubleSide }),
   );
   local.add(ceil);
+
+  // Les deux bouts de l'escalier : un mur de pierre percé de la porte. Sans lui, quand la pièce
+  // au bout est trop loin pour être dessinée, on voyait le ciel au-dessus et à côté de la porte.
+  const capMat = mat(0xffffff, texParams(T.stone, 3, 0.9));
+  for (const end of [0, 1] as const) {
+    const floorY = end === 0 ? y0 : y1;
+    const atWorld = s.axis === 'x' ? (end === 0 ? x : x + w) : end === 0 ? z : z + h;
+    const door = doors.find((d) => d.axis === s.axis && Math.abs(d.at - atWorld) < 1 && Math.abs(d.floorY - floorY) < 1);
+    // Ouverture de la porte, dans la largeur de l'escalier (v).
+    let v0 = 0;
+    let v1 = 0;
+    if (door) {
+      if (s.axis === 'x') [v0, v1] = [door.from - z, door.to - z];
+      else [v0, v1] = [x + w - door.to, x + w - door.from];
+    }
+    // Le dessin est fait dans le plan (x = v ou −v, y), puis tourné pour regarder vers l'intérieur.
+    const sx = (v: number) => (end === 0 ? -v : v);
+    const shape = new THREE.Shape();
+    const top = floorY + ceilH + 2;
+    const bottom = floorY - 40;
+    const pts = [[0, bottom], [width, bottom], [width, top], [0, top]].map(([v, y]) => new THREE.Vector2(sx(v), y));
+    shape.setFromPoints(end === 0 ? pts.reverse() : pts);
+    if (door && v1 > v0) {
+      const hole = new THREE.Path();
+      const hp = [[v0, floorY - 1], [v1, floorY - 1], [v1, floorY + door.height], [v0, floorY + door.height]].map(([v, y]) => new THREE.Vector2(sx(v), y));
+      hole.setFromPoints(end === 0 ? hp : hp.reverse());
+      shape.holes.push(hole);
+    }
+    const geo = new THREE.ShapeGeometry(shape);
+    const uvA = geo.attributes.uv as THREE.BufferAttribute;
+    const posA = geo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < uvA.count; i++) uvA.setXY(i, posA.getX(i) / STONE_TILE, posA.getY(i) / STONE_TILE);
+    const cap = new THREE.Mesh(geo, capMat);
+    cap.rotation.y = end === 0 ? Math.PI / 2 : -Math.PI / 2;
+    // Un demi-centimètre dans l'escalier : jamais pile sur le mur de la pièce.
+    cap.position.x = end === 0 ? 0.5 : len - 0.5;
+    cap.receiveShadow = true;
+    local.add(cap);
+  }
+
   // Une torche à mi-hauteur de chaque côté.
   for (const [u, side] of [[len * 0.3, 0], [len * 0.7, width]] as const) {
     const placeOnStair: Place = (o, uu, v, d = 0) => {
@@ -717,8 +742,10 @@ export function buildStair(s: StairDef): { group: THREE.Group; torches: THREE.Ve
   if (s.axis === 'x') {
     local.position.set(x, 0, z);
   } else {
+    // Tourné d'un quart de tour, la largeur part vers −x : on décale de toute la largeur pour que
+    // l'escalier dessiné soit pile sur l'escalier où l'on marche (il était décalé de 2 m).
     local.rotation.y = -Math.PI / 2;
-    local.position.set(x, 0, z);
+    local.position.set(x + w, 0, z);
   }
   g.add(local);
   g.updateMatrixWorld(true);
@@ -733,8 +760,6 @@ export interface DoorView {
   group: THREE.Group;
   pivot: THREE.Group;
   lock: THREE.Object3D;
-  /** Mur au-dessus de la porte tant qu'elle est fermée (la pièce derrière n'est pas encore dessinée). */
-  lintel: THREE.Object3D;
   /** 0 = fermée, 1 = grande ouverte. */
   open: number;
   target: number;
@@ -779,18 +804,25 @@ export function buildDoor(d: DoorDef): DoorView {
   pivot.add(lock2);
 
   g.add(pivot);
-  // Tant que la porte est verrouillée, la pièce derrière n'existe pas encore : sans ce
-  // morceau de mur, on verrait le ciel au-dessus de la porte (depuis les escaliers surtout).
-  const lintel = new THREE.Mesh(tiledPlane(width + 60, 280, STONE_TILE), mat(0xffffff, { ...texParams(T.stone, 3, 0.9), side: THREE.DoubleSide }));
-  lintel.position.set(width / 2, d.height + 140, 0);
-  lintel.receiveShadow = true;
-  g.add(lintel);
+  if (d.room === null) pivot.visible = false;
+  // Encadrement épais (il donne l'épaisseur du mur au passage de la porte). Construit une seule
+  // fois, ici : avant, chaque pièce construisait le sien au même endroit et les textures se battaient.
+  const frameMat = mat(0x5a3220, { roughness: 0.6 });
+  const FRAME_W = 24;
+  for (const x of [-FRAME_W / 2, width + FRAME_W / 2]) {
+    const jamb = solid(roundedBox(FRAME_W, d.height + FRAME_W, WALL_DEPTH, 3), frameMat);
+    jamb.position.set(x, (d.height + FRAME_W) / 2, 0);
+    g.add(jamb);
+  }
+  const head = solid(roundedBox(width + FRAME_W * 2, FRAME_W, WALL_DEPTH, 3), frameMat);
+  head.position.set(width / 2, d.height + FRAME_W / 2, 0);
+  g.add(head);
   if (d.axis === 'x') {
     g.rotation.y = -Math.PI / 2;
     g.position.set(d.at, d.floorY, d.from);
   } else {
     g.position.set(d.from, d.floorY, d.at);
   }
-  return { def: d, group: g, pivot, lock, lintel, open: 0, target: 0 };
+  return { def: d, group: g, pivot, lock, open: 0, target: 0 };
 }
 
