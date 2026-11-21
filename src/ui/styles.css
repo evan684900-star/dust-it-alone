@@ -394,12 +394,14 @@ kbd {
 /* ───────── Carte du château ───────── */
 .map-card { width: min(900px, calc(100vw - 32px)); }
 .castle-map { width: 100%; height: auto; max-height: 62vh; display: block; background: #3a2340; border: 4px solid var(--ink); border-radius: 18px; }
-.map-room { stroke: var(--ink); stroke-width: 26; }
+.map-room { stroke: var(--ink); }
 .map-room.locked { fill: #6b5a6e; stroke-dasharray: 60 40; }
-.map-stair { fill: #d9c7a8; stroke: var(--ink); stroke-width: 18; opacity: 0.85; }
+.map-stair { fill: #d9c7a8; stroke: var(--ink); opacity: 0.9; }
+.map-stair-label { font-family: var(--font-display); text-anchor: middle; fill: var(--ink); }
+.map-tabs { justify-content: center; }
 .map-clean { fill: var(--sky); opacity: 0.7; }
-.map-label { font-family: var(--font-display); font-size: 300px; text-anchor: middle; fill: var(--ink); }
-.map-sub { font-family: var(--font-body); font-weight: 900; font-size: 210px; text-anchor: middle; fill: var(--ink); opacity: 0.8; }
+.map-label { font-family: var(--font-display); text-anchor: middle; fill: var(--ink); paint-order: stroke fill; stroke: rgba(255, 247, 230, 0.7); stroke-width: 0.08em; }
+.map-sub { font-family: var(--font-body); font-weight: 900; text-anchor: middle; fill: var(--ink); opacity: 0.85; }
 .map-me { fill: var(--tomato); stroke: var(--ink); stroke-width: 22; stroke-linejoin: round; }
 .map-me-halo { fill: rgba(255, 90, 78, 0.25); }
 .map-help { font-weight: 800; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }

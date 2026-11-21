@@ -927,50 +927,84 @@ const SHORT_NAMES: Record<string, string> = {
 };
 const LEVEL_NAMES: Record<number, string> = { 800: 'Tours', 400: 'Combles', 0: 'Étage', [-400]: 'Rez-de-chaussée', [-800]: 'Sous-sol' };
 
-/** Carte du château vue de dessus, avec les étages en couleurs. */
+const LEVELS = [800, 400, 0, -400, -800];
+const LEVEL_COLOR: Record<number, string> = { 800: '#e8c86a', 400: '#c99a5a', 0: '#9fbfa0', [-400]: '#a7a3c9', [-800]: '#8a8a9a' };
+
+/** L'étage le plus proche d'une hauteur (le joueur peut être dans un escalier). */
+function levelOf(y: number): number {
+  return LEVELS.reduce((best, l) => (Math.abs(l - y) < Math.abs(best - y) ? l : best), LEVELS[0]);
+}
+
+/** Carte du château vue de dessus, un étage à la fois (sinon les étages se dessinaient les uns sur les autres). */
 function CastleMap({ game }: { game: Game }) {
   const rooms = store.castle.value;
-  if (rooms.length === 0) return null;
-  const pad = 200;
-  const minX = Math.min(...rooms.map((r) => r.x)) - pad;
-  const minZ = Math.min(...rooms.map((r) => r.z)) - pad;
-  const maxX = Math.max(...rooms.map((r) => r.x + r.w)) + pad;
-  const maxZ = Math.max(...rooms.map((r) => r.z + r.h)) + pad;
   const p = store.playerPos.value;
-  const levelColor: Record<number, string> = { 800: '#e8c86a', 400: '#c99a5a', 0: '#9fbfa0', [-400]: '#a7a3c9', [-800]: '#8a8a9a' };
+  const myLevel = levelOf(p.y);
+  const [level, setLevel] = useState(myLevel);
+  if (rooms.length === 0) return null;
+  // Les étages qui ont au moins une pièce connue (ouverte, ou fermée mais visible derrière une porte).
+  const here = rooms.filter((r) => r.level === level);
+  const stairs = STAIRS.filter((st) => Math.min(st.yAtMin, st.yAtMax) === level || Math.max(st.yAtMin, st.yAtMax) === level);
+  // Cadrage sur l'étage choisi.
+  const pad = 400;
+  const xs = [...here.map((r) => r.x), ...stairs.map((s) => s.rect.x)];
+  const xe = [...here.map((r) => r.x + r.w), ...stairs.map((s) => s.rect.x + s.rect.w)];
+  const zs = [...here.map((r) => r.z), ...stairs.map((s) => s.rect.y)];
+  const ze = [...here.map((r) => r.z + r.h), ...stairs.map((s) => s.rect.y + s.rect.h)];
+  const minX = Math.min(...xs) - pad;
+  const minZ = Math.min(...zs) - pad;
+  const w = Math.max(...xe) + pad - minX;
+  const h = Math.max(...ze) + pad - minZ;
+  // Tailles de texte et de flèche proportionnelles à la carte (lisibles quel que soit l'étage).
+  const u = Math.max(w, h * 1.6) / 100;
+  const meVisible = myLevel === level;
   return (
     <div class="settings-backdrop" onClick={() => game.toggleMap()}>
       <div class="settings-card map-card" onClick={(e) => e.stopPropagation()}>
         <h2>🗺️ Le château</h2>
-        <svg class="castle-map" viewBox={`${minX} ${minZ} ${maxX - minX} ${maxZ - minZ}`}>
-          {/* Escaliers */}
-          {STAIRS.map((st) => (
-            <rect key={st.id} x={st.rect.x} y={st.rect.y} width={st.rect.w} height={st.rect.h} class="map-stair" />
+        <div class="settings-tabs map-tabs">
+          {LEVELS.map((l) => (
+            <button key={l} class={`settings-tab ${level === l ? 'selected' : ''}`} style={{ background: level === l ? LEVEL_COLOR[l] : undefined }} onClick={() => setLevel(l)}>
+              {LEVEL_NAMES[l]}
+              {l === myLevel ? ' 📍' : ''}
+            </button>
           ))}
-          {rooms.map((r) => (
+        </div>
+        <svg class="castle-map" viewBox={`${minX} ${minZ} ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
+          {stairs.map((st) => {
+            const up = Math.min(st.yAtMin, st.yAtMax) === level;
+            const cx = st.rect.x + st.rect.w / 2;
+            const cz = st.rect.y + st.rect.h / 2;
+            return (
+              <g key={st.id}>
+                <rect x={st.rect.x} y={st.rect.y} width={st.rect.w} height={st.rect.h} class="map-stair" style={{ strokeWidth: u * 0.35 }} />
+                <text x={cx} y={cz + u * 1.3} class="map-stair-label" style={{ fontSize: u * 3.4 }}>
+                  {up ? '▲' : '▼'}
+                </text>
+              </g>
+            );
+          })}
+          {here.map((r) => (
             <g key={r.id}>
-              <rect x={r.x} y={r.z} width={r.w} height={r.h} rx={40} class={`map-room ${r.unlocked ? '' : 'locked'}`} style={{ fill: r.unlocked ? levelColor[r.level] : undefined }} />
-              {r.unlocked && <rect x={r.x} y={r.z + r.h - 60} width={r.w * Math.max(0, Math.min(1, r.clean))} height={60} class="map-clean" />}
-              <text x={r.x + r.w / 2} y={r.z + r.h / 2 - 40} class="map-label">
-                {r.unlocked ? (SHORT_NAMES[r.id] ?? r.name) : '🔒 ' + formatNumber(r.price) + ' 🪙'}
+              <rect x={r.x} y={r.z} width={r.w} height={r.h} rx={u} class={`map-room ${r.unlocked ? '' : 'locked'}`} style={{ fill: r.unlocked ? LEVEL_COLOR[r.level] : undefined, strokeWidth: u * 0.5 }} />
+              {r.unlocked && <rect x={r.x} y={r.z + r.h - u * 1.6} width={r.w * Math.max(0, Math.min(1, r.clean))} height={u * 1.6} class="map-clean" />}
+              <text x={r.x + r.w / 2} y={r.z + r.h / 2} class="map-label" style={{ fontSize: Math.min(u * 4.2, (r.w / 7) * 1.1) }}>
+                {r.unlocked ? (SHORT_NAMES[r.id] ?? r.name) : 'Fermée'}
               </text>
-              <text x={r.x + r.w / 2} y={r.z + r.h / 2 + 230} class="map-sub">
-                {r.unlocked ? `${LEVEL_NAMES[r.level] ?? ''} · ${Math.floor(r.clean * 100)} %${r.cleaned ? ' ⭐' : ''}` : '???'}
+              <text x={r.x + r.w / 2} y={r.z + r.h / 2 + u * 4} class="map-sub" style={{ fontSize: Math.min(u * 2.8, r.w / 9) }}>
+                {r.unlocked ? `${Math.floor(r.clean * 100)} %${r.cleaned ? ' · impeccable' : ''}` : `${formatNumber(r.price)} pièces`}
               </text>
             </g>
           ))}
-          {/* Le joueur : une flèche dans la direction du regard. */}
-          <g transform={`translate(${p.x} ${p.z}) rotate(${(-p.yaw * 180) / Math.PI})`}>
-            <circle r={110} class="map-me-halo" />
-            <path d="M0,-130 L80,90 L0,40 L-80,90 Z" class="map-me" />
-          </g>
+          {meVisible && (
+            <g transform={`translate(${p.x} ${p.z}) rotate(${(-p.yaw * 180) / Math.PI}) scale(${u / 40})`}>
+              <circle r={160} class="map-me-halo" />
+              <path d="M0,-150 L95,105 L0,50 L-95,105 Z" class="map-me" />
+            </g>
+          )}
         </svg>
         <p class="map-help">
-          Les couleurs indiquent l'étage : <span class="chip" style={{ background: levelColor[400] }}>Combles</span>
-          <span class="chip" style={{ background: levelColor[0] }}>Étage</span>
-          <span class="chip" style={{ background: levelColor[-400] }}>Rez-de-chaussée</span>
-          <span class="chip" style={{ background: levelColor[-800] }}>Sous-sol</span>
-          <span class="chip" style={{ background: levelColor[800] }}>Tours</span>
+          {meVisible ? 'La flèche rouge, c’est toi. ' : `Tu es à l’étage « ${LEVEL_NAMES[myLevel]} ». `}▲ escalier qui monte · ▼ escalier qui descend · la barre bleue montre la propreté de chaque pièce.
         </p>
         <button class="btn" onClick={() => game.toggleMap()}>Fermer (M)</button>
       </div>

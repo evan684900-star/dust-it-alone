@@ -47,7 +47,7 @@ export const benchPrompt = signal(false);
 export const doorPrompt = signal<{ name: string; price: number; affordable: boolean; need?: string } | null>(null);
 /** Carte du château ouverte. */
 export const mapOpen = signal(false);
-export const playerPos = signal({ x: 0, z: 0, yaw: 0 });
+export const playerPos = signal({ x: 0, z: 0, y: 400, yaw: 0 });
 
 export interface CastleRoomInfo {
   id: string;

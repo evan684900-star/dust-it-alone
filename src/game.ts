@@ -1444,7 +1444,7 @@ export class Game {
 
     store.placeName.value = this.nav.placeName(p.x, p.z, p.y) || (this.currentRoom?.name ?? '');
     store.roomName.value = this.currentRoom?.name ?? '';
-    store.playerPos.value = { x: p.x, z: p.z, yaw: p.yaw };
+    store.playerPos.value = { x: p.x, z: p.z, y: p.y, yaw: p.yaw };
 
     const door = this.playing ? this.nav.lockedDoorNear(p.x, p.z, p.y) : null;
     if (door?.room) {
