@@ -463,6 +463,64 @@ export function realBunnyTuftGeometry(): THREE.BufferGeometry {
   return g;
 }
 
+/**
+ * Mouton de poussière réaliste : une boule de duvet gris, bosselée et un peu aplatie,
+ * hérissée de fibres et de cheveux qui dépassent. Pas de transparence (pas de bords noirs) ;
+ * normales « en boule » pour un éclairage doux, couleurs par sommet pour le côté feutré.
+ */
+export function realFuzzballGeometry(): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const core = new THREE.IcosahedronGeometry(1, 2);
+  const p = core.attributes.position as THREE.BufferAttribute;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i).normalize();
+    const big = fbm(v.x * 1.8 + 3, v.y * 1.8 + v.z * 1.4, 4, 3);
+    const small = hash2(Math.round(v.x * 9), Math.round(v.y * 9 + v.z * 9), 9);
+    v.multiplyScalar(0.72 + 0.4 * big + 0.1 * small);
+    v.y *= 0.68;
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  parts.push(core.toNonIndexed());
+  // Fibres : de fines mèches qui sortent de la boule, plus ou moins penchées.
+  const up = new THREE.Vector3(0, 1, 0);
+  const q = new THREE.Quaternion();
+  for (let k = 0; k < 36; k++) {
+    const a = hash2(k, 1, 77) * Math.PI * 2;
+    const b = (hash2(k, 2, 77) - 0.3) * 1.4;
+    const out = new THREE.Vector3(Math.cos(a) * Math.cos(b), Math.sin(b) * 0.8, Math.sin(a) * Math.cos(b)).normalize();
+    // Les mèches sont couchées sur la boule (comme des cheveux emmêlés), pas plantées droit.
+    const tangent = new THREE.Vector3(-out.z, (hash2(k, 5, 77) - 0.5) * 0.6, out.x).normalize().multiplyScalar(hash2(k, 6, 77) > 0.5 ? 1 : -1);
+    const dir = out.clone().multiplyScalar(0.9).add(tangent).normalize();
+    const len = 0.3 + hash2(k, 3, 77) * 0.5;
+    const f = new THREE.CylinderGeometry(0.01, 0.045, len, 3, 1, true).translate(0, len / 2, 0);
+    f.rotateZ((hash2(k, 4, 77) - 0.5) * 0.6);
+    f.applyQuaternion(q.setFromUnitVectors(up, dir));
+    f.translate(out.x * 0.78, out.y * 0.52, out.z * 0.78);
+    parts.push(f.toNonIndexed());
+  }
+  const g = mergeGeometries(parts.map((x) => {
+    x.deleteAttribute('uv');
+    x.deleteAttribute('normal');
+    return x;
+  }))!;
+  const pos = g.attributes.position as THREE.BufferAttribute;
+  const nrm = new Float32Array(pos.count * 3);
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const r = v.length();
+    const n = v.clone().add(new THREE.Vector3(0, 0.25, 0)).normalize();
+    nrm.set([n.x, n.y, n.z], i * 3);
+    // Plus clair au bout des fibres, plus sombre dans le creux et dessous.
+    const shade = Math.min(1.12, 0.62 + 0.3 * r + 0.12 * (v.y + 0.5)) * (0.9 + 0.2 * hash2(Math.round(v.x * 30), Math.round(v.z * 30 + v.y * 30), 5));
+    col.set([shade, shade, shade], i * 3);
+  }
+  g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return g;
+}
+
 /** Ancienne version (boule bosselée), gardée pour comparer. */
 export function realBunnyGeometry(): THREE.BufferGeometry {
   const body = new THREE.IcosahedronGeometry(1, 3);

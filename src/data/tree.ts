@@ -33,7 +33,8 @@ export type StatKey =
   | 'moutonnet' | 'plumette' | 'roulio' | 'biscotte' | 'helperSpeed' | 'offlineEff' | 'offlineHours'
   | 'startCoins' | 'keepHelpers' | 'keepRooms' | 'sparkGain'
   | 'starRain' | 'feet' | 'handpan' | 'whirl'
-  | 'discount';
+  | 'discount'
+  | 'belts' | 'beltSpeed' | 'bell' | 'bellTime' | 'bellCool';
 export interface Stat { key: StatKey; per: number; mode: 'add' | 'mul'; room?: string }
 
 export interface TreeNode {
@@ -212,6 +213,13 @@ const PICKUP: TreeNode[] = [
     flavors: ['Les pelles ont faim.', 'La poussière qui passe à côté finit dedans.', 'Un petit vent magique souffle vers la pelle.', 'Même les moutons se laissent aspirer.'],
     effect: (per, l) => `+${per} cm d’aspiration autour des pelles par niveau (+${cm(per * l)})`,
   }),
+  { id: 'conveyor', name: 'Tapis roulant de Gustave', icon: '🛤️', branch: 'pickup', kind: 'small', parents: ['pan-size-2'], maxLevel: 6, base: 250000, growth: 2.6, depth: 3.3, side: -1.4, requires: { room: 'library' },
+    stats: [{ key: 'belts', per: 1, mode: 'add' }],
+    flavor: 'Gustave l’avait construit pour ne plus jamais se baisser. Il roule encore.',
+    effect: (l) => `${l} tapis roulant${l > 1 ? 's' : ''} à poser (touche T) : la poussière dessus file toute seule` },
+  { id: 'conveyor-speed', name: 'Tapis graissés', icon: '⚙️', branch: 'pickup', kind: 'small', parents: ['conveyor'], maxLevel: 4, base: 900000, growth: 2.8, depth: 4.4, side: -1.7,
+    stats: [{ key: 'beltSpeed', per: 0.3, mode: 'add' }],
+    flavor: 'Une goutte d’huile, et ça repart.', effect: (l) => `Tapis roulants +30 % plus rapides par niveau (+${Math.round(30 * l)} %)` },
   { id: 'pan-magnet', name: 'Pelle aimantée', icon: '🌪️', branch: 'pickup', kind: 'big', parents: ['pan-pull-3'], maxLevel: 1, base: 4e6, growth: 1, depth: 4.6, side: 2.4,
     stats: [{ key: 'magnet', per: 1, mode: 'add' }],
     flavor: 'Toute la poussière de la pièce glisse lentement vers les pelles.', effect: () => 'Les pelles attirent doucement la poussière de toute la pièce' },
@@ -333,6 +341,16 @@ const HELPERS: TreeNode[] = [
   { id: 'helper-biscotte', name: 'Biscotte', icon: '🐈', branch: 'helpers', kind: 'big', parents: ['helper-roulio'], maxLevel: 1, base: 2e9, growth: 1, depth: 3.7, side: -1.6, requires: { room: 'courtyard' },
     stats: [{ key: 'biscotte', per: 1, mode: 'add' }],
     flavor: 'Le chat d’Élise, devenu un peu fantôme. De temps en temps, il traverse la pièce en courant.', effect: () => 'Biscotte traverse les pièces en balayant tout sur son passage' },
+  { id: 'helper-bell', name: 'Clochette', icon: '🔔', branch: 'helpers', kind: 'big', parents: ['helper-moutonnet'], maxLevel: 1, base: 150000, growth: 1, depth: 3.7, side: 0.75,
+    stats: [{ key: 'bell', per: 1, mode: 'add' }],
+    flavor: 'Un coup de clochette, et toute l’équipe accélère.',
+    effect: () => 'Touche R : les assistants vont 2× plus vite pendant 30 s (recharge 3 min)' },
+  { id: 'bell-long', name: 'Clochette qui résonne', icon: '🔔', branch: 'helpers', kind: 'small', parents: ['helper-bell'], maxLevel: 3, base: 600000, growth: 3, depth: 4.7, side: 0.85,
+    stats: [{ key: 'bellTime', per: 10, mode: 'add' }],
+    flavor: 'Le son traîne dans les couloirs…', effect: (l) => `+10 s de clochette par niveau (+${10 * l} s)` },
+  { id: 'bell-cool', name: 'Clochette légère', icon: '🔔', branch: 'helpers', kind: 'small', parents: ['bell-long'], maxLevel: 3, base: 2e6, growth: 3, depth: 5.7, side: 0.85,
+    stats: [{ key: 'bellCool', per: 0.15, mode: 'add' }],
+    flavor: 'On peut la sonner plus souvent sans fâcher personne.', effect: (l) => `Recharge −15 % par niveau (−${15 * l} %)` },
   ...chain({
     prefix: 'helper-dream', name: 'Rêve de Plume', icon: '💤', branch: 'helpers', root: 'helper-moutonnet', tiers: 2, levels: 3,
     base: 80000, tierMult: 200, growth: 2.5, per: () => 0.1, key: 'offlineEff', mode: 'add', depth0: 3, side: 1.7,

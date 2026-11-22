@@ -189,6 +189,7 @@ const DUSTPAN = path('M3 14H22L26 26H7Z', C.blue) + path('M3 14Q3 26 7 26', 'non
 const TOOLBOX = rect(3, 11, 26, 16, C.red, 2) + path('M11 11V6H21V11', 'none') + rect(3, 16, 26, 3, C.redD, 0) + rect(14, 15, 4, 5, C.grey, 1);
 const MAP = path('M3 7L11 4L21 7L29 4V25L21 28L11 25L3 28Z', C.paper) + line(11, 4, 11, 25, 1.4) + line(21, 7, 21, 28, 1.4) + path('M6 21Q10 15 15 18Q19 21 23 13', 'none') + `<path d="M6 21Q10 15 15 18Q19 21 23 13" stroke="${C.red}" stroke-dasharray="2 2" stroke-width="1.6" fill="none"/>` + path('M23 9L27 13M27 9L23 13', 'none');
 const BOWLING = ell(10, 22, 7, 7, C.dark) + circ(8, 19, 1, C.grey) + circ(11, 18.5, 1, C.grey) + path('M22 3Q19 6 20 10Q17 14 18 22Q18 28 22 29Q26 28 26 22Q27 14 24 10Q25 6 22 3Z', C.white) + rect(19.7, 10, 4.6, 2, C.red, 0.5);
+const CONVEYOR = rect(3, 13, 26, 9, C.dark, 4.5) + circ(8, 17.5, 3, C.grey) + circ(16, 17.5, 3, C.grey) + circ(24, 17.5, 3, C.grey) + ell(11, 10, 3.5, 2.4, C.grey) + ell(19, 9, 3, 2.2, C.cream) + path('M23 27H29M26 24L29 27L26 30', 'none');
 
 /** Emoji → dessin. */
 export const ICON_ART: Record<string, string> = {
@@ -205,7 +206,7 @@ export const ICON_ART: Record<string, string> = {
   '🧺': BASKET, '🍷': WINE, '🕯': CANDLE, '✉': ENVELOPE, '🪢': ROPE, '🍾': BOTTLE, '📮': POSTBOX, '🪑': CHAIR, '🔭': TELESCOPE,
   '🚩': FLAG, '🏔': MOUNTAIN, '🌌': GALAXY, '🕸': WEB, '🍂': LEAVES, '🧠': BRAIN, '👻': GHOST, '🐉': DRAGON, '🤝': HANDSHAKE,
   '🕰': MANTELCLOCK, '🪮': COMB, '💪': MUSCLE, '📏': RULER, '🛢': BARREL, '🦣': MAMMOTH, '🎯': TARGET, '🧲': MAGNET, '💎': GEM,
-  '🦶': FOOT, '🏛': TEMPLE, '🚶': WALKER, '🌷': TULIP, '⚡': BOLT, '🤖': ROBOT, '🖐': HAND, '💡': BULB, '🔔': BELL,
+  '🦶': FOOT, '🏛': TEMPLE, '🚶': WALKER, '🌷': TULIP, '⚡': BOLT, '🤖': ROBOT, '🖐': HAND, '💡': BULB, '🔔': BELL, '🛤': CONVEYOR,
 };
 
 /** Le dessin d'une icône, prêt à glisser dans un SVG 32 × 32 (contour encre commun à toutes les formes). */

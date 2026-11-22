@@ -1161,6 +1161,24 @@ function Hud({ game }: { game: Game }) {
           })}
         </div>
 
+        {(store.bell.value.has || store.belts.value.max > 0) && (
+          <div class="panel gadgets tilt-l">
+            {store.bell.value.has && (
+              <div class={`gadget bell ${store.bell.value.active ? 'ringing' : store.bell.value.ready ? 'resting' : 'ready'}`} title="Clochette : les assistants vont 2× plus vite (touche R)">
+                <span class="g-icon">🔔</span>
+                <span class="g-text">{store.bell.value.active ? `${store.bell.value.active} s` : store.bell.value.ready ? clock(store.bell.value.ready) : 'Prête'}</span>
+                <span class="tool-key">R</span>
+              </div>
+            )}
+            {store.belts.value.max > 0 && (
+              <div class="gadget" title="Tapis roulants : T pour poser là où tu vises, T sur un tapis pour le ramasser">
+                <span class="g-icon">🛤️</span>
+                <span class="g-text">{store.belts.value.placed}/{store.belts.value.max}</span>
+                <span class="tool-key">T</span>
+              </div>
+            )}
+          </div>
+        )}
         {store.vacuum.value && (
           <div class={`panel vacuum-gauge tilt-l ${store.vacuum.value.load >= store.vacuum.value.cap ? 'full' : ''}`}>
             <span>🌀 Réservoir</span>
@@ -1175,6 +1193,11 @@ function Hud({ game }: { game: Game }) {
       </div>
     </div>
   );
+}
+
+/** 185 → « 3:05 ». */
+function clock(sec: number): string {
+  return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
 }
 
 function Toasts() {

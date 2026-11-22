@@ -1,13 +1,13 @@
 import { DOORS, ROOMS, START, STAIRS, roomById, type DoorDef, type RoomDef } from './data/rooms';
-import { RoomSim, type BroomInput } from './sim/roomSim';
+import { BELT, RoomSim, type BroomInput } from './sim/roomSim';
 import { World3D } from './render/world3d';
 import { Player } from './player/player';
 import { Navigation } from './world/nav';
 import { sfx } from './audio/synth';
-import { TOOLS, type DirtId } from './data/dirtTypes';
+import { DIRT_ORDER, TOOLS, type DirtId } from './data/dirtTypes';
 import { createFixedLoop } from './core/loop';
 import { formatNumber } from './core/format';
-import { dumpAll, auditMoney, lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type FoundSave, type SaveData, type Settings } from './save/save';
+import { dumpAll, auditMoney, lastLoadTampered, createWorld, currentWorld, deleteWorld, exportSave, findSaves, importSave, listWorlds, loadSave, renameWorld, restoreAsWorld, setCurrentWorld, writeSave, type Belt, type FoundSave, type SaveData, type Settings } from './save/save';
 import { ACHIEVEMENTS, type AchievementContext } from './data/achievements';
 import * as store from './state/store';
 import { computeModifiers, type Modifiers } from './economy/modifiers';
@@ -284,7 +284,133 @@ export class Game {
     store.treeLevels.value = { ...this.save.tree };
     store.unlockedRooms.value = ROOMS.filter((r) => this.isUnlocked(r.id)).map((r) => r.id);
     if (this.save.hotbar) this.storeNewTools(false);
+    this.applyBelts();
     this.refreshBuyable();
+  }
+
+  // ───────────────────────────── Tapis roulants et clochette ─────────────────────────────
+
+  private hostBelts: Belt[] = [];
+  private hostBeltSpeed = 1;
+  private hostBeltsKey = '';
+  /** Clochette : en cours jusqu'à… (ms) ; chez un ami, quand celle de l'hôte sera prête. */
+  private bellUntil = 0;
+  private hostBellReady = 0;
+
+  /** Les tapis qui marchent (ceux en trop après un Grand Ménage attendent qu'on en rachète). */
+  private activeBelts(): Belt[] {
+    return this.save.belts.slice(0, this.mods.belts.count);
+  }
+
+  /** Donne les tapis à chaque pièce (simulation et dessin). */
+  private applyBelts(): void {
+    if (!this.rooms) return;
+    const list = this.visiting ? this.hostBelts : this.activeBelts();
+    const speed = this.visiting ? this.hostBeltSpeed : this.mods.belts.speed;
+    this.rooms.forEach((r, i) => {
+      const mine = list.filter((b) => b.room === r.def.id);
+      r.sim.setBelts(mine, speed);
+      this.world?.setBelts(i, mine, speed);
+    });
+    store.belts.value = { placed: list.length, max: this.mods.belts.count };
+  }
+
+  /** Pose un tapis ici, ou ramasse celui qui s'y trouve. */
+  private beltToggle(roomId: string, x: number, y: number, yaw: number): 'placed' | 'removed' | 'full' | 'locked' | 'none' {
+    const room = roomById(roomId);
+    const ri = this.rooms.findIndex((r) => r.def.id === roomId);
+    if (!room || ri < 0 || !this.isUnlocked(roomId)) return 'none';
+    const sim = this.rooms[ri].sim;
+    const hit = sim.beltAt(x, y, 25);
+    if (hit >= 0) {
+      const b = sim.belts[hit];
+      const k = this.save.belts.findIndex((s) => s.room === roomId && Math.abs(s.x - b.x) < 1 && Math.abs(s.y - b.y) < 1);
+      if (k >= 0) this.save.belts.splice(k, 1);
+      this.applyBelts();
+      this.persistSoon();
+      return 'removed';
+    }
+    if (this.mods.belts.count <= 0) return 'locked';
+    if (this.activeBelts().length >= this.mods.belts.count) return 'full';
+    // Tourné par huitièmes de tour (c'est plus net), et entièrement dans la pièce.
+    const q = Math.round(yaw / (Math.PI / 4)) * (Math.PI / 4);
+    const m = BELT.len / 2 + 10;
+    const cx = Math.max(m, Math.min(room.width - m, x));
+    const cy = Math.max(m, Math.min(room.height - m, y));
+    this.save.belts = [...this.activeBelts(), { room: roomId, x: Math.round(cx), y: Math.round(cy), yaw: q }];
+    this.applyBelts();
+    this.persistSoon();
+    return 'placed';
+  }
+
+  /** Touche T : poser / ramasser un tapis là où l'on vise. */
+  private useBelt(): void {
+    const bp = this.player.broomPoint();
+    if (!bp.room) return;
+    const x = bp.x - bp.room.origin.x;
+    const y = bp.z - bp.room.origin.z;
+    if (this.visiting) {
+      this.net.request({ t: 'belt', room: bp.room.id, x, y, yaw: this.player.yaw });
+      this.synth.tool();
+      return;
+    }
+    const r = this.beltToggle(bp.room.id, x, y, this.player.yaw);
+    if (r === 'placed') {
+      this.synth.tool();
+      store.pushToast('🛤️ Tapis posé', `Il emporte la poussière droit devant toi. (${this.activeBelts().length}/${this.mods.belts.count} — T sur un tapis pour le ramasser)`, 3500);
+    } else if (r === 'removed') {
+      this.synth.tool();
+      store.pushToast('🛤️ Tapis ramassé', 'Vise un autre endroit et appuie sur T pour le reposer.', 2500);
+    } else if (r === 'locked') {
+      this.synth.denied();
+      store.pushToast('🛤️ Pas encore de tapis', 'Débloque « Tapis roulant de Gustave » dans l’arbre (branche des pelles).', 3500);
+    } else if (r === 'full') {
+      this.synth.denied();
+      store.pushToast('🛤️ Tous tes tapis sont posés', 'Vise un tapis et appuie sur T pour le ramasser, ou achètes-en d’autres dans l’arbre.', 3500);
+    }
+  }
+
+  /** Sonne la clochette (chez moi, ou chez l'hôte pour un invité). Renvoie vrai si elle a sonné. */
+  private ringBell(): boolean {
+    const now = Date.now();
+    if (!this.mods.bell.has || now < this.save.bellReadyAt) return false;
+    this.bellUntil = now + this.mods.bell.duration * 1000;
+    this.save.bellReadyAt = now + this.mods.bell.cooldown * 1000;
+    this.synth.bell();
+    this.persistSoon();
+    this.net?.pushEconomy();
+    return true;
+  }
+
+  /** Touche R. */
+  private useBell(): void {
+    if (!this.mods.bell.has) {
+      this.synth.denied();
+      store.pushToast('🔔 Pas de clochette', 'Débloque « Clochette » dans l’arbre (branche des assistants).', 3500);
+      return;
+    }
+    if (this.visiting) {
+      this.net.request({ t: 'bell' });
+      return;
+    }
+    const wait = Math.ceil((this.save.bellReadyAt - Date.now()) / 1000);
+    if (this.ringBell()) store.pushToast('🔔 Ding !', `Les assistants vont deux fois plus vite pendant ${Math.round(this.mods.bell.duration)} s !`, 3000);
+    else {
+      this.synth.denied();
+      store.pushToast('🔔 La clochette se repose', `Encore ${wait >= 60 ? `${Math.floor(wait / 60)} min ${wait % 60} s` : `${wait} s`}.`, 2500);
+    }
+  }
+
+  /** Chaque image : vitesse des assistants et affichage de la clochette. */
+  private updateBell(): void {
+    const now = Date.now();
+    const active = now < this.bellUntil;
+    const boost = active ? 2 : 1;
+    for (const r of this.rooms) r.sim.boost = boost;
+    const ready = this.visiting ? this.hostBellReady : this.save.bellReadyAt;
+    const v = { has: this.mods.bell.has, active: active ? Math.ceil((this.bellUntil - now) / 1000) : 0, ready: Math.max(0, Math.ceil((ready - now) / 1000)) };
+    const cur = store.bell.value;
+    if (cur.has !== v.has || cur.active !== v.active || cur.ready !== v.ready) store.bell.value = v;
   }
 
   private treeState() {
@@ -763,7 +889,16 @@ export class Game {
         }
         location.reload();
       },
-      economy: () => ({ coins: ledger.coins, total: ledger.total, cps: store.coinsPerSecond.value, sparks: this.save.sparks, tree: { ...this.save.tree } }),
+      economy: () => ({
+        coins: ledger.coins,
+        total: ledger.total,
+        cps: store.coinsPerSecond.value,
+        sparks: this.save.sparks,
+        tree: { ...this.save.tree },
+        belts: this.activeBelts(),
+        beltSpeed: this.mods.belts.speed,
+        bell: { active: Math.max(0, (this.bellUntil - Date.now()) / 1000), ready: Math.max(0, (this.save.bellReadyAt - Date.now()) / 1000) },
+      }),
       applyEconomy: (e) => {
         // Invité : l'argent et l'arbre affichés sont ceux du monde de l'hôte.
         ledger.set(e.coins, e.total);
@@ -776,6 +911,20 @@ export class Game {
           this.save.tree = { ...e.tree };
           this.applyTree();
           this.storeNewTools(true);
+        }
+        // Tapis et clochette de l'hôte.
+        const belts = JSON.stringify(e.belts ?? []) + e.beltSpeed;
+        if (belts !== this.hostBeltsKey) {
+          this.hostBeltsKey = belts;
+          this.hostBelts = e.belts ?? [];
+          this.hostBeltSpeed = e.beltSpeed ?? 1;
+          this.applyBelts();
+        }
+        if (e.bell) {
+          const now = Date.now();
+          if (e.bell.active > 0 && this.bellUntil < now) this.synth.bell();
+          this.bellUntil = now + e.bell.active * 1000;
+          this.hostBellReady = now + e.bell.ready * 1000;
         }
         this.refreshBuyable();
       },
@@ -790,6 +939,14 @@ export class Game {
       hostUnlock: (roomId, who) => {
         const room = roomById(roomId);
         if (room && !this.isUnlocked(room.id) && this.unlockRoom(room)) store.pushToast(`🔓 ${who}`, `a ouvert ${room.name} avec l’argent du monde !`, 4000);
+      },
+      hostBelt: (room, x, y, yaw, who) => {
+        const r = this.beltToggle(room, x, y, yaw);
+        if (r === 'placed') store.pushToast(`🛤️ ${who}`, 'a posé un tapis roulant.', 2500);
+        else if (r === 'removed') store.pushToast(`🛤️ ${who}`, 'a ramassé un tapis roulant.', 2500);
+      },
+      hostBell: (who) => {
+        if (this.ringBell()) store.pushToast(`🔔 ${who}`, 'a sonné la clochette : les assistants accélèrent !', 3000);
       },
       toast: (title, text) => store.pushToast(title, text, 4000),
       sound: (kind) => (kind === 'leave' ? this.synth.close() : kind === 'request' ? this.synth.chime() : this.synth.fanfare()),
@@ -1017,6 +1174,8 @@ export class Game {
       }
       if (letter === 'e' && !(TOOLS[store.selectedTool.value].id === 'vacuum' && this.tryEmptyVacuum())) this.tryUnlock();
       if (e.code === 'Space' || e.code === 'Enter') store.nextDialogue();
+      if (letter === 't') this.useBelt();
+      if (letter === 'r') this.useBell();
       const digit = /^(?:Digit|Numpad)([1-3])$/.exec(e.code);
       if (digit) this.selectSlot(Number(digit[1]) - 1);
       if (this.debug && letter === 'g') this.earn(10000, 'test');
@@ -1060,6 +1219,15 @@ export class Game {
         },
         net: () => ({ ...store.net.value, requests: store.netRequests.value }),
         dirt: (ri: number) => ({ ...this.rooms[ri].sim.pool.aliveCount }),
+        find: (ri: number, kind: DirtId) => {
+          const r = this.rooms[ri];
+          const pool = r.sim.pool;
+          const t = DIRT_ORDER.indexOf(kind);
+          for (let i = 0; i < pool.cap; i++) if (pool.alive[i] && pool.type[i] === t) return { x: r.def.origin.x + pool.x[i], z: r.def.origin.z + pool.y[i], y: r.def.floorY };
+          return null;
+        },
+        helpers: (ri: number) => this.rooms[ri].sim.helpers.map((h) => `${h.kind}@${Math.round(h.x)},${Math.round(h.y)}`),
+        roomIndex: (id: string) => this.rooms.findIndex((r) => r.def.id === id),
         coins: () => store.coins.value,
         // Simule une triche : on change l'argent affiché sans passer par le jeu.
         cheatCoins: (v: number) => (store.coins.value = v),
@@ -1358,12 +1526,15 @@ export class Game {
       this.input.pushBonus = this.player.movingForward ? this.mods.player.marchBonus : 0;
       this.input.tool = TOOLS[store.selectedTool.value].id;
       this.net?.applyRemoteBrooms(ri, r.sim, stepDt);
+      // En visite, l'aspirateur n'a pas de réservoir : c'est l'hôte qui encaisse chaque grain tout de suite.
+      if (this.visiting) r.sim.vacuumLoad = 0;
       r.sim.step(stepDt, here ? this.input : { active: false, x: 0, y: 0, pressed: false });
       // Pas léger : en marchant, les pieds écartent la poussière.
       if (this.playing && this.mods.player.feet && this.player.moving && r.def === this.player.room()) r.sim.kickFeet(this.player.x - r.def.origin.x, this.player.z - r.def.origin.z);
       // Les assistants : « en vrai » près du joueur, « en résumé » ailleurs.
       if (this.visiting) {
-        /* les assistants de l'hôte travaillent chez lui */
+        // Les assistants de l'hôte travaillent chez lui : on les voit bouger (positions envoyées par l'hôte).
+        r.sim.smoothRemoteHelpers(stepDt);
       } else if (near) r.sim.stepHelpers(stepDt);
       else r.sim.abstractHelpers(stepDt);
       const events = r.sim.drainEvents();
@@ -1527,7 +1698,8 @@ export class Game {
     }
     const cur = this.currentRoom ? this.runtime(this.currentRoom) : null;
     store.unlockedTools.value = TOOLS.map((_, i) => this.toolUnlocked(i));
-    if (cur && TOOLS[store.selectedTool.value].id === 'vacuum') store.vacuum.value = { load: cur.sim.vacuumLoad, cap: cur.sim.mods.vacuumCap };
+    this.updateBell();
+    if (cur && !this.visiting && TOOLS[store.selectedTool.value].id === 'vacuum') store.vacuum.value = { load: cur.sim.vacuumLoad, cap: cur.sim.mods.vacuumCap };
     else if (store.vacuum.value) store.vacuum.value = null;
     if (cur) {
       const c = cur.sim.cleanliness;

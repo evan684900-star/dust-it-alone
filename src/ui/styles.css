@@ -605,6 +605,17 @@ kbd {
 .tree-btn.refund { background: #f3e3c3; font-size: 17px; }
 .tree-btn.refund:disabled { opacity: 0.55; }
 .td-refund-why { font-size: 13px; font-weight: 800; color: #8a4a2a; }
+/* Clochette et tapis roulants, à côté de la barre rapide. */
+.gadgets { display: flex; gap: 8px; padding: 8px 10px; }
+.gadget { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 12px 6px 8px; border: 3px solid var(--ink); border-radius: 12px; background: #fff8e6; font-weight: 900; min-width: 92px; }
+.gadget .g-icon { font-size: 22px; display: inline-flex; }
+.gadget .g-text { font-variant-numeric: tabular-nums; }
+.gadget .tool-key { position: absolute; right: -8px; bottom: -8px; }
+.gadget.bell.ready { background: #fff1c4; animation: pulse 1.5s ease-in-out infinite; }
+.gadget.bell.ringing { background: #ffe58a; }
+.gadget.bell.ringing .g-icon { animation: bell-ring 0.5s ease-in-out infinite; transform-origin: 50% 10%; }
+.gadget.bell.resting { opacity: 0.75; }
+@keyframes bell-ring { 0%, 100% { transform: rotate(-14deg); } 50% { transform: rotate(14deg); } }
 .vacuum-gauge { flex-direction: column; align-items: stretch; gap: 4px; min-width: 220px; font-weight: 900; }
 .vac-bar { height: 14px; border: 3px solid var(--ink); border-radius: 8px; background: #d9c7a8; overflow: hidden; }
 .vac-bar div { height: 100%; background: var(--sky); transition: width 0.2s; }

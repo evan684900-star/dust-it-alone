@@ -56,6 +56,10 @@ export interface Modifiers {
   priceMult: number;
   /** Événements débloqués dans l'arbre. */
   events: { starRain: boolean };
+  /** Tapis roulants : combien on peut en poser, et leur vitesse (1 = de base). */
+  belts: { count: number; speed: number };
+  /** Clochette : débloquée ?, durée et temps de recharge (secondes). */
+  bell: { has: boolean; duration: number; cooldown: number };
   /** Multiplicateur du bonus « pièce impeccable » pour une pièce. */
   cleanBonusMult: (roomId: string) => number;
 }
@@ -136,6 +140,8 @@ export function computeModifiers(levels: TreeLevels, cleanedRooms: number, spark
       feet: A('feet') > 0,
     },
     events: { starRain: A('starRain') > 0 },
+    belts: { count: A('belts'), speed: 1 + A('beltSpeed') },
+    bell: { has: A('bell') > 0, duration: 30 + A('bellTime'), cooldown: 180 * Math.max(0.4, 1 - A('bellCool')) },
     priceMult: Math.max(0.5, 1 - A('discount')),
     cleanBonusMult: (roomId) => ((roomAdd.get(roomId)?.echo ?? 0) > 0 ? 2 : 1),
   };

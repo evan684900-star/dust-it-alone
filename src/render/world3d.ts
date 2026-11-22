@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { REALISTIC, REAL_DUST_COLORS, filmPass, sanitizePass, naturalize, realBunnyTuftGeometry, realDustGeometry, realDustTexture } from './realistic';
+import { REALISTIC, REAL_DUST_COLORS, filmPass, sanitizePass, naturalize, realFuzzballGeometry, realDustGeometry, realDustTexture } from './realistic';
 import { panFit, type DoorDef, type RoomDef, type StairDef } from '../data/rooms';
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
 import { drawDustMessage, drawEmoji, drawStain, drawWeb, softDot } from './canvasTextures';
-import type { RoomSim } from '../sim/roomSim';
+import { BELT, type RoomSim } from '../sim/roomSim';
 import { PAL } from './palette';
 import { fabric, mat, plastic as plasticLike } from './materials';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -12,7 +12,7 @@ import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { dustBunnyGeometry, grainGeometry, starGeometry } from './geometry';
+import { dustBunnyGeometry, grainGeometry, roundedBox, starGeometry } from './geometry';
 import { buildBroom, buildDustpan, buildProp } from './props';
 import { buildDoor, buildRoomShell, buildStair, type DoorView } from './castle';
 import { Floaters } from './floaters';
@@ -57,6 +57,7 @@ interface RoomView {
   visible: boolean;
   /** Modèles 3D des assistants présents. */
   helperViews: Map<Helper, THREE.Object3D>;
+  belts: THREE.Group[];
   /** Message de Mouton Ier écrit dans la poussière. */
   dustMessage?: THREE.Mesh;
 }
@@ -114,7 +115,7 @@ export class World3D {
     g.scale(1, 0.55, 0.85);
     return g;
   })();
-  private bunnyGeo = REALISTIC ? realBunnyTuftGeometry() : dustBunnyGeometry();
+  private bunnyGeo = REALISTIC ? realFuzzballGeometry() : dustBunnyGeometry();
   /** Forme pleine du mouton (silhouettes dorées des échos du passé). */
   private plushGeo = REALISTIC ? dustBunnyGeometry() : this.bunnyGeo;
   private starGeo = starGeometry();
@@ -263,8 +264,9 @@ export class World3D {
         : { geo: this.dustGeoHigh, rich: fabric(0xffffff, { sheen: 0.6 }), mid: mat(0xffffff, { roughness: 0.95 }), big: false, colors: DUST_COLORS },
       bunny: REALISTIC
         ? (() => {
-            const m = mat(0xffffff, { map: realDustTexture(), alphaTest: 0.18, side: THREE.DoubleSide, roughness: 1 });
-            return { geo: this.bunnyGeo, rich: m, mid: m, big: true, colors: [0xc8c0b4, 0xb8b0a4, 0xd2cabc, 0xaaa296] };
+            // Boule de duvet (couleur par sommet × teinte par mouton), sans transparence.
+            const m = mat(0xffffff, { vertexColors: true, side: THREE.DoubleSide, roughness: 1 });
+            return { geo: this.bunnyGeo, rich: m, mid: m, big: true, colors: [0xa8a198, 0x9a948b, 0xb4ada2, 0x8e8880] };
           })()
         : { geo: this.bunnyGeo, rich: REALISTIC ? fabric(0xffffff, { vertexColors: true, sheen: 0.7, sheenRoughness: 0.9, sheenColor: 0x6a645e, roughness: 1 }) : fabric(0xffffff, { vertexColors: true }), mid: mat(0xffffff, { vertexColors: true, roughness: 0.95 }), big: true },
       star: { geo: this.starGeo, rich: starMat, mid: starMat, big: true },
@@ -357,7 +359,7 @@ export class World3D {
     group.updateMatrixWorld(true);
     // Torches : coordonnées locales → monde.
     const torches = shell.torches.map((t) => t.clone().add(new THREE.Vector3(def.origin.x, def.floorY, def.origin.z)));
-    return { def, sim, group, dust, meshes, helperViews: new Map(), pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
+    return { def, sim, group, dust, meshes, helperViews: new Map(), belts: [], pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
   }
 
   /** Empreinte de la brosse au sol : un rectangle arrondi qui suit exactement la zone qui pousse. */
@@ -452,6 +454,75 @@ export class World3D {
   }
 
   /** Taille des pelles d'une pièce (amélioration « Pelles géantes »), avec un petit rebond. */
+  // ───────────────────────────── Tapis roulants ─────────────────────────────
+
+  private beltTex: THREE.CanvasTexture | null = null;
+  private beltSpeed = 1;
+  private beltRun = false;
+  private beltProto: THREE.Group | null = null;
+
+  /** Un tapis : longueur le long de −Z (sens de la marche), posé au sol. */
+  private buildBelt(): THREE.Group {
+    if (this.beltProto) return this.beltProto.clone();
+    const L = BELT.len;
+    const W = BELT.width;
+    const c = document.createElement('canvas');
+    c.width = 32;
+    c.height = 64;
+    const g2 = c.getContext('2d')!;
+    g2.fillStyle = REALISTIC ? '#2a2826' : '#3a3440';
+    g2.fillRect(0, 0, 32, 64);
+    // Chevrons qui montrent le sens.
+    g2.strokeStyle = REALISTIC ? '#4a4642' : '#ffd35a';
+    g2.lineWidth = 6;
+    g2.beginPath();
+    g2.moveTo(2, 46);
+    g2.lineTo(16, 26);
+    g2.lineTo(30, 46);
+    g2.stroke();
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(1, L / 40);
+    this.beltTex = tex;
+    const g = new THREE.Group();
+    const band = new THREE.Mesh(new THREE.PlaneGeometry(W - 16, L - 10).rotateX(-Math.PI / 2), mat(0xffffff, { map: tex, roughness: 0.85 }));
+    band.position.y = 6.5;
+    band.receiveShadow = true;
+    // On veut que la bande avance vers −Z : on retourne la texture (v croît vers −Z).
+    const wood = mat(REALISTIC ? 0x6a4a30 : 0xa0663a, { roughness: 0.7 });
+    for (const sx of [-1, 1]) {
+      const side = new THREE.Mesh(roundedBox(8, 12, L, 2), wood);
+      side.position.set((sx * (W - 8)) / 2, 6, 0);
+      side.castShadow = true;
+      g.add(side);
+    }
+    const metal = mat(REALISTIC ? 0x8a8a86 : 0xc8ccd4, { metalness: 0.6, roughness: 0.35 });
+    for (const sz of [-1, 1]) {
+      const roller = new THREE.Mesh(new THREE.CylinderGeometry(5, 5, W - 12, 12).rotateZ(Math.PI / 2), metal);
+      roller.position.set(0, 5, (sz * (L - 10)) / 2);
+      g.add(roller);
+    }
+    g.add(band);
+    this.beltProto = g;
+    return g.clone();
+  }
+
+  /** Les tapis posés dans une pièce (coordonnées locales). */
+  setBelts(roomIndex: number, list: { x: number; y: number; yaw: number }[], speed: number): void {
+    const v = this.views[roomIndex];
+    if (!v) return;
+    this.beltSpeed = speed;
+    for (const b of v.belts) v.group.remove(b);
+    v.belts = list.map((b) => {
+      const obj = this.buildBelt();
+      obj.position.set(b.x, 0, b.y);
+      obj.rotation.y = b.yaw;
+      v.group.add(obj);
+      return obj;
+    });
+  }
+
   setPanScale(roomIndex: number, scale: number): void {
     const v = this.views[roomIndex];
     if (!v) return;
@@ -595,8 +666,12 @@ export class World3D {
       this.updateParticles(v);
       this.updateHelpers(v);
       this.updatePans(v, dt);
+      if (v.belts.length) this.beltRun = true;
       if (v.motes && this.ambienceOn) this.updateMotes(v.motes);
     }
+    // La bande des tapis défile (une seule texture pour tous).
+    if (this.beltRun && this.beltTex) this.beltTex.offset.y = (this.beltTex.offset.y - (dt * BELT.speed * this.beltSpeed) / 40) % 1;
+    this.beltRun = false;
     this.updateDoors(dt);
     this.updateStory(dt);
     this.updateLights(dt);
@@ -721,7 +796,7 @@ export class World3D {
       const body = new THREE.Mesh(
         this.bunnyGeo,
         REALISTIC
-          ? mat(0xe2c890, { map: realDustTexture(), alphaTest: 0.18, side: THREE.DoubleSide, roughness: 1 })
+          ? mat(0xd8b878, { vertexColors: true, side: THREE.DoubleSide, roughness: 1 })
           : fabric(0xffffff, { vertexColors: true, color: 0xffe6a8 }),
       );
       body.scale.setScalar(24);
@@ -729,8 +804,16 @@ export class World3D {
       body.rotation.y = Math.PI;
       body.castShadow = true;
       const bow = new THREE.Mesh(new THREE.TorusGeometry(6, 2.5, 6, 12), mat(0xd8323a));
-      bow.position.set(0, 44, 6);
+      bow.position.set(0, REALISTIC ? 38 : 44, 6);
       g.add(body, bow);
+      if (REALISTIC) {
+        // Deux petits yeux brillants qui dépassent du duvet : c'est un assistant, pas un simple mouton.
+        for (const sx of [-1, 1]) {
+          const eye = new THREE.Mesh(new THREE.SphereGeometry(2.6, 10, 8), mat(0x1a1410, { roughness: 0.15 }));
+          eye.position.set(sx * 7, 27, -19);
+          g.add(eye);
+        }
+      }
     } else if (kind === 'plumette') {
       const colors = [0xff8a6e, 0xffc93c, 0x5ec8f2, 0xc38bff];
       for (let k = 0; k < 10; k++) {

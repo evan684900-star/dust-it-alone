@@ -39,6 +39,11 @@ export interface Economy {
   cps: number;
   sparks: number;
   tree: Record<string, number>;
+  /** Tapis roulants posés chez l'hôte, et leur vitesse. */
+  belts: { room: string; x: number; y: number; yaw: number }[];
+  beltSpeed: number;
+  /** Clochette : secondes restantes (sonnerie en cours) et avant de pouvoir la resonner. */
+  bell: { active: number; ready: number };
 }
 
 export interface RemotePlayer {
@@ -68,6 +73,8 @@ export interface MpGame {
   hostBuy(id: string, n: number, who: string): void;
   hostRefund(id: string, who: string): void;
   hostUnlock(roomId: string, who: string): void;
+  hostBelt(room: string, x: number, y: number, yaw: number, who: string): void;
+  hostBell(who: string): void;
   toast(title: string, text: string): void;
   sound(kind: 'join' | 'leave' | 'request'): void;
 }
@@ -81,10 +88,13 @@ type Msg =
   | { t: 'pose'; pose: Pose }
   | { t: 'poses'; list: { slot: number; pose: Pose }[] }
   | { t: 'snap'; room: number; data: ArrayBuffer }
+  | { t: 'crew'; room: number; list: number[] }
   | { t: 'eco'; eco: Economy }
   | { t: 'buy'; id: string; n: number }
   | { t: 'refund'; id: string }
   | { t: 'unlock'; room: string }
+  | { t: 'belt'; room: string; x: number; y: number; yaw: number }
+  | { t: 'bell' }
   | { t: 'castle'; unlocked: string[] }
   | { t: 'ping'; at: number }
   | { t: 'pong'; at: number }
@@ -305,6 +315,16 @@ export class Multiplayer {
         if (p) p.pose = m.pose;
         break;
       }
+      case 'belt': {
+        const p = this.players.get(from);
+        if (p && [m.x, m.y, m.yaw].every(Number.isFinite)) this.game.hostBelt(String(m.room), m.x, m.y, m.yaw, p.name);
+        break;
+      }
+      case 'bell': {
+        const p = this.players.get(from);
+        if (p) this.game.hostBell(p.name);
+        break;
+      }
       case 'buy':
       case 'refund':
       case 'unlock': {
@@ -373,6 +393,9 @@ export class Multiplayer {
         if (r && buf) applySnapshot(r.sim, buf);
         break;
       }
+      case 'crew':
+        this.game.rooms[m.room]?.sim.setRemoteHelpers(m.list);
+        break;
       case 'eco':
         this.game.applyEconomy(m.eco);
         break;
@@ -519,6 +542,8 @@ export class Multiplayer {
         const full = this.time - m.lastFull > FULL_EVERY;
         if (full) m.lastFull = this.time;
         s.send(p.slot, { t: 'snap', room: ri, data: encodeSnapshot(sim, full, m.mem) } satisfies Msg);
+        // Les assistants (Moutonnets…) de la pièce, pour que l'invité les voie aussi.
+        s.send(p.slot, { t: 'crew', room: ri, list: sim.helperList() } satisfies Msg);
       }
     }
   }
@@ -530,7 +555,7 @@ export class Multiplayer {
   }
 
   /** Côté invité : demande à l'hôte d'acheter / rembourser / ouvrir une porte avec l'argent du monde. */
-  request(m: { t: 'buy'; id: string; n: number } | { t: 'refund'; id: string } | { t: 'unlock'; room: string }): void {
+  request(m: { t: 'buy'; id: string; n: number } | { t: 'refund'; id: string } | { t: 'unlock'; room: string } | { t: 'belt'; room: string; x: number; y: number; yaw: number } | { t: 'bell' }): void {
     if (this.role === 'guest') this.session?.send(0, m satisfies Msg);
   }
 

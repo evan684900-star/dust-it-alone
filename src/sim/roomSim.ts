@@ -5,6 +5,11 @@ import { ParticlePool } from './particles';
 import type { RoomModifiers } from '../economy/modifiers';
 import { HELPER_RATE, Helper, NO_HELPERS, type HelperKind, type HelperTeam } from './helpers';
 
+/** Taille d'un tapis roulant (cm) et vitesse de base (cm/s). */
+export const BELT = { len: 320, width: 110, speed: 170 };
+
+const HELPER_KINDS: HelperKind[] = ['moutonnet', 'plumette', 'roulio', 'biscotte'];
+
 export interface BroomInput {
   /** Le curseur est dans la zone de jeu. */
   active: boolean;
@@ -240,8 +245,58 @@ export class RoomSim {
     }
     if (this.mods.magnet) this.applyMagnet();
     if (this.wind.t > 0) this.applyWind(dt);
+    if (this.belts.length) this.applyBelts(dt);
     this.integrate(dt);
     this.respawn(dt);
+  }
+
+  // ───────────────────────────── Tapis roulants ─────────────────────────────
+
+  /** Clochette : multiplicateur de vitesse des assistants (1 = normal). */
+  boost = 1;
+  /** Tapis roulants posés dans la pièce (coordonnées locales). */
+  belts: { x: number; y: number; dx: number; dy: number }[] = [];
+  beltSpeed = 1;
+
+  /** Pose les tapis (lacet = sens de la marche, comme celui du joueur). */
+  setBelts(list: { x: number; y: number; yaw: number }[], speed: number): void {
+    this.belts = list.map((b) => ({ x: b.x, y: b.y, dx: -Math.sin(b.yaw), dy: -Math.cos(b.yaw) }));
+    this.beltSpeed = speed;
+  }
+
+  /** Tapis sous ce point (indice), ou −1. */
+  beltAt(px: number, py: number, margin = 0): number {
+    return this.belts.findIndex((b) => {
+      const rx = px - b.x;
+      const ry = py - b.y;
+      return Math.abs(rx * b.dx + ry * b.dy) <= BELT.len / 2 + margin && Math.abs(rx * -b.dy + ry * b.dx) <= BELT.width / 2 + margin;
+    });
+  }
+
+  /** Ce qui est posé sur un tapis avance tout seul dans son sens. */
+  private applyBelts(dt: number): void {
+    const { x, y, vx, vy, alive, type } = this.pool;
+    const k = Math.min(1, dt * 7);
+    const reach = BELT.len / 2 + BELT.width / 2;
+    for (const b of this.belts) {
+      const speed = BELT.speed * this.beltSpeed;
+      const tx = b.dx * speed;
+      const ty = b.dy * speed;
+      for (let i = 0; i < this.pool.cap; i++) {
+        if (!alive[i]) continue;
+        const rx = x[i] - b.x;
+        const ry = y[i] - b.y;
+        if (Math.abs(rx) > reach || Math.abs(ry) > reach) continue;
+        if (Math.abs(rx * b.dx + ry * b.dy) > BELT.len / 2 || Math.abs(rx * -b.dy + ry * b.dx) > BELT.width / 2) continue;
+        if (DIRT_TYPES[DIRT_ORDER[type[i]]].fixed) continue;
+        // Le tapis porte le grain (même les lourds, malgré le frottement)…
+        x[i] += tx * dt;
+        y[i] += ty * dt;
+        // … et lui donne un peu d'élan : il reste « en mouvement » (la pelle peut l'avaler) et glisse en sortant.
+        vx[i] += (tx * 0.35 - vx[i]) * k;
+        vy[i] += (ty * 0.35 - vy[i]) * k;
+      }
+    }
   }
 
   // ───────────────────────────── Balai ─────────────────────────────
@@ -389,6 +444,42 @@ export class RoomSim {
     this.helpers = next;
   }
 
+  /** Multijoueur (hôte) : les assistants de la pièce, à envoyer aux invités : [type, x, y, lacet] × n. */
+  helperList(): number[] {
+    const out: number[] = [];
+    for (const h of this.helpers) out.push(HELPER_KINDS.indexOf(h.kind), Math.round(h.x), Math.round(h.y), Math.round(h.yaw * 100) / 100);
+    return out;
+  }
+
+  /** Multijoueur (invité) : les assistants que l'hôte voit dans cette pièce. */
+  setRemoteHelpers(list: number[]): void {
+    const next: Helper[] = [];
+    for (let k = 0; k + 3 < list.length; k += 4) {
+      const kind = HELPER_KINDS[list[k]] ?? 'moutonnet';
+      let h = this.helpers[next.length];
+      if (!h || h.kind !== kind) {
+        h = new Helper(kind, list[k + 1], list[k + 2]);
+        h.yaw = list[k + 3];
+      }
+      h.tx = list[k + 1];
+      h.ty = list[k + 2];
+      next.push(h);
+    }
+    this.helpers = next;
+  }
+
+  /** Multijoueur (invité) : les assistants glissent en douceur vers la dernière position reçue. */
+  smoothRemoteHelpers(dt: number): void {
+    for (const h of this.helpers) {
+      h.phase += dt;
+      const d = Math.hypot(h.tx - h.x, h.ty - h.y);
+      if (d > 400) {
+        h.x = h.tx;
+        h.y = h.ty;
+      } else h.moveToward(Math.max(120, d * 8), dt);
+    }
+  }
+
   /** Point de départ d'un grain libre au hasard (pour qu'un assistant aille le chercher). */
   private randomDirt(fixedOnly?: DirtId): { x: number; y: number } | null {
     const { x, y, alive, type } = this.pool;
@@ -416,7 +507,7 @@ export class RoomSim {
 
   /** Assistants « en vrai » (pièce proche du joueur) : ils bougent et poussent vraiment la poussière. */
   stepHelpers(dt: number): void {
-    const sp = this.team.speed;
+    const sp = this.team.speed * this.boost;
     const W = this.room.width;
     const H = this.room.height;
     for (const h of this.helpers) {
@@ -503,7 +594,7 @@ export class RoomSim {
 
   private vacuumAround(px: number, py: number, R: number, dt: number): void {
     const { x, y, alive, type } = this.pool;
-    let budget = Math.max(1, Math.round(12 * dt * 60 * this.team.speed));
+    let budget = Math.max(1, Math.round(12 * dt * 60 * this.team.speed * this.boost));
     for (let i = 0; i < this.pool.cap && budget > 0; i++) {
       if (!alive[i]) continue;
       const dx = x[i] - px;
@@ -522,9 +613,9 @@ export class RoomSim {
    */
   abstractHelpers(dt: number): void {
     const t = this.team;
-    const rate = (t.moutonnet * HELPER_RATE.moutonnet + t.roulio * HELPER_RATE.roulio + t.biscotte * HELPER_RATE.biscotte) * t.speed;
+    const rate = (t.moutonnet * HELPER_RATE.moutonnet + t.roulio * HELPER_RATE.roulio + t.biscotte * HELPER_RATE.biscotte) * t.speed * this.boost;
     this.helperAcc += rate * dt;
-    this.webAcc += t.plumette * HELPER_RATE.plumette * t.speed * dt;
+    this.webAcc += t.plumette * HELPER_RATE.plumette * t.speed * this.boost * dt;
     const { alive, type } = this.pool;
     let guard = 200;
     while (this.helperAcc >= 1 && guard-- > 0) {
@@ -660,12 +751,14 @@ export class RoomSim {
         this.toolActive++;
         if (hp[i] <= 0) this.collectDirect(i, id);
       } else if (tool === 'vacuum') {
-        if (def.fixed || this.vacuumLoad >= this.mods.vacuumCap) continue;
+        // Les invités n'ont pas de réservoir chez l'hôte : leurs grains rapportent tout de suite.
+        const remote = this.toolOwner !== 0;
+        if (def.fixed || (!remote && this.vacuumLoad >= this.mods.vacuumCap)) continue;
         const d = Math.hypot(dx, dy);
         const R = 80;
         if (d > R) continue;
         if (d < 16 + def.radius * 0.5) {
-          this.vacuumLoad++;
+          if (!remote) this.vacuumLoad++;
           this.collectDirect(i, id);
           continue;
         }
@@ -724,8 +817,7 @@ export class RoomSim {
       return;
     }
     st.prev.has = false;
-    // L'aspirateur a un réservoir propre à chacun : pour un invité, il se comporte comme le balai magique (en plus petit).
-    if (!input.active || !input.pressed || tool === 'vacuum') return;
+    if (!input.active || !input.pressed) return;
     const savedMove = this.toolMove;
     this.toolMove = Math.min(40, dt * 600);
     this.toolOwner = owner;

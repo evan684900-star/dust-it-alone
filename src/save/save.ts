@@ -103,6 +103,24 @@ export interface SaveData {
   audit: { total: number; play: number; offline: number; bonus: number } | null;
   /** Le monde : son nom, et s'il est ouvert au multijoueur (argent et améliorations partagés). */
   world: { name: string; multiplayer: boolean; isPublic: boolean };
+  /** Tapis roulants posés (coordonnées locales de la pièce, lacet = sens de la marche). */
+  belts: Belt[];
+  /** Clochette : prête à partir de cette date (ms). */
+  bellReadyAt: number;
+}
+
+export interface Belt { room: string; x: number; y: number; yaw: number }
+
+function cleanBelts(v: unknown): Belt[] {
+  if (!Array.isArray(v)) return [];
+  const out: Belt[] = [];
+  for (const b of v.slice(0, 40)) {
+    if (!b || typeof b !== 'object') continue;
+    const { room, x, y, yaw } = b as Record<string, unknown>;
+    if (typeof room !== 'string' || ![x, y, yaw].every((n) => typeof n === 'number' && Number.isFinite(n))) continue;
+    out.push({ room, x: x as number, y: y as number, yaw: yaw as number });
+  }
+  return out;
 }
 
 export function defaultSave(): SaveData {
@@ -132,6 +150,8 @@ export function defaultSave(): SaveData {
     hotbar: ['broom', '', ''],
     world: { name: 'Mon château', multiplayer: false, isPublic: true },
     audit: { total: 0, play: 0, offline: 0, bonus: 0 },
+    belts: [],
+    bellReadyAt: 0,
   };
 }
 
@@ -201,6 +221,8 @@ export function migrate(raw: unknown): SaveData {
     hotbar: cleanHotbar(r.hotbar),
     world: cleanWorld(r.world),
     audit: cleanAudit(r.audit),
+    belts: cleanBelts(r.belts),
+    bellReadyAt: typeof r.bellReadyAt === 'number' && Number.isFinite(r.bellReadyAt) ? Math.min(r.bellReadyAt, Date.now() + 3600_000) : 0,
   };
 }
 
