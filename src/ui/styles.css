@@ -646,6 +646,22 @@ kbd {
 /* ───────── Album des souvenirs ───────── */
 .album-card { width: min(980px, calc(100vw - 32px)); }
 .album-count { font-weight: 800; margin: 0 0 10px; }
+.album-progress { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; font-weight: 800; font-size: 14px; }
+.album-bar { height: 14px; border: 3px solid var(--ink); border-radius: 8px; background: #d9c7a8; overflow: hidden; }
+.album-bar div { height: 100%; background: linear-gradient(90deg, #ffd86a, #ffb84a); transition: width 0.6s; }
+.album-room.locked { opacity: 0.55; }
+.album-room { display: flex; flex-direction: column; gap: 6px; }
+.album-slot.selected { outline: 3px solid #ffb84a; outline-offset: 2px; }
+.album-slot.found:hover { transform: rotate(0) scale(1.12) !important; }
+.album-slot { transition: transform 0.15s; }
+.album-echo { width: auto !important; height: auto !important; padding: 5px 10px; font: 15px var(--font-display) !important; color: var(--ink) !important; margin: 0 !important; align-self: flex-start; box-shadow: 2px 3px 0 var(--ink); }
+.album-waiting { font: 700 17px 'Caveat', cursive; color: #9a6a20; animation: pulse 1.5s ease-in-out infinite; }
+.album-read { display: flex; gap: 14px; align-items: flex-start; background: repeating-linear-gradient(0deg, transparent 0 27px, rgba(150, 110, 60, 0.13) 27px 28px), #fbf0d6 !important; animation: sc-drop-in 0.35s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+@keyframes sc-drop-in { from { opacity: 0; transform: translateY(-10px) rotate(-2deg); } }
+.album-read-icon { font-size: 52px; line-height: 1; }
+.album-read-icon .ico svg, .album-read-icon .ico { width: 58px; height: 58px; }
+.album-read small { display: block; font-weight: 800; color: #9a6a20; }
+.album-read p { font: 700 21px/1.25 'Caveat', cursive !important; font-style: normal !important; color: #4a3220; }
 .album-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
 .album-room { background: #f3e3c3; border: 3px solid var(--ink); border-radius: 14px; padding: 8px 10px; }
 .album-room strong { display: block; font: 16px var(--font-display); font-weight: normal; margin-bottom: 6px; }
@@ -659,11 +675,97 @@ kbd {
 
 /* ───────── Cinématique de fin ───────── */
 .letterbox { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-.letterbox div { position: absolute; left: 0; right: 0; height: 11vh; background: #000; animation: bars 1.2s ease both; }
-.letterbox div:first-child { top: 0; }
-.letterbox div:last-child { bottom: 0; }
+.letterbox > div { position: absolute; left: 0; right: 0; height: 12vh; background: #050307; animation: bars 1.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; overflow: hidden; }
+.letterbox > div:first-child { top: 0; box-shadow: 0 6px 30px rgba(0, 0, 0, 0.5); }
+.letterbox > div:last-child { bottom: 0; box-shadow: 0 -6px 30px rgba(0, 0, 0, 0.5); }
 @keyframes bars { from { height: 0; } }
-.credits .title-card { animation-duration: 1.2s; }
+.skip-hint { position: absolute; right: 22px; bottom: 14px; color: rgba(255, 240, 210, 0.55); font: 800 13px var(--font-body, system-ui); letter-spacing: 0.04em; animation: fade-in 1s 2.5s both; }
+.skip-hint kbd { background: rgba(255, 240, 210, 0.12); border: 1px solid rgba(255, 240, 210, 0.3); border-radius: 5px; padding: 1px 6px; color: rgba(255, 240, 210, 0.8); box-shadow: none; }
+.skip-hint.wake { position: fixed; z-index: 7; }
+@keyframes fade-in { from { opacity: 0; } }
+/* Pendant une cinématique, la réplique se place au-dessus de la bande noire et prend un air de sous-titre. */
+body:has(.letterbox) .dialogue { bottom: calc(12vh - 34px); transform: translateX(-50%); width: min(760px, calc(100vw - 40px)); padding: 14px 22px 10px; background: rgba(12, 7, 16, 0.78); border: 2px solid rgba(255, 216, 106, 0.55); border-radius: 14px; box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6); color: #fff3d6; backdrop-filter: blur(3px); }
+body:has(.letterbox) .dialogue p { font-size: 19px; line-height: 1.35; color: #fff3d6; }
+body:has(.letterbox) .dialogue .dialogue-name { background: #ffd86a; color: var(--ink); }
+body:has(.letterbox) .dialogue .dialogue-next { color: #ffd86a; }
+body:has(.letterbox) .hud, body:has(.letterbox) .crosshair, body:has(.letterbox) .net-hud, body:has(.letterbox) .tip, body:has(.letterbox) .toasts, body.waking .toasts { opacity: 0; pointer-events: none; transition: opacity 0.8s; }
+
+/* Titre de la scène (écho, fin, réveil). */
+.cine-title { position: fixed; left: 50%; top: 17vh; transform: translateX(-50%); z-index: 6; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; text-align: center; width: min(900px, 92vw); animation: cine-title 6.5s ease both; }
+.cine-title.late { animation-delay: 1.6s; top: 38vh; }
+.cine-title small { font: 900 14px var(--font-body, system-ui); letter-spacing: 0.45em; text-transform: uppercase; color: #ffe7b0; text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9); }
+.cine-title strong { font: 64px/1.05 var(--font-display); font-weight: normal; color: #ffd86a; -webkit-text-stroke: 2px #3a2208; paint-order: stroke fill; text-shadow: 0 0 30px rgba(255, 200, 90, 0.65), 0 4px 0 #3a2208; }
+.cine-title em { font: 700 26px 'Caveat', cursive; color: #fff3d6; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9); }
+.cine-title::before, .cine-title::after { content: ''; width: 220px; height: 2px; background: linear-gradient(90deg, transparent, #ffd86a, transparent); }
+@keyframes cine-title {
+  0% { opacity: 0; letter-spacing: 0.08em; filter: blur(8px); }
+  18% { opacity: 1; letter-spacing: 0; filter: blur(0); }
+  78% { opacity: 1; filter: blur(0); }
+  100% { opacity: 0; filter: blur(4px); transform: translateX(-50%) translateY(-14px); }
+}
+
+/* Filtre « souvenir » : couleurs anciennes, coins sombres, grain doré. */
+#app canvas, body > canvas, canvas { transition: filter 1.6s ease; }
+body.memory canvas { filter: sepia(0.42) saturate(0.85) contrast(1.06) brightness(1.03); }
+.memory-tint { position: fixed; inset: 0; pointer-events: none; z-index: 4; background: radial-gradient(ellipse at center, transparent 42%, rgba(60, 34, 8, 0.55) 100%); animation: fade-in 1.6s both; mix-blend-mode: multiply; }
+.memory-tint::after { content: ''; position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(255, 210, 130, 0.14), transparent 60%); mix-blend-mode: screen; animation: memory-breathe 4s ease-in-out infinite; }
+@keyframes memory-breathe { 50% { opacity: 0.4; } }
+
+/* Le réveil de Plume : les paupières s'ouvrent, se referment, puis s'ouvrent pour de bon. */
+.eyelids { position: fixed; inset: 0; z-index: 7; pointer-events: none; }
+.lid { position: absolute; left: -10vw; right: -10vw; height: 62vh; background: #050307; }
+.lid.top { top: 0; border-radius: 0 0 50% 50% / 0 0 38% 38%; animation: lid-top 6.2s cubic-bezier(0.4, 0, 0.2, 1) both; }
+.lid.bottom { bottom: 0; border-radius: 50% 50% 0 0 / 38% 38% 0 0; animation: lid-bottom 6.2s cubic-bezier(0.4, 0, 0.2, 1) both; }
+@keyframes lid-top { 0%, 12% { transform: translateY(0); } 26% { transform: translateY(-34%); } 34% { transform: translateY(-8%); } 40% { transform: translateY(-8%); } 58% { transform: translateY(-58%); } 64% { transform: translateY(-48%); } 100% { transform: translateY(-112%); } }
+@keyframes lid-bottom { 0%, 12% { transform: translateY(0); } 26% { transform: translateY(34%); } 34% { transform: translateY(8%); } 40% { transform: translateY(8%); } 58% { transform: translateY(58%); } 64% { transform: translateY(48%); } 100% { transform: translateY(112%); } }
+body.waking canvas { animation: wake-blur 6.2s ease both; }
+@keyframes wake-blur { 0%, 20% { filter: blur(14px) brightness(0.6) sepia(0.3); } 60% { filter: blur(5px) brightness(0.85); } 100% { filter: blur(0) brightness(1); } }
+body.waking .hud, body.waking .crosshair, body.waking .dialogue { opacity: 0; }
+
+/* Fondu au blanc de la fin. */
+.white-fade { position: fixed; inset: 0; z-index: 30; background: radial-gradient(circle at 50% 45%, #fffdf4, #fff3d6); animation: white-in 2.4s ease both; pointer-events: none; }
+@keyframes white-in { from { opacity: 0; } }
+
+/* La carte d'un souvenir retrouvé. */
+.souvenir-card { position: fixed; left: 50%; top: 8vh; z-index: 9; width: min(430px, calc(100vw - 32px)); transform: translateX(-50%); pointer-events: auto; cursor: pointer; animation: sc-drop 0.9s cubic-bezier(0.2, 1.5, 0.4, 1) both; }
+.souvenir-card.leaving { animation: sc-leave 0.45s ease-in both; }
+@keyframes sc-drop { 0% { opacity: 0; transform: translateX(-50%) translateY(-70px) rotate(-9deg) scale(0.85); } 100% { opacity: 1; transform: translateX(-50%) rotate(-1.5deg); } }
+@keyframes sc-leave { to { opacity: 0; transform: translateX(-50%) translateY(-40px) rotate(4deg) scale(0.9); } }
+.sc-rays { position: absolute; left: 50%; top: 110px; width: 640px; height: 640px; margin: -320px 0 0 -320px; background: repeating-conic-gradient(from 0deg, rgba(255, 216, 106, 0.38) 0deg 9deg, transparent 9deg 22deg); border-radius: 50%; -webkit-mask: radial-gradient(circle, #000 20%, transparent 68%); mask: radial-gradient(circle, #000 20%, transparent 68%); animation: sc-spin 14s linear infinite; pointer-events: none; }
+@keyframes sc-spin { to { transform: rotate(360deg); } }
+.sc-paper { position: relative; padding: 20px 24px 16px; border: 3px solid var(--ink); border-radius: 6px 10px 8px 12px; background: linear-gradient(180deg, rgba(255, 255, 255, 0.35), transparent 30%), repeating-linear-gradient(0deg, transparent 0 27px, rgba(150, 110, 60, 0.13) 27px 28px), #fbf0d6; box-shadow: 6px 8px 0 var(--ink), 0 20px 50px rgba(0, 0, 0, 0.45); display: flex; flex-direction: column; align-items: center; text-align: center; }
+.sc-paper::before, .sc-paper::after { content: ''; position: absolute; top: -12px; width: 78px; height: 24px; background: rgba(255, 236, 170, 0.8); border: 1px solid rgba(120, 90, 40, 0.25); }
+.sc-paper::before { left: 22px; transform: rotate(-8deg); }
+.sc-paper::after { right: 22px; transform: rotate(7deg); }
+.sc-kicker { font: 900 11px var(--font-body, system-ui); letter-spacing: 0.3em; text-transform: uppercase; color: #9a6a20; }
+.sc-icon { font-size: 76px; line-height: 1; margin: 8px 0 2px; filter: drop-shadow(0 4px 0 rgba(43, 26, 46, 0.25)); animation: sc-icon 1s 0.2s cubic-bezier(0.2, 1.8, 0.4, 1) both; }
+.sc-icon .ico svg, .sc-icon .ico { width: 84px; height: 84px; }
+@keyframes sc-icon { from { transform: scale(0) rotate(-30deg); } }
+.sc-paper h3 { font: 30px/1.1 var(--font-display); font-weight: normal; margin: 4px 0 6px; color: var(--ink); }
+.sc-text { font: 700 22px/1.25 'Caveat', cursive; color: #4a3220; margin: 0 0 10px; min-height: 3.6em; }
+.sc-foot { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 14px; font-weight: 900; font-size: 13px; color: #6a5040; }
+.sc-hint { margin-top: 8px; font-size: 11px; font-weight: 800; color: #9a8070; }
+
+/* Générique de fin. */
+.credits-roll { position: fixed; inset: 0; z-index: 25; overflow: hidden; pointer-events: auto; color: #fff3d6; animation: fade-in 2s both; }
+.credits-sky { position: absolute; inset: 0; background: radial-gradient(1.5px 1.5px at 12% 20%, #fff, transparent), radial-gradient(1px 1px at 30% 70%, #fff, transparent), radial-gradient(2px 2px at 70% 30%, #ffe9b0, transparent), radial-gradient(1px 1px at 85% 60%, #fff, transparent), radial-gradient(1.5px 1.5px at 50% 12%, #fff, transparent), radial-gradient(1px 1px at 22% 45%, #fff, transparent), radial-gradient(1.5px 1.5px at 62% 82%, #fff, transparent), linear-gradient(180deg, #120a24 0%, #2a1840 45%, #7a3a4a 78%, #ffb86a 100%); background-size: 340px 340px, 260px 260px, 420px 420px, 300px 300px, 380px 380px, 220px 220px, 460px 460px, 100% 100%; animation: dawn 60s linear both; }
+@keyframes dawn { to { filter: brightness(1.35) saturate(1.15); background-position: 0 -200px, 0 -150px, 0 -260px, 0 -180px, 0 -220px, 0 -130px, 0 -280px, 0 0; } }
+.credits-scroll { position: absolute; left: 50%; top: 0; width: min(640px, calc(100vw - 32px)); transform: translateX(-50%); text-align: center; animation: roll 55s linear both; padding-bottom: 40vh; }
+@keyframes roll { from { transform: translate(-50%, 100vh); } to { transform: translate(-50%, -100%); } }
+.credits-scroll .logo { font-size: 120px; }
+.credits-scroll .tagline { font: 700 30px 'Caveat', cursive; color: #ffe7b0; margin-bottom: 60px; }
+.credits-scroll h3 { font: 900 13px var(--font-body, system-ui); letter-spacing: 0.5em; text-transform: uppercase; color: #ffd86a; margin: 50px 0 18px; }
+.credits-cast { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 16px; }
+.credits-cast li { display: grid; grid-template-columns: 40px auto; grid-template-rows: auto auto; column-gap: 12px; justify-content: center; text-align: left; }
+.credits-cast .cc-icon { grid-row: span 2; font-size: 30px; display: grid; place-items: center; }
+.credits-cast .cc-icon .ico svg, .credits-cast .cc-icon .ico { width: 36px; height: 36px; }
+.credits-cast b { font: 24px var(--font-display); font-weight: normal; }
+.credits-cast i { font: 700 20px 'Caveat', cursive; color: #ffe7b0; }
+.credits-roll .credits-list { color: #fff3d6; font-weight: 800; line-height: 1.6; }
+.credits-roll .credits-list dt { color: #ffd86a; margin-top: 12px; font-size: 13px; letter-spacing: 0.15em; text-transform: uppercase; }
+.credits-roll .credits-list dd { margin: 0; font-size: 18px; }
+.credits-thanks { font: 44px var(--font-display); margin-top: 80px; color: #ffd86a; }
+.credits-continue { position: absolute; right: 28px; bottom: 28px; animation: fade-in 1.2s both; }
 .credits-list { font-weight: 800; line-height: 1.6; }
 
 /* ───────── Réglages complets ───────── */
@@ -886,3 +988,8 @@ kbd {
 /* ───────── Icônes dessinées à la main (à la place des emojis) ───────── */
 .ico { display: inline-block; width: 1.2em; height: 1.2em; vertical-align: -0.24em; line-height: 0; flex: none; font-size: inherit !important; }
 .ico svg { width: 100%; height: 100%; overflow: visible; }
+
+/* Carte : un écho du passé attend dans cette pièce. */
+.map-echo { fill: #ffd86a; stroke: var(--ink); stroke-width: 6; animation: map-echo 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes map-echo { 50% { transform: scale(1.35); fill: #fff3b0; } }
+.map-echo-note { margin: 0 0 8px; font: 700 20px 'Caveat', cursive; color: #9a6a20; }

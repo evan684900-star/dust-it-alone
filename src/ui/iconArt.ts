@@ -190,6 +190,9 @@ const TOOLBOX = rect(3, 11, 26, 16, C.red, 2) + path('M11 11V6H21V11', 'none') +
 const MAP = path('M3 7L11 4L21 7L29 4V25L21 28L11 25L3 28Z', C.paper) + line(11, 4, 11, 25, 1.4) + line(21, 7, 21, 28, 1.4) + path('M6 21Q10 15 15 18Q19 21 23 13', 'none') + `<path d="M6 21Q10 15 15 18Q19 21 23 13" stroke="${C.red}" stroke-dasharray="2 2" stroke-width="1.6" fill="none"/>` + path('M23 9L27 13M27 9L23 13', 'none');
 const BOWLING = ell(10, 22, 7, 7, C.dark) + circ(8, 19, 1, C.grey) + circ(11, 18.5, 1, C.grey) + path('M22 3Q19 6 20 10Q17 14 18 22Q18 28 22 29Q26 28 26 22Q27 14 24 10Q25 6 22 3Z', C.white) + rect(19.7, 10, 4.6, 2, C.red, 0.5);
 const CONVEYOR = rect(3, 13, 26, 9, C.dark, 4.5) + circ(8, 17.5, 3, C.grey) + circ(16, 17.5, 3, C.grey) + circ(24, 17.5, 3, C.grey) + ell(11, 10, 3.5, 2.4, C.grey) + ell(19, 9, 3, 2.2, C.cream) + path('M23 27H29M26 24L29 27L26 30', 'none');
+const GIRL = path('M6 21Q4 6 16 5Q28 6 26 21Z', C.brown) + circ(5, 15, 3.5, C.brown) + circ(27, 15, 3.5, C.brown) + path('M8 30Q8 22 16 22Q24 22 24 30Z', C.pink) + circ(16, 14, 7.5, C.skin) + eyes(13, 19, 14) + path('M13.5 17.5Q16 19.5 18.5 17.5', 'none') + path('M9 10Q16 4 23 10', 'none');
+const CHILD = path('M8 30Q8 22 16 22Q24 22 24 30Z', C.gold) + circ(16, 14, 7.5, C.skin) + path('M8.5 13Q9 5 16 5Q23 5 23.5 13Q20 9 16 10Q12 9 8.5 13Z', C.orange) + eyes(13, 19, 15) + path('M13.5 18Q16 20 18.5 18', 'none');
+const STETHO = path('M8 4V12Q8 19 14 19Q20 19 20 12V4', 'none') + circ(8, 4, 1.8, C.grey) + circ(20, 4, 1.8, C.grey) + path('M14 19V23Q14 28 20 28Q24 28 24 24', 'none') + circ(24, 21, 4, C.grey) + circ(24, 21, 1.8, C.greyD);
 
 /** Emoji → dessin. */
 export const ICON_ART: Record<string, string> = {
@@ -206,7 +209,7 @@ export const ICON_ART: Record<string, string> = {
   '🧺': BASKET, '🍷': WINE, '🕯': CANDLE, '✉': ENVELOPE, '🪢': ROPE, '🍾': BOTTLE, '📮': POSTBOX, '🪑': CHAIR, '🔭': TELESCOPE,
   '🚩': FLAG, '🏔': MOUNTAIN, '🌌': GALAXY, '🕸': WEB, '🍂': LEAVES, '🧠': BRAIN, '👻': GHOST, '🐉': DRAGON, '🤝': HANDSHAKE,
   '🕰': MANTELCLOCK, '🪮': COMB, '💪': MUSCLE, '📏': RULER, '🛢': BARREL, '🦣': MAMMOTH, '🎯': TARGET, '🧲': MAGNET, '💎': GEM,
-  '🦶': FOOT, '🏛': TEMPLE, '🚶': WALKER, '🌷': TULIP, '⚡': BOLT, '🤖': ROBOT, '🖐': HAND, '💡': BULB, '🔔': BELL, '🛤': CONVEYOR,
+  '🦶': FOOT, '🏛': TEMPLE, '🚶': WALKER, '🌷': TULIP, '⚡': BOLT, '🤖': ROBOT, '🖐': HAND, '💡': BULB, '🔔': BELL, '🛤': CONVEYOR, '👧': GIRL, '🧒': CHILD, '🩺': STETHO,
 };
 
 /** Le dessin d'une icône, prêt à glisser dans un SVG 32 × 32 (contour encre commun à toutes les formes). */

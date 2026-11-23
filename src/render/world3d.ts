@@ -19,6 +19,8 @@ import { Floaters } from './floaters';
 import { mergeStatic } from './merge';
 import type { Helper, HelperKind } from '../sim/helpers';
 import { QUALITY_PRESETS, type QualityLevel } from './quality';
+import { buildFigure, crown, setFigureOpacity, type Figure, type Role } from './figures';
+import { Sparkles } from './sparkles';
 
 export interface ViewState {
   x: number;
@@ -38,6 +40,35 @@ export interface BroomView {
 }
 
 interface Pan { obj: THREE.Group; bounce: number; pending: number; timer: number; textX: number; textZ: number; base: number; fit: number; home: THREE.Vector3; back: THREE.Vector3 }
+interface EchoActor {
+  fig: Figure;
+  speaker: string;
+  home: THREE.Vector3;
+  from: THREE.Vector3;
+  mode: 'stand' | 'run' | 'sweep' | 'arrive' | 'plush';
+  phase: number;
+  glow: number;
+  runA: number;
+  /** Marche d'arrivée (−1 = pas encore partie). */
+  walkT: number;
+  /** Visibilité propre (0 = pas encore arrivé). */
+  gate: number;
+}
+interface EchoScene {
+  view: RoomView;
+  group: THREE.Group;
+  actors: EchoActor[];
+  alpha: number;
+  target: number;
+  t: number;
+  center: THREE.Vector3;
+  king: THREE.Group | null;
+  kingK: number;
+  shrinking: boolean;
+  dawn: number;
+  dawnTarget: number;
+  real: boolean;
+}
 interface Bit { x: number; y: number; z: number; vx: number; vy: number; vz: number; r: number; vr: number; life: number }
 
 /** Tout ce qui s'affiche pour une pièce du château. */
@@ -133,6 +164,9 @@ export class World3D {
   private lift = 10;
   private confetti!: THREE.InstancedMesh;
   private bits: Bit[] = [];
+  /** Étincelles, poussières dorées, souffles (un seul nuage de points). */
+  sparkles!: Sparkles;
+  private baseExposure = 1;
   private time = 0;
   private shake = 0;
   private headLean = 0;
@@ -407,6 +441,8 @@ export class World3D {
     const colors = [PAL.tomato, PAL.mustard, PAL.apple, PAL.sky, 0xffffff, PAL.plum];
     for (let i = 0; i < max; i++) this.confetti.setColorAt(i, c.set(colors[i % colors.length]));
     this.scene.add(this.confetti);
+    this.sparkles = new Sparkles(new THREE.CanvasTexture(softDot()));
+    this.scene.add(this.sparkles.points);
   }
 
   // ───────────────────────────── Pièces visibles, portes, lumière ─────────────────────────────
@@ -563,6 +599,7 @@ export class World3D {
 
     // Les matériaux physiques et le halo lumineux éclairent plus : on compense pour ne pas éblouir.
     r.toneMappingExposure = REALISTIC ? (q.cheapMaterials ? 1.25 : 1.05) : q.cheapMaterials ? 1.1 : 0.82;
+    this.baseExposure = r.toneMappingExposure;
     this.scene.environmentIntensity = REALISTIC ? 0.22 : 0.35;
     this.bloom.strength = 0.22;
     this.bloom.threshold = 0.95;
@@ -638,6 +675,10 @@ export class World3D {
       this.burst(d.origin.x + d.width * (0.15 + k * 0.14), d.floorY + Math.min(300, d.ceiling - 60), d.origin.z + d.height / 2 + (k % 2 ? 150 : -150), 60);
     }
     this.shake = 6;
+    // Une pluie d'étincelles dorées qui monte de tout le plancher.
+    for (let k = 0; k < 220; k++) {
+      this.sparkles.spawn({ x: d.origin.x + Math.random() * d.width, y: d.floorY + 5 + Math.random() * 20, z: d.origin.z + Math.random() * d.height, vy: 80 + Math.random() * 160, life: 2 + Math.random() * 2.5, gravity: -15, drag: 0.4, twinkle: true, size: 0.8 + Math.random() * 0.6, color: Math.random() < 0.3 ? 0xffffff : 0xffd86a });
+    }
   }
 
   private burst(x: number, y: number, z: number, n: number): void {
@@ -677,6 +718,7 @@ export class World3D {
     this.updateLights(dt);
     this.updateBroom(broomSim, dt, broom);
     this.updateFx(dt);
+    this.sparkles.update(dt);
     this.floaters.update(dt);
     this.renderer.info.reset();
     if (this.useComposer) this.composer.render(dt);
@@ -898,11 +940,80 @@ export class World3D {
     }
     for (const s of list) {
       if (this.souvenirViews.has(s.id)) continue;
-      const g = this.makePickup(s.icon, 0xffd86a);
-      g.position.set(s.x, 45, s.y);
+      const g = this.makeSouvenir(s.icon);
+      g.position.set(s.x, 0, s.y);
+      g.userData.room = s.roomIndex;
       this.views[s.roomIndex].group.add(g);
       this.souvenirViews.set(s.id, g);
+      // Il apparaît dans une petite gerbe d'étincelles.
+      const v = this.views[s.roomIndex];
+      if (v.visible) this.sparkles.burst(v.def.origin.x + s.x, v.def.floorY + 50, v.def.origin.z + s.y, 40, { speed: 220 });
     }
+  }
+
+  private pillarTex: THREE.Texture | null = null;
+  private ringTex: THREE.Texture | null = null;
+
+  /**
+   * Un souvenir posé au sol : une colonne de lumière dorée (visible de loin), un cercle
+   * lumineux qui pulse au sol, et l'objet qui flotte en tournant dans son halo.
+   */
+  private makeSouvenir(icon: string): THREE.Group {
+    if (!this.pillarTex) {
+      const c = document.createElement('canvas');
+      c.width = 4;
+      c.height = 128;
+      const g2 = c.getContext('2d')!;
+      const grad = g2.createLinearGradient(0, 0, 0, 128);
+      grad.addColorStop(0, 'rgba(255,220,140,0)');
+      grad.addColorStop(0.55, 'rgba(255,220,140,0.35)');
+      grad.addColorStop(1, 'rgba(255,236,190,1)');
+      g2.fillStyle = grad;
+      g2.fillRect(0, 0, 4, 128);
+      this.pillarTex = new THREE.CanvasTexture(c);
+      const r = document.createElement('canvas');
+      r.width = r.height = 128;
+      const g3 = r.getContext('2d')!;
+      const rg = g3.createRadialGradient(64, 64, 20, 64, 64, 62);
+      rg.addColorStop(0, 'rgba(255,220,140,0)');
+      rg.addColorStop(0.72, 'rgba(255,228,160,0.9)');
+      rg.addColorStop(0.82, 'rgba(255,240,200,1)');
+      rg.addColorStop(1, 'rgba(255,220,140,0)');
+      g3.fillStyle = rg;
+      g3.fillRect(0, 0, 128, 128);
+      this.ringTex = new THREE.CanvasTexture(r);
+    }
+    const g = new THREE.Group();
+    const add = (color: number, opacity: number) => new THREE.MeshBasicMaterial({ map: this.pillarTex, color, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
+    // Deux cylindres ouverts (un large et pâle, un fin et vif) : un vrai rayon de lumière.
+    const outer = new THREE.Mesh(new THREE.CylinderGeometry(34, 52, 420, 20, 1, true).translate(0, 210, 0), add(0xffc860, 0.16));
+    const inner = new THREE.Mesh(new THREE.CylinderGeometry(12, 22, 380, 14, 1, true).translate(0, 190, 0), add(0xffe8b0, 0.24));
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(150, 150).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: this.ringTex, color: 0xffd890, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    ring.position.y = 2;
+    ring.renderOrder = 3;
+    const float = this.makePickup(icon, 0xffd86a);
+    float.position.y = 55;
+    float.userData.base = 55;
+    g.add(outer, inner, ring, float);
+    g.userData = { float, ring, outer, inner };
+    return g;
+  }
+
+  /** Le joueur ramasse un souvenir : gerbe d'étincelles et onde de lumière. */
+  collectSouvenir(id: string): void {
+    const g = this.souvenirViews.get(id);
+    if (!g) return;
+    const v = this.views[g.userData.room as number];
+    const x = v.def.origin.x + g.position.x;
+    const z = v.def.origin.z + g.position.z;
+    const y = v.def.floorY;
+    this.sparkles.burst(x, y + 60, z, 140, { speed: 520, color: 0xffd86a, size: 1.3 });
+    this.sparkles.burst(x, y + 60, z, 60, { speed: 260, color: 0xffffff });
+    // Une colonne d'étincelles qui monte vers le plafond.
+    for (let k = 0; k < 60; k++) this.sparkles.spawn({ x: x + (Math.random() - 0.5) * 40, y: y + Math.random() * 60, z: z + (Math.random() - 0.5) * 40, vy: 250 + Math.random() * 350, life: 1.2 + Math.random(), gravity: -60, drag: 0.6, twinkle: true, color: 0xfff0c0 });
+    g.parent?.remove(g);
+    this.souvenirViews.delete(id);
+    this.shake = Math.max(this.shake, 3);
   }
 
   /** Un objet à ramasser : une icône qui flotte dans un halo. */
@@ -941,40 +1052,294 @@ export class World3D {
     this.bonusView = g;
   }
 
-  private ghosts: { obj: THREE.Group; life: number; total: number; mats: THREE.MeshBasicMaterial[] }[] = [];
+  // ───────────────────────────── Échos du passé et fin ─────────────────────────────
 
-  /** Écho du passé : des silhouettes dorées apparaissent quelques secondes dans la pièce. */
-  playEcho(roomIndex: number, figures: ('adult' | 'child' | 'plush')[], seconds: number): void {
-    const v = this.views[roomIndex];
-    const cx = v.def.width / 2;
-    const cz = v.def.height / 2;
-    figures.forEach((kind, k) => {
-      const mats: THREE.MeshBasicMaterial[] = [];
-      const m = () => {
-        const mm = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xffd890).multiplyScalar(1.6), transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending });
-        mats.push(mm);
-        return mm;
-      };
-      const g = new THREE.Group();
-      if (kind === 'plush') {
-        const body = new THREE.Mesh(this.plushGeo, m());
-        body.scale.setScalar(14);
-        body.position.y = 12;
-        g.add(body);
-      } else {
-        const h = kind === 'adult' ? 1 : 0.62;
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(20 * h, 80 * h, 4, 10), m());
-        body.position.y = 60 * h;
-        const head = new THREE.Mesh(new THREE.SphereGeometry(16 * h, 14, 10), m());
-        head.position.y = 130 * h;
-        g.add(body, head);
+  private echo: EchoScene | null = null;
+  private echoSpeaker: string | null = null;
+
+  /**
+   * Un écho du passé : les personnages apparaissent en lumière dorée au milieu de la pièce
+   * (ou « en vrai » pour la fin), et jouent la scène. Renvoie le centre de la scène (monde).
+   */
+  startEcho(roomIndex: number, cast: { role: Role; speaker: string }[], opts: { real?: boolean; king?: boolean; face?: { x: number; z: number } } = {}): { x: number; y: number; z: number } {
+    if (this.echo) this.removeEcho();
+    const view = this.views[roomIndex];
+    const d = view.def;
+    const group = new THREE.Group();
+    view.group.add(group);
+    const center = new THREE.Vector3(d.width / 2, 0, d.height / 2);
+    // Écho : on évite le centre s'il est encombré (meubles) en cherchant une place libre près du milieu.
+    const free = (x: number, z: number) => !d.obstacles.some((o) => x > o.rect.x - 160 && x < o.rect.x + o.rect.w + 160 && z > o.rect.y - 160 && z < o.rect.y + o.rect.h + 160);
+    if (!free(center.x, center.z)) {
+      for (let r = 100; r < Math.min(d.width, d.height) / 2 - 150; r += 80) {
+        let found = false;
+        for (let k = 0; k < 12 && !found; k++) {
+          const x = d.width / 2 + Math.cos((k / 12) * Math.PI * 2) * r;
+          const z = d.height / 2 + Math.sin((k / 12) * Math.PI * 2) * r;
+          if (free(x, z)) {
+            center.set(x, 0, z);
+            found = true;
+          }
+        }
+        if (found) break;
       }
-      const a = (k / Math.max(1, figures.length)) * Math.PI * 2;
-      g.position.set(cx + Math.cos(a) * 120, 0, cz + Math.sin(a) * 120);
-      g.lookAt(cx, 0, cz);
-      v.group.add(g);
-      this.ghosts.push({ obj: g, life: 0, total: seconds, mats });
+    }
+    const style = opts.real ? 'real' : 'ghost';
+    const actors: EchoActor[] = [];
+    const n = cast.length;
+    const R = n <= 1 ? 0 : 55 + 16 * n;
+    cast.forEach((c, k) => {
+      const fig = buildFigure(c.role, style, d.floorY, this.plushGeo);
+      const a = (k / Math.max(1, n)) * Math.PI * 2 + 0.6;
+      const home = new THREE.Vector3(center.x + Math.cos(a) * R, 0, center.z + Math.sin(a) * R);
+      let mode: EchoActor['mode'] = 'stand';
+      if (!opts.real && (c.role === 'elise' || c.role === 'lou') && n > 1) mode = 'run';
+      if (c.role === 'gustave') mode = 'sweep';
+      if (opts.real && (c.role === 'eliseAdult' || c.role === 'lou')) mode = 'arrive';
+      if (opts.real && c.role === 'mouton') {
+        // Le doudou retrouvé : au centre, là où était Mouton Ier.
+        home.copy(center);
+        mode = 'plush';
+      }
+      if (mode === 'arrive') {
+        // Elles arrivent du bout de la salle, puis viennent se placer près du doudou.
+        const side = c.role === 'lou' ? -1 : 1;
+        home.set(center.x + side * 85, 0, center.z + 70);
+      }
+      fig.root.position.copy(home);
+      fig.root.lookAt(center.x, 0, center.z);
+      fig.root.rotateY(Math.PI);
+      group.add(fig.root);
+      setFigureOpacity(fig, 0);
+      actors.push({
+        fig,
+        speaker: c.speaker,
+        home,
+        from: new THREE.Vector3(center.x + (c.role === 'lou' ? -60 : 60), 0, Math.min(d.height - 120, center.z + 520)),
+        mode,
+        phase: k * 1.9,
+        glow: 0,
+        runA: a,
+        walkT: -1,
+        gate: mode === 'arrive' || mode === 'plush' ? 0 : 1,
+      });
     });
+    let king: THREE.Group | null = null;
+    if (opts.king) {
+      // Mouton Ier : une énorme boule de poussière grise, une couronne de travers et deux yeux noirs.
+      king = new THREE.Group();
+      const fuzz = new THREE.Mesh(this.kingGeo(), mat(0xffffff, { vertexColors: true, roughness: 1 }));
+      fuzz.scale.set(86, 70, 86);
+      fuzz.position.y = 70;
+      fuzz.castShadow = true;
+      // Une couronne dorée, de travers.
+      const crownMesh = new THREE.Mesh(crown(30), mat(0xffd35a, { metalness: 0.8, roughness: 0.3, emissive: 0x5a3a08, side: THREE.DoubleSide }));
+      crownMesh.position.set(16, 136, -8);
+      crownMesh.rotation.z = -0.28;
+      // De gros yeux ronds (blanc + pupille), un peu tristes.
+      for (const sx of [-1, 1]) {
+        const white = new THREE.Mesh(new THREE.SphereGeometry(13, 16, 12), mat(0xffffff, { roughness: 0.25 }));
+        white.scale.z = 0.6;
+        white.position.set(sx * 28, 96, -78);
+        const pupil = new THREE.Mesh(new THREE.SphereGeometry(6.5, 12, 8), mat(0x14101a, { roughness: 0.1 }));
+        pupil.position.set(sx * 26, 92, -86);
+        const brow = new THREE.Mesh(new THREE.CapsuleGeometry(2.5, 16, 4, 6), mat(0x4a4450));
+        brow.rotation.z = Math.PI / 2 + sx * 0.35;
+        brow.position.set(sx * 28, 115, -80);
+        king.add(white, pupil, brow);
+      }
+      king.add(fuzz, crownMesh);
+      king.position.copy(center);
+      // Il regarde le joueur (d'où part la caméra).
+      const fx = opts.face ? opts.face.x - d.origin.x : center.x;
+      const fz = opts.face ? opts.face.z - d.origin.z : center.z + 500;
+      king.lookAt(fx, 0, fz);
+      king.rotateY(Math.PI);
+      group.add(king);
+    }
+    this.echo = { view, group, actors, alpha: 0, target: 1, t: 0, center, king, kingK: 0, shrinking: false, dawn: 0, dawnTarget: 0, real: !!opts.real };
+    // Une pluie d'étincelles dorées pour l'apparition.
+    const wx = d.origin.x + center.x;
+    const wz = d.origin.z + center.z;
+    if (!opts.real) for (const a of actors) this.sparkles.burst(d.origin.x + a.home.x, d.floorY + 90, d.origin.z + a.home.z, 50, { speed: 180, gravity: -30 });
+    return { x: wx, y: d.floorY, z: wz };
+  }
+
+  private kingGeoCache: THREE.BufferGeometry | null = null;
+
+  /** Mouton Ier : une grosse boule de poussière bien duveteuse (couleurs par sommet). */
+  private kingGeo(): THREE.BufferGeometry {
+    if (this.kingGeoCache) return this.kingGeoCache;
+    const g = new THREE.IcosahedronGeometry(1, 5);
+    const p = g.attributes.position as THREE.BufferAttribute;
+    const col = new Float32Array(p.count * 3);
+    const v = new THREE.Vector3();
+    for (let i = 0; i < p.count; i++) {
+      v.fromBufferAttribute(p, i).normalize();
+      // Grosses touffes + petites mèches.
+      const tuft = Math.sin(v.x * 9 + v.y * 4) * Math.sin(v.z * 8 - v.y * 5) * 0.07 + Math.sin(v.x * 31 + v.z * 27) * Math.sin(v.y * 29) * 0.035;
+      v.multiplyScalar(1 + tuft);
+      if (v.y < -0.6) v.y = -0.6 - (v.y + 0.6) * 0.2;
+      p.setXYZ(i, v.x, v.y, v.z);
+      const shade = 0.5 + tuft * 3 + v.y * 0.12;
+      col.set([shade, shade * 0.97, shade * 1.02], i * 3);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.computeVertexNormals();
+    this.kingGeoCache = g;
+    return g;
+  }
+
+  /** Celui qui parle (nom affiché dans la bulle) : il s'illumine et fait des gestes. */
+  setEchoSpeaker(name: string | null): void {
+    this.echoSpeaker = name;
+  }
+
+  /** Moments clés de la fin. */
+  echoCue(cue: 'shrink' | 'arrive' | 'dawn'): void {
+    const e = this.echo;
+    if (!e) return;
+    if (cue === 'shrink') e.shrinking = true;
+    if (cue === 'arrive') for (const a of e.actors) if (a.mode === 'arrive' && a.walkT < 0) a.walkT = 0;
+    if (cue === 'dawn') e.dawnTarget = 1;
+  }
+
+  /** Fin de l'écho : les personnages s'effacent doucement. */
+  endEcho(): void {
+    if (this.echo) this.echo.target = 0;
+  }
+
+  private removeEcho(): void {
+    const e = this.echo;
+    if (!e) return;
+    e.group.parent?.remove(e.group);
+    e.group.traverse((o) => {
+      const m = o as THREE.Mesh;
+      if (m.isMesh) {
+        m.geometry !== this.plushGeo && m.geometry !== this.kingGeoCache && m.geometry.dispose();
+        (Array.isArray(m.material) ? m.material : [m.material]).forEach((x) => x.dispose());
+      }
+    });
+    this.renderer.toneMappingExposure = this.baseExposure;
+    this.echo = null;
+  }
+
+  private updateEcho(dt: number): void {
+    const e = this.echo;
+    if (!e) return;
+    e.t += dt;
+    const t = e.t;
+    e.alpha += Math.sign(e.target - e.alpha) * Math.min(Math.abs(e.target - e.alpha), dt / 1.3);
+    if (e.target === 0 && e.alpha <= 0.001) {
+      this.removeEcho();
+      return;
+    }
+    const d = e.view.def;
+    const ox = d.origin.x;
+    const oz = d.origin.z;
+    const fy = d.floorY;
+
+    // Mouton Ier rétrécit, en perdant sa poussière en nuages.
+    let plushGate = 0;
+    if (e.king) {
+      if (e.shrinking) e.kingK = Math.min(1, e.kingK + dt / 6);
+      const k = e.kingK;
+      const sc = 1 - 0.985 * (k * k * (3 - 2 * k));
+      e.king.scale.setScalar(Math.max(0.001, sc));
+      e.king.position.x = e.center.x + (e.shrinking && k < 1 ? Math.sin(t * 40) * 4 * (1 - k) : 0);
+      e.king.visible = k < 1;
+      if (e.shrinking && k < 1) {
+        for (let q = 0; q < 3; q++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 70 * sc;
+          this.sparkles.spawn({ x: ox + e.center.x + Math.cos(a) * r, y: fy + 20 + Math.random() * 120 * sc, z: oz + e.center.z + Math.sin(a) * r, vx: Math.cos(a) * 120, vy: 80 + Math.random() * 140, vz: Math.sin(a) * 120, life: 1.6, gravity: -20, drag: 1.2, color: 0xb8b0a8, size: 2.2 });
+        }
+      }
+      plushGate = Math.max(0, (k - 0.75) / 0.25);
+    }
+
+    // Le lever du jour (fin) : la lumière monte doucement.
+    e.dawn += (e.dawnTarget - e.dawn) * Math.min(1, dt * 0.5);
+    this.renderer.toneMappingExposure = this.baseExposure * (1 + 0.55 * e.dawn * e.alpha);
+
+    for (const a of e.actors) {
+      const f = a.fig;
+      const speaking = this.echoSpeaker !== null && a.speaker === this.echoSpeaker;
+      a.glow += ((speaking ? 1 : 0) - a.glow) * Math.min(1, dt * 4);
+      const root = f.root;
+      let bob = Math.sin(t * 2 + a.phase) * 1.2;
+      let armR = Math.sin(t * 1.3 + a.phase) * 0.08;
+      let armL = -armR;
+      let face: THREE.Vector3 | null = e.center;
+      if (a.mode === 'run') {
+        // L'enfant court autour des grands… et s'arrête pour parler.
+        if (!speaking) a.runA += dt * 0.75;
+        const rr = 150;
+        const px = e.center.x + Math.cos(a.runA) * rr;
+        const pz = e.center.z + Math.sin(a.runA) * rr;
+        root.position.set(px, 0, pz);
+        if (!speaking) {
+          face = new THREE.Vector3(px - Math.sin(a.runA) * 100, 0, pz + Math.cos(a.runA) * 100);
+          bob = Math.abs(Math.sin(t * 9 + a.phase)) * 7;
+          armR = Math.sin(t * 9) * 0.7;
+          armL = -armR;
+        }
+      } else if (a.mode === 'sweep' && !speaking) {
+        // Gustave balaie, encore et toujours.
+        root.position.set(a.home.x + Math.sin(t * 0.6) * 35, 0, a.home.z);
+        armR = -0.45 + Math.sin(t * 3.2) * 0.4;
+        armL = armR * 0.8;
+        f.body.rotation.x = -0.12;
+      } else if (a.mode === 'arrive') {
+        if (a.walkT >= 0) {
+          a.walkT += dt;
+          const k = Math.min(1, a.walkT / 5.5);
+          const ease = k * k * (3 - 2 * k);
+          root.position.lerpVectors(a.from, a.home, ease);
+          a.gate = Math.min(1, a.walkT / 1.2);
+          if (k < 1) {
+            face = a.home.clone();
+            face.sub(a.from).add(root.position);
+            bob = Math.abs(Math.sin(t * 6 + a.phase)) * 4;
+            armR = Math.sin(t * 6 + a.phase) * 0.45;
+            armL = -armR;
+          }
+        }
+      } else if (a.mode === 'plush') {
+        a.gate = plushGate;
+        bob = 0;
+        armR = armL = 0;
+      } else {
+        root.position.copy(a.home);
+      }
+      if (a.mode !== 'sweep' || speaking) f.body.rotation.x *= 0.9;
+      if (speaking) {
+        const gesture = -0.85 + Math.sin(t * 5 + a.phase) * 0.35;
+        if (f.hasProp) armL = gesture;
+        else armR = gesture;
+        f.head.rotation.x = Math.sin(t * 7) * 0.07;
+        bob += Math.abs(Math.sin(t * 5)) * 1.5;
+        // Le personnage qui parle répand quelques étincelles.
+        if (Math.random() < dt * 8) this.sparkles.spawn({ x: ox + root.position.x + (Math.random() - 0.5) * 50, y: fy + f.height * (0.5 + Math.random() * 0.5), z: oz + root.position.z + (Math.random() - 0.5) * 50, vy: 40, life: 1.5, gravity: -20, twinkle: true, size: 0.8, color: e.real ? 0xfff4d0 : 0xffd890 });
+      } else f.head.rotation.x *= 0.9;
+      f.body.position.y = bob;
+      f.armR.rotation.x += (armR - f.armR.rotation.x) * Math.min(1, dt * 8);
+      f.armL.rotation.x += (armL - f.armL.rotation.x) * Math.min(1, dt * 8);
+      if (face) {
+        const want = Math.atan2(-(face.x - root.position.x), -(face.z - root.position.z));
+        let diff = want - root.rotation.y;
+        diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+        root.rotation.set(0, root.rotation.y + diff * Math.min(1, dt * 5), 0);
+      }
+      setFigureOpacity(f, e.alpha * a.gate, a.glow, t);
+    }
+
+    // Des poussières dorées montent tout autour de la scène.
+    if (e.alpha > 0.05 && Math.random() < dt * (e.real ? 10 : 22)) {
+      const a = Math.random() * Math.PI * 2;
+      const r = Math.random() * 260;
+      this.sparkles.spawn({ x: ox + e.center.x + Math.cos(a) * r, y: fy + Math.random() * 40, z: oz + e.center.z + Math.sin(a) * r, vy: 30 + Math.random() * 50, vx: (Math.random() - 0.5) * 20, life: 3 + Math.random() * 2, gravity: -8, drag: 0.1, twinkle: true, size: 0.75, color: e.real ? 0xfff0c8 : 0xffd078 });
+    }
   }
 
   private updateStory(dt: number): void {
@@ -985,22 +1350,24 @@ export class World3D {
       (v.dustMessage.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - c / 0.55);
     }
     for (const g of this.souvenirViews.values()) {
-      g.position.y = g.userData.base + Math.sin(this.time * 2 + g.id) * 8;
-      g.rotation.y += dt;
-    }
-    if (this.bonusView) this.bonusView.position.y = this.bonusView.userData.base + Math.abs(Math.sin(this.time * 4)) * 14;
-    for (let k = this.ghosts.length - 1; k >= 0; k--) {
-      const gh = this.ghosts[k];
-      gh.life += dt;
-      const t = gh.life / gh.total;
-      const a = t < 0.15 ? t / 0.15 : t > 0.85 ? (1 - t) / 0.15 : 1;
-      for (const m of gh.mats) m.opacity = 0.45 * Math.max(0, a);
-      gh.obj.position.y = Math.sin(this.time * 1.5 + k) * 4;
-      if (gh.life >= gh.total) {
-        gh.obj.parent?.remove(gh.obj);
-        this.ghosts.splice(k, 1);
+      const u = g.userData as { float: THREE.Group; ring: THREE.Mesh; outer: THREE.Mesh; inner: THREE.Mesh; room: number };
+      u.float.position.y = u.float.userData.base + Math.sin(this.time * 2 + g.id) * 9;
+      u.float.rotation.y += dt;
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 3 + g.id);
+      u.ring.scale.setScalar(0.85 + pulse * 0.3);
+      (u.ring.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * (1 - pulse);
+      u.outer.rotation.y += dt * 0.4;
+      (u.outer.material as THREE.MeshBasicMaterial).opacity = 0.13 + 0.05 * Math.sin(this.time * 1.7 + g.id);
+      // Des grains de lumière montent le long du rayon.
+      const v = this.views[u.room];
+      if (v?.visible && Math.random() < dt * 14) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 10 + Math.random() * 30;
+        this.sparkles.spawn({ x: v.def.origin.x + g.position.x + Math.cos(a) * r, y: v.def.floorY + 10, z: v.def.origin.z + g.position.z + Math.sin(a) * r, vy: 60 + Math.random() * 80, life: 2.5 + Math.random() * 1.5, gravity: -10, drag: 0.1, twinkle: true, size: 0.7 });
       }
     }
+    if (this.bonusView) this.bonusView.position.y = this.bonusView.userData.base + Math.abs(Math.sin(this.time * 4)) * 14;
+    this.updateEcho(dt);
   }
 
   private updatePans(v: RoomView, dt: number): void {

@@ -18,8 +18,12 @@ export interface DirectorContext {
   world: {
     setDustMessage(roomIndex: number, text: string): void;
     setSouvenirs(list: { id: string; roomIndex: number; x: number; y: number; icon: string }[]): void;
-    playEcho(roomIndex: number, figures: ('adult' | 'child' | 'plush')[], seconds: number): void;
+    collectSouvenir(id: string): void;
   };
+  /** Joue la cinématique de l'écho d'une pièce. */
+  playEcho: (roomIndex: number) => void;
+  /** Peut-on lancer une cinématique maintenant (pas déjà une en cours, jeu en marche) ? */
+  canPlayCinematic: () => boolean;
   onSouvenir: () => void;
   persist: () => void;
 }
@@ -89,6 +93,17 @@ export class StoryDirector {
   }
 
   update(dt: number, current: RoomDef | null): void {
+    // Un écho attend dans cette pièce (elle est devenue impeccable pendant qu'on était ailleurs).
+    if (current && this.save.seen.includes(`echo-wait:${current.id}`) && this.ctx.canPlayCinematic()) {
+      this.save.seen = this.save.seen.filter((x) => x !== `echo-wait:${current.id}`);
+      const ri = this.ctx.rooms.findIndex((r) => r.def === current);
+      if (ri >= 0) {
+        this.save.echoes.push(current.id);
+        this.ctx.persist();
+        this.ctx.playEcho(ri);
+      }
+    }
+
     // Première entrée dans une pièce : quelques répliques.
     if (current && !this.save.seen.includes(`enter:${current.id}`)) {
       this.save.seen.push(`enter:${current.id}`);
@@ -130,30 +145,44 @@ export class StoryDirector {
     if (!s || this.save.souvenirs.includes(id)) return;
     this.save.souvenirs.push(id);
     store.souvenirCount.value = this.save.souvenirs.length;
-    store.say(`${s.icon} Souvenir : ${s.name}`, s.text, 560, true);
+    this.ctx.world.collectSouvenir(id);
+    // La carte du souvenir s'ouvre (comme une page d'album qu'on découvre).
+    const found = this.souvenirCount();
+    store.souvenirCard.value = {
+      key: Date.now(),
+      icon: s.icon,
+      name: s.name,
+      text: s.text,
+      room: this.ctx.rooms.find((r) => r.def.id === s.room)?.def.name ?? '',
+      count: this.save.souvenirs.length,
+      total: ALL_SOUVENIRS.length,
+      throneHint: !s.id.startsWith('throne-') && found < THRONE_SOUVENIRS ? `${found} / ${THRONE_SOUVENIRS} pour ouvrir la Salle du trône` : '',
+    };
     this.ctx.onSouvenir();
     this.ctx.persist();
   }
 
-  /** La pièce vient d'être impeccable pour la première fois : son écho du passé. */
-  onRoomClean(roomIndex: number): void {
+  /**
+   * La pièce vient d'être impeccable pour la première fois : son écho du passé.
+   * Si l'on n'y est pas (les assistants ont fini le travail), l'écho attend qu'on y entre.
+   */
+  onRoomClean(roomIndex: number, here: boolean): void {
     const def = this.ctx.rooms[roomIndex].def;
     const story = ROOM_STORY[def.id];
-    if (!story || this.save.echoes.includes(def.id)) return;
-    this.save.echoes.push(def.id);
-    const speakers = new Set(story.echo.lines.map(([w]) => w));
-    const figures: ('adult' | 'child' | 'plush')[] = [];
-    for (const w of speakers) {
-      if (w === 'plume' || w === 'hortense' || w === 'bertrand' || w === 'aldric') continue;
-      figures.push(w === 'elise' || w === 'lou' ? 'child' : w === 'mouton' ? 'plush' : 'adult');
+    if (!story || this.save.echoes.includes(def.id) || this.save.seen.includes(`echo-wait:${def.id}`)) return;
+    if (here) {
+      this.save.echoes.push(def.id);
+      setTimeout(() => this.ctx.playEcho(roomIndex), 2200);
+    } else {
+      this.save.seen.push(`echo-wait:${def.id}`);
+      store.pushToast('✨ Un écho du passé t’attend', `${def.name} est impeccable. Vas-y : un souvenir va se réveiller.`, 7000);
     }
-    const seconds = 6 + story.echo.lines.reduce((t, [, l]) => t + 1.8 + l.length * 0.045, 0);
-    setTimeout(() => {
-      this.ctx.world.playEcho(roomIndex, figures, seconds);
-      store.say('✨ Écho du passé', `« ${story.echo.title} »`, 600, true);
-      playLines(story.echo.lines);
-    }, 2500);
     this.ctx.persist();
+  }
+
+  /** Échos en attente (pour la carte du château). */
+  waitingEchoes(): string[] {
+    return this.save.seen.filter((x) => x.startsWith('echo-wait:')).map((x) => x.slice('echo-wait:'.length));
   }
 
   /** La fin du jeu (la Salle du trône est impeccable). */

@@ -19,7 +19,9 @@ import { EventDirector, type EventKind } from './story/events';
 import { TipDirector } from './story/tips';
 import { Multiplayer, type MpGame, type Pose } from './net/multiplayer';
 import { NO_HELPERS } from './sim/helpers';
-import { ALL_SOUVENIRS, THRONE_SOUVENIRS } from './data/story';
+import { ALL_SOUVENIRS, ENDING, ROOM_STORY, SPEAKERS, THRONE_SOUVENIRS, type Line, type SpeakerId } from './data/story';
+import { CineCam, type View } from './render/cinecam';
+import type { Role } from './render/figures';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
 /** Seuil de propreté pour « pièce impeccable ». */
@@ -145,9 +147,12 @@ export class Game {
       world: this.world,
       onSouvenir: () => {
         this.synth.bigNode();
+        this.synth.sparkle();
         this.publishCastle();
       },
       persist: () => this.persist(),
+      playEcho: (ri) => this.playEchoCinematic(ri),
+      canPlayCinematic: () => this.canPlayCinematic(),
     });
     this.director.init();
     this.events = new EventDirector({
@@ -205,8 +210,8 @@ export class Game {
       // L'arbre couvre tout l'écran : inutile de dessiner le château derrière (la simulation continue).
       if (!store.treeOpen.value) this.world.render(
         dt,
-        this.cinematicT >= 0 ? this.cinematicView(dt) : { x: p.x, z: p.z, eye: p.eye, yaw: p.yaw, pitch: p.pitch },
-        { visible: store.started.value, x: bp.x, z: bp.z, y: bp.room ? bp.room.floorY : p.feet, pressed: this.input.pressed },
+        this.cameraView(dt),
+        { visible: store.started.value && this.cinematicT < 0 && !this.cine.active, x: bp.x, z: bp.z, y: bp.room ? bp.room.floorY : p.feet, pressed: this.input.pressed },
         broomRoom ? this.runtime(broomRoom).sim : null,
       );
       const swishSim = broomRoom ? this.runtime(broomRoom).sim : null;
@@ -617,7 +622,9 @@ export class Game {
     store.started.value = true;
     if (firstTime) {
       this.save.introSeen = true;
-      setTimeout(() => this.director.intro(), 900);
+      // (Les tests automatiques sautent le réveil : ils jouent tout de suite.)
+      if (this.debug) setTimeout(() => this.director.intro(), 900);
+      else this.startWake();
     }
     store.paused.value = false;
     store.mapOpen.value = false;
@@ -1102,6 +1109,11 @@ export class Game {
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === canvas;
       if (locked) lockedAt = performance.now();
+      // Échap pendant une cinématique : on la passe (sans ouvrir le menu pause).
+      if (!locked && (this.scene || this.wakeT >= 0)) {
+        this.skipCinematic();
+        return;
+      }
       if (!locked && store.started.value && !this.debug && !store.mapOpen.value && !store.treeOpen.value && !store.albumOpen.value && !store.journalOpen.value && !store.netOpen.value && !store.inventoryOpen.value) {
         store.paused.value = true;
         this.input.pressed = false;
@@ -1121,6 +1133,8 @@ export class Game {
         this.start();
         return;
       }
+      // Souris libérée (cinématique passée avec Échap) : un clic la reprend.
+      if (store.started.value && document.pointerLockElement !== canvas) this.lockPointer();
       if (e.button === 0) this.input.pressed = true;
     });
     window.addEventListener('mouseup', (e) => {
@@ -1227,6 +1241,15 @@ export class Game {
           return null;
         },
         helpers: (ri: number) => this.rooms[ri].sim.helpers.map((h) => `${h.kind}@${Math.round(h.x)},${Math.round(h.y)}`),
+        echo: (id: string) => this.playEchoCinematic(this.rooms.findIndex((r) => r.def.id === id)),
+        ending: () => this.startEnding(),
+        skip: () => this.skipCinematic(),
+        wake: () => this.startWake(),
+        cleanRoom: (id: string, fraction = 1) => {
+          const r = this.rooms.find((x) => x.def.id === id);
+          if (r) for (let i = 0; i < r.sim.pool.cap; i++) if (Math.random() < fraction) r.sim.pool.kill(i);
+        },
+        scene: () => (this.scene ? { kind: this.scene.kind, t: this.scene.t, line: this.scene.lastLine } : null),
         roomIndex: (id: string) => this.rooms.findIndex((r) => r.def.id === id),
         coins: () => store.coins.value,
         // Simule une triche : on change l'argent affiché sans passer par le jeu.
@@ -1392,44 +1415,190 @@ export class Game {
   seenEchoes(): string[] {
     return [...this.save.echoes];
   }
-
-  /** Revoir un écho du passé depuis l'album. */
-  replayEcho(lines: Parameters<typeof playLines>[0]): void {
-    playLines(lines);
+  waitingEchoes(): string[] {
+    return this.director.waitingEchoes();
   }
 
-  /** La fin du jeu : la caméra fait le tour de la Salle du trône pendant les dernières répliques. */
+  /** Revoir un écho du passé depuis l'album. */
+  replayEcho(roomId: string): void {
+    const ri = this.rooms.findIndex((r) => r.def.id === roomId);
+    if (ri < 0 || this.scene) return;
+    if (store.albumOpen.value) this.toggleAlbum();
+    this.playEchoCinematic(ri);
+  }
+
+  // ───────────────────────────── Cinématiques ─────────────────────────────
+
+  private cine = new CineCam();
+  /** La cinématique en cours (écho du passé ou fin). */
+  private scene: { kind: 'echo' | 'ending'; roomIndex: number; lines: Line[]; linesAt: number; t: number; endAt: number; lastLine: number } | null = null;
+  /** La Salle du trône est impeccable : la fin attend qu'on y soit (et que son écho soit fini). */
+  private endingPending = false;
+  /** Pas de nouvelle cinématique avant… (ms) : l'écho qui vient d'être annoncé passe d'abord. */
+  private sceneHold = 0;
+  /** Réveil de Plume (−1 = pas en cours). */
+  private wakeT = -1;
+
+  private canPlayCinematic(): boolean {
+    return this.scene === null && this.wakeT < 0 && store.started.value && !store.paused.value && !this.visiting;
+  }
+
+  private playerView(): View {
+    const p = this.player;
+    return { x: p.x, z: p.z, eye: p.eye, yaw: p.yaw, pitch: p.pitch };
+  }
+
+  /** Qui joue dans une scène (les portraits et Plume n'apparaissent pas). */
+  private castOf(lines: Line[]): { role: Role; speaker: string }[] {
+    const roles: Partial<Record<SpeakerId, Role>> = { roi: 'roi', reine: 'reine', gustave: 'gustave', rose: 'rose', anselme: 'anselme', medecin: 'medecin', elise: 'elise', eliseAdult: 'eliseAdult', lou: 'lou', mouton: 'mouton' };
+    const out: { role: Role; speaker: string }[] = [];
+    for (const [who] of lines) {
+      const role = roles[who];
+      if (role && !out.some((c) => c.role === role)) out.push({ role, speaker: SPEAKERS[who].name });
+    }
+    return out;
+  }
+
+  /** Commence une cinématique : bandes noires, titre, caméra qui quitte le joueur. */
+  private beginScene(kind: 'echo' | 'ending', roomIndex: number, lines: Line[], center: { x: number; y: number; z: number }, title: { kicker: string; title: string }): void {
+    const def = this.rooms[roomIndex].def;
+    const p = this.player;
+    this.input.pressed = false;
+    p.clearKeys();
+    store.clearDialogue();
+    store.cinematic.value = true;
+    store.memoryTint.value = kind === 'echo';
+    store.cinemaTitle.value = { key: Date.now(), kicker: title.kicker, title: title.title, place: def.name };
+    this.cinematicT = 0;
+    // La caméra part du côté du joueur et tourne lentement autour de la scène.
+    const room = Math.min(def.width, def.height);
+    const radius = Math.max(210, Math.min(kind === 'ending' ? 380 : 300, room * 0.3));
+    const angle = Math.atan2(p.x - center.x, p.z - center.z);
+    const seconds = 4 + lines.reduce((t, [, l]) => t + 2.4 + l.length * 0.06, 0);
+    this.cine.start(this.playerView(), { cx: center.x, cz: center.z, lookY: center.y + (kind === 'ending' ? 60 : 80), radius, eye: center.y + (kind === 'ending' ? 190 : 160), angle, spin: kind === 'ending' ? 0.06 : 0.085, dolly: 0.18, length: seconds }, 2.2);
+    this.scene = { kind, roomIndex, lines, linesAt: kind === 'ending' ? 3.2 : 2.6, t: 0, endAt: -1, lastLine: -1 };
+    this.synth.chime();
+    this.updatePlace(true);
+  }
+
+  /** L'écho du passé d'une pièce (la première fois qu'elle est impeccable, ou revu depuis l'album). */
+  playEchoCinematic(roomIndex: number): void {
+    const def = this.rooms[roomIndex]?.def;
+    const story = def && ROOM_STORY[def.id];
+    if (!story || this.scene) return;
+    const center = this.world.startEcho(roomIndex, this.castOf(story.echo.lines));
+    this.beginScene('echo', roomIndex, story.echo.lines, center, { kicker: 'Écho du passé', title: story.echo.title });
+  }
+
+  /** La fin du jeu : Mouton Ier rétrécit, Élise et Lou arrivent, le jour se lève. */
   private startEnding(): void {
     this.save.endingSeen = true;
-    this.cinematicT = 0;
-    store.cinematic.value = true;
-    this.input.pressed = false;
-    this.player.clearKeys();
+    this.endingPending = false;
     const ri = this.rooms.findIndex((r) => r.def.id === 'throne');
-    const lines = this.director.ending();
-    const seconds = 4 + lines.reduce((t, [, l]) => t + 2.2 + l.length * 0.05, 0);
-    this.world.playEcho(ri, ['adult', 'child', 'plush'], seconds);
-    store.clearDialogue();
-    setTimeout(() => playLines(lines), 1500);
-    setTimeout(() => {
-      store.cinematic.value = false;
-      store.credits.value = true;
-      this.cinematicT = -1;
-    }, seconds * 1000);
+    const lines = ENDING.lines;
+    const center = this.world.startEcho(ri, this.castOf(lines), { real: true, king: true, face: { x: this.player.x, z: this.player.z } });
+    this.beginScene('ending', ri, lines, center, { kicker: 'Épilogue', title: ENDING.title });
     this.persist();
   }
 
-  private cinematicView(dt: number): { x: number; z: number; eye: number; yaw: number; pitch: number } {
-    this.cinematicT += dt;
-    const r = roomById('throne')!;
-    const cx = r.origin.x + r.width / 2;
-    const cz = r.origin.z + r.height / 2;
-    const a = this.cinematicT * 0.12;
-    const rad = Math.min(r.width, r.height) * 0.38;
-    const x = cx + Math.sin(a) * rad;
-    const z = cz + Math.cos(a) * rad;
-    // On regarde le centre de la salle, un peu vers le bas.
-    return { x, z, eye: r.floorY + 260, yaw: Math.atan2(x - cx, z - cz), pitch: -0.32 };
+  /** Passer la cinématique (Échap). */
+  skipCinematic(): void {
+    if (this.scene) this.endScene(true);
+    else if (this.wakeT >= 0) this.endWake();
+  }
+
+  private endScene(skipped = false): void {
+    const sc = this.scene;
+    if (!sc) return;
+    this.scene = null;
+    store.clearDialogue();
+    this.world.endEcho();
+    this.world.setEchoSpeaker(null);
+    store.cinemaTitle.value = null;
+    store.memoryTint.value = false;
+    if (sc.kind === 'ending') {
+      // Fondu au blanc, puis le générique.
+      store.whiteFade.value = true;
+      this.cine.finish(skipped ? 0.4 : 2.5);
+      setTimeout(() => {
+        store.cinematic.value = false;
+        this.cinematicT = -1;
+        store.credits.value = true;
+        this.synth.fanfare();
+        setTimeout(() => (store.whiteFade.value = false), 600);
+      }, skipped ? 500 : 2600);
+      return;
+    }
+    store.cinematic.value = false;
+    this.cinematicT = -1;
+    this.cine.finish(skipped ? 0.8 : 1.8);
+    this.sceneHold = Date.now() + 2500;
+  }
+
+  /** Chaque pas : la cinématique avance (répliques, moments clés, fin). */
+  private updateScene(dt: number): void {
+    // La fin attend qu'on soit dans la Salle du trône (et que son écho soit terminé).
+    if (!this.save.endingSeen && this.save.rooms.throne?.cleaned && !this.visiting) this.endingPending = true;
+    if (this.endingPending && this.canPlayCinematic() && Date.now() > this.sceneHold && this.currentRoom?.id === 'throne') this.startEnding();
+    const sc = this.scene;
+    if (!sc) return;
+    sc.t += dt;
+    if (sc.t >= sc.linesAt && sc.lastLine === -1) {
+      sc.lastLine = 0;
+      playLines(sc.lines);
+    }
+    const line = store.dialogue.value;
+    this.world.setEchoSpeaker(line?.speaker ?? null);
+    if (sc.kind === 'ending' && line) {
+      const idx = sc.lines.findIndex(([, text]) => text === line.text);
+      if (idx > sc.lastLine) {
+        sc.lastLine = idx;
+        if (idx === 1) this.world.echoCue('shrink');
+        if (idx === 2) this.world.echoCue('arrive');
+        if (idx === sc.lines.length - 1) this.world.echoCue('dawn');
+      }
+    }
+    // Plus de répliques : on laisse la scène respirer un instant, puis on rend la main.
+    if (sc.lastLine >= 0 && !line) {
+      if (sc.endAt < 0) sc.endAt = sc.t + (sc.kind === 'ending' ? 2.5 : 1.4);
+      else if (sc.t >= sc.endAt) this.endScene();
+    }
+  }
+
+  // ───────────────────────────── Réveil de Plume ─────────────────────────────
+
+  /** Tout début : Plume ouvre les yeux (paupières, flou), la caméra se relève doucement. */
+  private startWake(): void {
+    this.wakeT = 0;
+    this.cinematicT = 0;
+    store.waking.value = true;
+    store.cinemaTitle.value = { key: Date.now(), kicker: 'Trente ans plus tard', title: 'Le réveil de Plume', place: ROOMS[0].name };
+  }
+
+  private endWake(): void {
+    if (this.wakeT < 0) return;
+    this.wakeT = -1;
+    this.cinematicT = -1;
+    store.waking.value = false;
+    store.cinemaTitle.value = null;
+    this.director.intro();
+  }
+
+  /** Vue pendant le réveil : on part du ras du sol, la tête penchée, puis on se redresse. */
+  private wakeView(dt: number, base: View): View {
+    this.wakeT += dt;
+    const k = Math.min(1, Math.max(0, (this.wakeT - 2.2) / 3.2));
+    const e = k * k * (3 - 2 * k);
+    if (this.wakeT > 6.2) this.endWake();
+    const sway = (1 - e) * Math.sin(this.wakeT * 0.9) * 0.08;
+    return { ...base, eye: base.eye - (1 - e) * (base.eye - (this.player.feet + 22)), pitch: base.pitch * e + (1 - e) * -0.75, yaw: base.yaw + sway };
+  }
+
+  /** La vue de la caméra pour cette image (joueur, cinématique ou réveil). */
+  private cameraView(dt: number): View {
+    const base = this.playerView();
+    if (this.wakeT >= 0) return this.wakeView(dt, base);
+    return this.cine.update(dt, base);
   }
 
   /** Ouvre / ferme la carte du château (la souris est libérée pendant ce temps). */
@@ -1489,6 +1658,7 @@ export class Game {
   // ───────────────────────────── Boucle ─────────────────────────────
 
   private tick(dt: number): void {
+    this.updateScene(dt);
     if (this.playing) {
       const px = this.player.x;
       const pz = this.player.z;
@@ -1591,7 +1761,9 @@ export class Game {
       }
     }
     if (room) this.currentRoom = room;
-    this.world.setActiveRoom(this.currentRoom ?? ROOMS[0]);
+    // Pendant une cinématique, c'est sa pièce qui est éclairée et dessinée.
+    const sceneRoom = this.scene ? this.rooms[this.scene.roomIndex].def : null;
+    this.world.setActiveRoom(sceneRoom ?? this.currentRoom ?? ROOMS[0]);
 
     // Pièces visibles : celle du joueur, ses voisines ouvertes, et celles au bout de l'escalier.
     const visible = new Set<string>();
@@ -1618,6 +1790,7 @@ export class Game {
       }
     }
     if (this.currentRoom) visible.add(this.currentRoom.id);
+    if (sceneRoom) visible.add(sceneRoom.id);
     const key = [...visible].sort().join(',');
     if (force || key !== this.visibleKey) {
       this.visibleKey = key;
@@ -1716,8 +1889,10 @@ export class Game {
       const bonus = Math.max(250, Math.round(r.def.price * 0.5)) * this.mods.cleanBonusMult(r.def.id);
       this.earn(bonus, 'bonus');
       this.world.celebrate(ri);
-      if (r.def.id === 'throne' && !this.save.endingSeen) setTimeout(() => this.startEnding(), 3000);
-      else this.director.onRoomClean(ri);
+      const here = this.currentRoom === r.def;
+      if (here) this.sceneHold = Date.now() + 4500;
+      this.director.onRoomClean(ri, here);
+      if (r.def.id === 'throne' && !this.save.endingSeen) this.endingPending = true;
       this.synth.fanfare();
       store.pushToast(`${r.def.name} : impeccable ! ✨`, `Bonus de ${formatNumber(bonus)} pièces. La poussière, elle, n'a pas dit son dernier mot…`, 6000);
       this.publishCastle();

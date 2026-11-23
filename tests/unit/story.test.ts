@@ -37,7 +37,7 @@ describe("l'histoire", () => {
     const rooms = ROOMS.map((def) => ({ def, sim: new RoomSim(def, 1) }));
     const d = new StoryDirector({
       save, rooms, isUnlocked: () => true, player: { x: 0, z: 0, y: 0 },
-      world: { setDustMessage() {}, setSouvenirs() {}, playEcho() {} }, onSouvenir() {}, persist() {},
+      world: { setDustMessage() {}, setSouvenirs() {}, collectSouvenir() {} }, onSouvenir() {}, persist() {}, playEcho() {}, canPlayCinematic: () => true,
     });
     const spots = (d as unknown as { positions: Map<string, { x: number; y: number }> }).positions;
     for (const s of ALL_SOUVENIRS) {
@@ -48,6 +48,27 @@ describe("l'histoire", () => {
       expect(p.y, s.id).toBeLessThan(def.height);
       expect(def.obstacles.some((o) => inside(grow(o.rect, 40), p.x, p.y)), s.id).toBe(false);
     }
+  });
+
+  it('un écho ne se joue pas dans le dos du joueur : il attend qu’on entre dans la pièce', () => {
+    const save = migrate(null);
+    const rooms = ROOMS.map((def) => ({ def, sim: new RoomSim(def, 1) }));
+    const played: number[] = [];
+    const d = new StoryDirector({
+      save, rooms, isUnlocked: () => true, player: { x: 0, z: 0, y: 0 },
+      world: { setDustMessage() {}, setSouvenirs() {}, collectSouvenir() {} }, onSouvenir() {}, persist() {}, playEcho: (ri) => played.push(ri), canPlayCinematic: () => true,
+    });
+    const gi = rooms.findIndex((r) => r.def.id === 'gallery');
+    d.onRoomClean(gi, false);
+    expect(played).toEqual([]);
+    expect(save.echoes).not.toContain('gallery');
+    d.update(0.1, rooms[0].def);
+    expect(played).toEqual([]);
+    d.update(0.1, rooms[gi].def);
+    expect(played).toEqual([gi]);
+    expect(save.echoes).toContain('gallery');
+    d.update(0.1, rooms[gi].def);
+    expect(played).toEqual([gi]);
   });
 
   it('la sauvegarde garde les souvenirs, les échos et la fin', () => {

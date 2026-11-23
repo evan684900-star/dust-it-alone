@@ -186,5 +186,15 @@ export const achievements = signal<string[]>([]);
 export const tip = signal<{ id: string; icon: string; text: string } | null>(null);
 /** Cinématique de fin en cours (bandes noires, caméra automatique). */
 export const cinematic = signal(false);
+/** Titre de la cinématique en cours (écho du passé, fin). */
+export const cinemaTitle = signal<{ key: number; kicker: string; title: string; place: string } | null>(null);
+/** Filtre « souvenir » (couleurs anciennes, bords sombres). */
+export const memoryTint = signal(false);
+/** Réveil de Plume (paupières qui s'ouvrent), au tout début. */
+export const waking = signal(false);
+/** Fondu au blanc (fin du jeu). */
+export const whiteFade = signal(false);
+/** La carte d'un souvenir qu'on vient de trouver. */
+export const souvenirCard = signal<{ key: number; icon: string; name: string; text: string; room: string; count: number; total: number; throneHint: string } | null>(null);
 /** Générique de fin affiché. */
 export const credits = signal(false);

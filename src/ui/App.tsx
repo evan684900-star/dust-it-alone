@@ -50,7 +50,8 @@ export function App({ game }: { game: Game }) {
       {store.recoverOpen.value && <RecoverPanel game={game} />}
       {store.started.value && store.net.value.role !== 'off' && !store.netOpen.value && <NetHud />}
       {store.netRequests.value.length > 0 && <NetRequest game={game} />}
-      {store.cinematic.value && <div class="letterbox"><div /><div /></div>}
+      <CinemaLayer />
+      {store.started.value && store.souvenirCard.value && !store.cinematic.value && <SouvenirCard key={store.souvenirCard.value.key} card={store.souvenirCard.value} />}
       {store.credits.value && <Credits />}
       {store.started.value && store.paused.value && !store.mapOpen.value && !store.treeOpen.value && <PauseScreen game={game} />}
       {store.started.value && store.tip.value && !store.paused.value && !store.treeOpen.value && <DustuceTip key={store.tip.value.id} icon={store.tip.value.icon} text={store.tip.value.text} />}
@@ -251,38 +252,57 @@ function Album({ game }: { game: Game }) {
   const [open, setOpen] = useState<string | null>(null);
   const found = new Set(game.foundSouvenirs());
   const echoes = new Set(game.seenEchoes());
+  const waiting = new Set(game.waitingEchoes());
+  const unlocked = new Set(store.unlockedRooms.value);
   const all = ROOMS.map((r) => ({ room: r, story: ROOM_STORY[r.id] })).filter((x) => x.story);
-  const sel = open ? all.flatMap((x) => x.story!.souvenirs).find((s) => s.id === open) : null;
+  const sel = open ? all.flatMap((x) => x.story!.souvenirs.map((s) => ({ ...s, room: x.room.name }))).find((s) => s.id === open) : null;
+  const total = all.length * 3;
   return (
     <div class="settings-backdrop" onClick={() => game.toggleAlbum()}>
       <div class="settings-card album-card" onClick={(e) => e.stopPropagation()}>
         <h2>📜 L'album des souvenirs</h2>
-        <p class="album-count">
-          {found.size} / {all.length * 3} souvenirs · La Salle du trône s'ouvre avec {THRONE_SOUVENIRS} souvenirs.
-        </p>
+        <div class="album-progress">
+          <div class="album-bar"><div style={{ width: `${(100 * found.size) / total}%` }} /></div>
+          <span>{found.size} / {total} souvenirs · {echoes.size} échos · la Salle du trône s'ouvre à {THRONE_SOUVENIRS}</span>
+        </div>
         <div class="album-grid">
-          {all.map(({ room, story }) => (
-            <div class="album-room" key={room.id}>
-              <strong>{room.name}</strong>
-              <div class="album-slots">
-                {story!.souvenirs.map((s) => (
-                  <button key={s.id} class={`album-slot ${found.has(s.id) ? 'found' : ''}`} disabled={!found.has(s.id)} onClick={() => setOpen(s.id)} title={found.has(s.id) ? s.name : '???'}>
-                    {found.has(s.id) ? s.icon : '?'}
-                  </button>
-                ))}
+          {all.map(({ room, story }) => {
+            const open_ = unlocked.has(room.id);
+            return (
+              <div class={`album-room ${open_ ? '' : 'locked'}`} key={room.id}>
+                <strong>{open_ ? room.name : '🔒 ' + room.name}</strong>
+                <div class="album-slots">
+                  {story!.souvenirs.map((s, i) => (
+                    <button
+                      key={s.id}
+                      class={`album-slot ${found.has(s.id) ? 'found' : ''} ${open === s.id ? 'selected' : ''}`}
+                      style={{ transform: `rotate(${(i - 1) * 4}deg)` }}
+                      disabled={!found.has(s.id)}
+                      onClick={() => setOpen(s.id)}
+                      title={found.has(s.id) ? s.name : '???'}
+                    >
+                      {found.has(s.id) ? s.icon : '?'}
+                    </button>
+                  ))}
+                </div>
                 {echoes.has(room.id) && (
-                  <button class="album-echo" onClick={() => { game.toggleAlbum(); game.replayEcho(story!.echo.lines); }} title="Revoir l'écho du passé">
-                    ✨
+                  <button class="album-echo" onClick={() => game.replayEcho(room.id)} title="Revoir la scène">
+                    ✨ « {story!.echo.title} »
                   </button>
                 )}
+                {waiting.has(room.id) && <span class="album-waiting">✨ Un écho t'attend dans cette pièce</span>}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         {sel && (
-          <div class="album-read">
-            <strong>{sel.icon} {sel.name}</strong>
-            <p>{sel.text}</p>
+          <div class="album-read" key={sel.id}>
+            <span class="album-read-icon">{sel.icon}</span>
+            <div>
+              <strong>{sel.name}</strong>
+              <small>{sel.room}</small>
+              <p>{sel.text}</p>
+            </div>
           </div>
         )}
         <button class="btn" onClick={() => game.toggleAlbum()}>Fermer (J)</button>
@@ -291,17 +311,146 @@ function Album({ game }: { game: Game }) {
   );
 }
 
-/** Générique de fin. */
-function Credits() {
+/** Bandes noires, titre, filtre « souvenir », paupières du réveil, fondu au blanc. */
+function CinemaLayer() {
+  const t = store.cinemaTitle.value;
+  const memory = store.memoryTint.value;
+  const waking = store.waking.value;
+  useEffect(() => {
+    document.body.classList.toggle('memory', memory);
+  }, [memory]);
+  useEffect(() => {
+    document.body.classList.toggle('waking', waking);
+  }, [waking]);
   return (
-    <div class="title-screen credits">
-      <div class="title-card">
+    <>
+      {memory && <div class="memory-tint" />}
+      {store.cinematic.value && (
+        <div class="letterbox">
+          <div />
+          <div>
+            <span class="skip-hint"><kbd>Échap</kbd> passer · <kbd>Espace</kbd> réplique suivante</span>
+          </div>
+        </div>
+      )}
+      {waking && (
+        <div class="eyelids">
+          <div class="lid top" />
+          <div class="lid bottom" />
+          <span class="skip-hint wake"><kbd>Échap</kbd> passer</span>
+        </div>
+      )}
+      {t && (
+        <div class={`cine-title ${waking ? 'late' : ''}`} key={t.key}>
+          <small>{t.kicker}</small>
+          <strong>{t.title}</strong>
+          <em>{t.place}</em>
+        </div>
+      )}
+      {store.whiteFade.value && <div class="white-fade" />}
+    </>
+  );
+}
+
+/** La carte d'un souvenir retrouvé : elle tombe comme une page d'album, le texte s'écrit à la main. */
+function SouvenirCard({ card }: { card: NonNullable<typeof store.souvenirCard.value> }) {
+  const [shown, setShown] = useState(0);
+  const [leaving, setLeaving] = useState(false);
+  const done = shown >= card.text.length;
+  const close = () => {
+    if (leaving) return;
+    setLeaving(true);
+    setTimeout(() => {
+      if (store.souvenirCard.value?.key === card.key) store.souvenirCard.value = null;
+    }, 450);
+  };
+  useEffect(() => {
+    if (done) {
+      const t = setTimeout(close, 5200 + card.text.length * 20);
+      return () => clearTimeout(t);
+    }
+    // Un petit temps avant d'écrire (la carte tombe d'abord).
+    const ch = card.text[shown];
+    const pause = shown === 0 ? 700 : /[.!?…]/.test(ch) ? 220 : /[,;:]/.test(ch) ? 100 : 26;
+    const t = setTimeout(() => setShown(shown + 1), pause);
+    return () => clearTimeout(t);
+  }, [shown, done]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Space' && e.code !== 'Enter') return;
+      if (store.dialogue.value) return;
+      e.stopImmediatePropagation();
+      if (!done) setShown(card.text.length);
+      else close();
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [done, leaving]);
+  return (
+    <div class={`souvenir-card ${leaving ? 'leaving' : ''}`} onClick={close}>
+      <div class="sc-rays" />
+      <div class="sc-paper">
+        <span class="sc-kicker">Souvenir retrouvé · {card.room}</span>
+        <div class="sc-icon">{card.icon}</div>
+        <h3>{card.name}</h3>
+        <p class="sc-text">
+          {card.text.slice(0, shown)}
+          <span class="dialogue-rest">{card.text.slice(shown)}</span>
+        </p>
+        <div class="sc-foot">
+          <span>📜 {card.count} / {card.total}</span>
+          {card.throneHint && <span>👑 {card.throneHint}</span>}
+        </div>
+        <span class="sc-hint"><kbd>Espace</kbd> fermer · <kbd>J</kbd> album</span>
+      </div>
+    </div>
+  );
+}
+
+/** Générique de fin : il défile lentement sur un ciel qui s'éclaire. */
+function Credits() {
+  const cast: [string, string, string][] = [
+    ['🪶', 'Plume', 'le petit plumeau qui s’est réveillé'],
+    ['🐑', 'Mouton', 'le plus courageux des moutons'],
+    ['👧', 'Élise', 'qui est revenue'],
+    ['🧒', 'Lou', 'qui a trouvé le mouton tout doux'],
+    ['🧹', 'Gustave', 'le balayeur du Roi'],
+    ['👑', 'Le Roi Léopold et la Reine Margot', ''],
+    ['📖', 'Anselme', 'le bibliothécaire'],
+    ['🥄', 'Rose', 'la cuisinière'],
+    ['🩺', 'Le médecin', ''],
+    ['✨', 'Dustuce', 'le grain de poussière qui donnait des conseils'],
+  ];
+  const [button, setButton] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setButton(true), 5000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <div class="credits-roll">
+      <div class="credits-sky" />
+      <div class="credits-scroll">
         <h1 class="logo"><span class="w1">Fin</span></h1>
         <p class="tagline">Élise est revenue. Mouton aussi. Et le château se souvient.</p>
+        <h3>Avec</h3>
+        <ul class="credits-cast">
+          {cast.map(([icon, name, role]) => (
+            <li key={name}>
+              <span class="cc-icon">{icon}</span>
+              <b>{name}</b>
+              {role && <i>{role}</i>}
+            </li>
+          ))}
+        </ul>
+        <h3>Et</h3>
         <CreditsList />
-        <p class="credits-list">Merci d'avoir joué ! 🧹✨</p>
-        <button class="btn btn-big" onClick={() => (store.credits.value = false)}>Continuer à faire le ménage</button>
+        <p class="credits-thanks">Merci d'avoir joué ! 🧹✨</p>
       </div>
+      {button && (
+        <button class="btn btn-big credits-continue" onClick={() => (store.credits.value = false)}>
+          Continuer à faire le ménage
+        </button>
+      )}
     </div>
   );
 }
@@ -578,7 +727,7 @@ function CreditsList() {
         <dt>Musique</dt><dd>« Poussière oubliée », par le créateur du jeu</dd>
         <dt>Moteur 3D</dt><dd>three.js</dd>
         <dt>Interface</dt><dd>Preact et Vite</dd>
-        <dt>Polices</dt><dd>Lilita One et Nunito (Google Fonts, licence OFL)</dd>
+        <dt>Polices</dt><dd>Lilita One, Nunito et Caveat (Google Fonts, licence OFL)</dd>
         <dt>Sons</dt><dd>Tous synthétisés en direct avec Web Audio</dd>
       </dl>
       <p>Inspiré par les jeux de ménage incrémentaux comme <i>Leaf It Alone</i>.</p>
@@ -945,6 +1094,7 @@ function CastleMap({ game }: { game: Game }) {
   const p = store.playerPos.value;
   const myLevel = levelOf(p.y);
   const [level, setLevel] = useState(myLevel);
+  const waitingEchoes = game.waitingEchoes();
   if (rooms.length === 0) return null;
   // Les étages qui ont au moins une pièce connue (ouverte, ou fermée mais visible derrière une porte).
   const here = rooms.filter((r) => r.level === level);
@@ -974,6 +1124,7 @@ function CastleMap({ game }: { game: Game }) {
             </button>
           ))}
         </div>
+        {waitingEchoes.length > 0 && <p class="map-echo-note">✨ Un écho du passé t'attend dans : {waitingEchoes.map((id) => ROOMS.find((x) => x.id === id)?.name).join(', ')}</p>}
         <svg class="castle-map" viewBox={`${minX} ${minZ} ${w} ${h}`} preserveAspectRatio="xMidYMid meet">
           {stairs.map((st) => {
             const up = Math.min(st.yAtMin, st.yAtMax) === level;
@@ -992,11 +1143,12 @@ function CastleMap({ game }: { game: Game }) {
             <g key={r.id}>
               <rect x={r.x} y={r.z} width={r.w} height={r.h} rx={u} class={`map-room ${r.unlocked ? '' : 'locked'}`} style={{ fill: r.unlocked ? LEVEL_COLOR[r.level] : undefined, strokeWidth: u * 0.5 }} />
               {r.unlocked && <rect x={r.x} y={r.z + r.h - u * 1.6} width={r.w * Math.max(0, Math.min(1, r.clean))} height={u * 1.6} class="map-clean" />}
+              {waitingEchoes.includes(r.id) && <circle cx={r.x + r.w - u * 3} cy={r.z + u * 3} r={u * 1.8} class="map-echo" />}
               <text x={r.x + r.w / 2} y={r.z + r.h / 2} class="map-label" style={{ fontSize: Math.min(u * 4.2, (r.w / 7) * 1.1) }}>
                 {r.unlocked ? (SHORT_NAMES[r.id] ?? r.name) : 'Fermée'}
               </text>
               <text x={r.x + r.w / 2} y={r.z + r.h / 2 + u * 4} class="map-sub" style={{ fontSize: Math.min(u * 2.8, r.w / 9) }}>
-                {r.unlocked ? `${Math.floor(r.clean * 100)} %${r.cleaned ? ' · impeccable' : ''}` : `${formatNumber(r.price)} pièces`}
+                {r.unlocked ? `${Math.floor(r.clean * 100)} %${r.cleaned ? ' · impeccable' : ''}${waitingEchoes.includes(r.id) ? ' · écho !' : ''}` : `${formatNumber(r.price)} pièces`}
               </text>
             </g>
           ))}
