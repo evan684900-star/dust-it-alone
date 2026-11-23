@@ -52,6 +52,10 @@ export class Player {
     this.pitch = Math.max(-1.4, Math.min(0.6, this.pitch));
   }
 
+  /** Manette : stick gauche (x = côté, y = avant/arrière, −1…1) et course. */
+  analog = { x: 0, y: 0 };
+  analogSprint = false;
+
   setKey(code: string, down: boolean): void {
     if (down) this.keys.add(code);
     else this.keys.delete(code);
@@ -64,14 +68,19 @@ export class Player {
   update(dt: number): void {
     const k = this.keys;
     // Codes physiques : ZQSD (AZERTY) et WASD (QWERTY) tombent sur les mêmes touches.
-    const fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
-    const str = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
-    this.sprinting = k.has('ShiftLeft') || k.has('ShiftRight');
+    let fwd = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0);
+    let str = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0);
+    // Pas de touche : le stick de la manette (on marche plus ou moins vite selon l'inclinaison).
+    if (!fwd && !str) {
+      fwd = -this.analog.y;
+      str = this.analog.x;
+    }
+    this.sprinting = k.has('ShiftLeft') || k.has('ShiftRight') || this.analogSprint;
     let mx = 0;
     let mz = 0;
     if (fwd || str) {
       const len = Math.hypot(fwd, str);
-      const sp = ((this.sprinting ? SPRINT * this.sprintMult : WALK) * this.walkMult) / len;
+      const sp = ((this.sprinting ? SPRINT * this.sprintMult : WALK) * this.walkMult) / Math.max(1, len);
       const sin = Math.sin(this.yaw);
       const cos = Math.cos(this.yaw);
       mx = (-sin * fwd + cos * str) * sp * dt;
@@ -84,7 +93,7 @@ export class Player {
     this.smoothY += (this.y - this.smoothY) * Math.min(1, dt * 14);
     const moving = mx !== 0 || mz !== 0;
     this.moving = moving;
-    this.movingForward = fwd > 0;
+    this.movingForward = fwd > 0.3;
     this.bobAmount += ((moving ? (this.sprinting ? 1.6 : 1) : 0) - this.bobAmount) * Math.min(1, dt * 8);
     if (moving) this.bobPhase += dt * (this.sprinting ? 13 : 9);
   }

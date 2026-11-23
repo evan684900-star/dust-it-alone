@@ -993,3 +993,24 @@ body.waking .hud, body.waking .crosshair, body.waking .dialogue { opacity: 0; }
 .map-echo { fill: #ffd86a; stroke: var(--ink); stroke-width: 6; animation: map-echo 1.2s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
 @keyframes map-echo { 50% { transform: scale(1.35); fill: #fff3b0; } }
 .map-echo-note { margin: 0 0 8px; font: 700 20px 'Caveat', cursive; color: #9a6a20; }
+
+/* ───────── Manette ───────── */
+/* L'élément choisi à la manette dans un menu : bien visible. */
+.pad-focus { outline: 4px solid #ffd86a !important; outline-offset: 3px; box-shadow: 0 0 0 7px rgba(43, 26, 46, 0.85), 0 0 26px 8px rgba(255, 216, 106, 0.7) !important; transform: translateY(-2px) scale(1.04); transition: transform 0.12s, box-shadow 0.12s; z-index: 2; position: relative; }
+input.pad-focus { transform: none; }
+/* Boutons de manette affichés à la place des touches. */
+kbd.pad-glyph { display: inline-grid; place-items: center; min-width: 1.75em; height: 1.75em; padding: 0 0.35em; border-radius: 999px; border: 2px solid var(--ink); font: 900 0.85em/1 var(--font-body, system-ui); color: #fff; background: #4a4256; box-shadow: 0 2px 0 var(--ink); vertical-align: middle; }
+kbd.pad-glyph.xbox.pad-a { background: #5cb82e; }
+kbd.pad-glyph.xbox.pad-b { background: #e0453a; }
+kbd.pad-glyph.xbox.pad-x { background: #2f7fe0; }
+kbd.pad-glyph.xbox.pad-y { background: #f0b51e; color: var(--ink); }
+kbd.pad-glyph.ps { background: #2c2a38; }
+kbd.pad-glyph.ps.pad-a { color: #8fb4ff; font-size: 1em; }
+kbd.pad-glyph.ps.pad-b { color: #ff7a8a; font-size: 1em; }
+kbd.pad-glyph.ps.pad-x { color: #ff9ad8; font-size: 1em; }
+kbd.pad-glyph.ps.pad-y { color: #6fe0b8; font-size: 1em; }
+kbd.pad-glyph.pad-lb, kbd.pad-glyph.pad-rb, kbd.pad-glyph.pad-lt, kbd.pad-glyph.pad-rt, kbd.pad-glyph.pad-menu, kbd.pad-glyph.pad-view { border-radius: 8px; font-size: 0.72em; min-width: 2.6em; }
+kbd.pad-glyph.pad-ls, kbd.pad-glyph.pad-rs { background: radial-gradient(circle at 50% 40%, #6a6278, #2c2a38); }
+.pad-controls .controls-title, .controls-pad-hint { font-weight: 900; }
+.controls-pad-hint { opacity: 0.8; font-size: 0.9em; }
+.pad-controls span { display: inline-flex; align-items: center; gap: 4px; }

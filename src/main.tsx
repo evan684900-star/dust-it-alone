@@ -5,9 +5,12 @@ import { installUiSounds } from './audio/uiSounds';
 import './ui/styles.css';
 import { REALISTIC } from './render/realistic';
 import { installIcons } from './ui/icons';
+import { installPadGlyphs } from './ui/padGlyphs';
 
 // Les emojis sont remplacés par des icônes dessinées à la main, partout dans l'interface.
 installIcons();
+// À la manette, les touches affichées deviennent les boutons de la manette.
+installPadGlyphs();
 
 /** Écran de chargement (défini dans index.html) : étape en cours et barre de progression. */
 function loading(status: string, progress: number): Promise<void> {

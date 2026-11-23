@@ -7,6 +7,7 @@ import { formatNumber } from '../core/format';
 import { sfx } from '../audio/synth';
 import * as store from '../state/store';
 import { SvgIcon } from './icons';
+import { lastPad, padActive, pushPadHandler } from '../input/gamepad';
 
 const RING = 150;
 const SIDE = 95;
@@ -101,6 +102,76 @@ export function SkillTree({ game }: { game: Game }) {
   const drag = useRef<{ x: number; y: number; vx: number; vy: number; moved: boolean } | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
 
+  // Manette : la croix / le stick gauche vont au nœud voisin (la vue le suit), A achète un niveau,
+  // X achète le maximum, Vue rembourse, gâchettes = zoom, stick droit = déplacer l'arbre, B ou Y = fermer.
+  const padRef = useRef({ selected, visible: new Set<string>() });
+  useEffect(() => {
+    const centerOn = (id: string) => {
+      const p = POS.get(id);
+      if (p) setView((v) => ({ ...v, x: -p.x * v.k, y: -p.y * v.k }));
+    };
+    const off = pushPadHandler((e) => {
+      const { selected: sel, visible: vis } = padRef.current;
+      if (e === 'nav-up' || e === 'nav-down' || e === 'nav-left' || e === 'nav-right') {
+        const from = POS.get(sel) ?? { x: 0, y: 0 };
+        const dir = e.slice(4);
+        let best: string | null = null;
+        let bestScore = Infinity;
+        for (const id of vis) {
+          if (id === sel) continue;
+          const q = POS.get(id);
+          if (!q) continue;
+          const dx = q.x - from.x;
+          const dy = q.y - from.y;
+          const main = dir === 'up' ? -dy : dir === 'down' ? dy : dir === 'left' ? -dx : dx;
+          const side = dir === 'up' || dir === 'down' ? Math.abs(dx) : Math.abs(dy);
+          if (main <= 8) continue;
+          const score = main + side * 1.8;
+          if (score < bestScore) {
+            bestScore = score;
+            best = id;
+          }
+        }
+        if (best) {
+          setSelected(best);
+          sfx.hover();
+          centerOn(best);
+        }
+        return true;
+      }
+      if (e === 'a') game.buyNode(sel, 1);
+      else if (e === 'x') game.buyNode(sel, Infinity);
+      else if (e === 'view') game.refundNode(sel);
+      else if (e === 'b' || e === 'y' || e === 'menu') game.toggleTree();
+      else if (e === 'r3') setView({ x: 0, y: 0, k: 0.6 });
+      return true;
+    });
+    // Sticks et gâchettes en continu.
+    let raf = 0;
+    let last = performance.now();
+    const loop = (now: number) => {
+      const dt = Math.min(0.1, (now - last) / 1000);
+      last = now;
+      const p = lastPad;
+      if (p && padActive.value) {
+        const zoom = p.rt - p.lt;
+        if (Math.abs(zoom) > 0.05 || p.rx || p.ry) {
+          setView((v) => {
+            const k = Math.max(0.12, Math.min(2.2, v.k * Math.exp(zoom * dt * 1.6)));
+            const r = k / v.k;
+            return { x: v.x * r - p.rx * dt * 900, y: v.y * r - p.ry * dt * 900, k };
+          });
+        }
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => {
+      off();
+      cancelAnimationFrame(raf);
+    };
+  }, []);
+
   // Molette : zoom.
   const onWheel = (e: WheelEvent) => {
     e.preventDefault();
@@ -137,6 +208,7 @@ export function SkillTree({ game }: { game: Game }) {
     [avs, levels, goldOn],
   );
   const hiddenCount = TREE_NODES.length - visible.size;
+  padRef.current = { selected, visible };
   const focusId = [hovered, selected].find((id) => id && visible.has(id)) ?? [...visible][0] ?? 'broom-wide-1';
   const focus = NODE_BY_ID.get(focusId)!;
   const rootActive = TREE_NODES.some((n) => (levels[n.id] ?? 0) > 0);

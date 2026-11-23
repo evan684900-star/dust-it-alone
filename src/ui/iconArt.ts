@@ -193,6 +193,7 @@ const CONVEYOR = rect(3, 13, 26, 9, C.dark, 4.5) + circ(8, 17.5, 3, C.grey) + ci
 const GIRL = path('M6 21Q4 6 16 5Q28 6 26 21Z', C.brown) + circ(5, 15, 3.5, C.brown) + circ(27, 15, 3.5, C.brown) + path('M8 30Q8 22 16 22Q24 22 24 30Z', C.pink) + circ(16, 14, 7.5, C.skin) + eyes(13, 19, 14) + path('M13.5 17.5Q16 19.5 18.5 17.5', 'none') + path('M9 10Q16 4 23 10', 'none');
 const CHILD = path('M8 30Q8 22 16 22Q24 22 24 30Z', C.gold) + circ(16, 14, 7.5, C.skin) + path('M8.5 13Q9 5 16 5Q23 5 23.5 13Q20 9 16 10Q12 9 8.5 13Z', C.orange) + eyes(13, 19, 15) + path('M13.5 18Q16 20 18.5 18', 'none');
 const STETHO = path('M8 4V12Q8 19 14 19Q20 19 20 12V4', 'none') + circ(8, 4, 1.8, C.grey) + circ(20, 4, 1.8, C.grey) + path('M14 19V23Q14 28 20 28Q24 28 24 24', 'none') + circ(24, 21, 4, C.grey) + circ(24, 21, 1.8, C.greyD);
+const GAMEPAD = path('M8 10H24Q30 10 30 18Q31 27 26 27Q23 27 21 22H11Q9 27 6 27Q1 27 2 18Q2 10 8 10Z', C.grey) + rect(8, 15, 6, 2.4, C.dark, 0.6) + rect(9.8, 13.2, 2.4, 6, C.dark, 0.6) + circ(22, 14.5, 1.7, C.green) + circ(25, 17.5, 1.7, C.red) + circ(19, 17.5, 1.7, C.blue) + circ(22, 20.5, 1.7, C.gold);
 
 /** Emoji → dessin. */
 export const ICON_ART: Record<string, string> = {
@@ -209,7 +210,7 @@ export const ICON_ART: Record<string, string> = {
   '🧺': BASKET, '🍷': WINE, '🕯': CANDLE, '✉': ENVELOPE, '🪢': ROPE, '🍾': BOTTLE, '📮': POSTBOX, '🪑': CHAIR, '🔭': TELESCOPE,
   '🚩': FLAG, '🏔': MOUNTAIN, '🌌': GALAXY, '🕸': WEB, '🍂': LEAVES, '🧠': BRAIN, '👻': GHOST, '🐉': DRAGON, '🤝': HANDSHAKE,
   '🕰': MANTELCLOCK, '🪮': COMB, '💪': MUSCLE, '📏': RULER, '🛢': BARREL, '🦣': MAMMOTH, '🎯': TARGET, '🧲': MAGNET, '💎': GEM,
-  '🦶': FOOT, '🏛': TEMPLE, '🚶': WALKER, '🌷': TULIP, '⚡': BOLT, '🤖': ROBOT, '🖐': HAND, '💡': BULB, '🔔': BELL, '🛤': CONVEYOR, '👧': GIRL, '🧒': CHILD, '🩺': STETHO,
+  '🦶': FOOT, '🏛': TEMPLE, '🚶': WALKER, '🌷': TULIP, '⚡': BOLT, '🤖': ROBOT, '🖐': HAND, '💡': BULB, '🔔': BELL, '🛤': CONVEYOR, '👧': GIRL, '🎮': GAMEPAD, '🧒': CHILD, '🩺': STETHO,
 };
 
 /** Le dessin d'une icône, prêt à glisser dans un SVG 32 × 32 (contour encre commun à toutes les formes). */

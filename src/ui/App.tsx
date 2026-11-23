@@ -8,6 +8,8 @@ import { STAIRS } from '../data/rooms';
 import { TOOLS } from '../data/dirtTypes';
 import { ROOM_STORY, THRONE_SOUVENIRS } from '../data/story';
 import { ROOMS } from '../data/rooms';
+import { padActive, padKind } from '../input/gamepad';
+import { PadGlyph } from './padGlyphs';
 import { sfx } from '../audio/synth';
 import { QUALITY_HINTS, QUALITY_LABELS, QUALITY_ORDER, type QualitySetting } from '../render/quality';
 import { ACHIEVEMENTS } from '../data/achievements';
@@ -736,6 +738,26 @@ function CreditsList() {
 }
 
 function Controls() {
+  if (padActive.value) {
+    const k = padKind.value ?? 'xbox';
+    const G = ({ b }: { b: string }) => <PadGlyph b={b} kind={k} />;
+    return (
+      <div class="controls pad-controls">
+        <span class="controls-title">🎮 Manette {k === 'ps' ? 'PlayStation' : 'Xbox'}</span>
+        <span><G b="ls" /> se déplacer · <G b="rs" /> regarder</span>
+        <span><G b="rt" /> balayer</span>
+        <span><G b="lt" /> courir</span>
+        <span><G b="a" /> ouvrir, agir, réplique suivante</span>
+        <span><G b="y" /> arbre des souvenirs</span>
+        <span><G b="x" /> poser / ramasser un tapis</span>
+        <span><G b="b" /> clochette · retour dans les menus</span>
+        <span><G b="lb" /> <G b="rb" /> changer d'outil</span>
+        <span><G b="up" /> carte · <G b="down" /> album</span>
+        <span><G b="left" /> carnet · <G b="right" /> multijoueur</span>
+        <span><G b="menu" /> pause</span>
+      </div>
+    );
+  }
   return (
     <div class="controls">
       <span><kbd>Z</kbd><kbd>Q</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> se déplacer</span>
@@ -744,12 +766,14 @@ function Controls() {
       <span><kbd>B</kbd> arbre des souvenirs</span>
       <span><kbd>Maj</kbd> courir</span>
       <span><kbd>E</kbd> ouvrir une porte</span>
+      <span><kbd>T</kbd> tapis roulant · <kbd>R</kbd> clochette</span>
       <span><kbd>M</kbd> carte du château</span>
       <span><kbd>J</kbd> album des souvenirs</span>
       <span><kbd>K</kbd> carnet et succès</span>
       <span><kbd>P</kbd> multijoueur</span>
       <span><kbd>1</kbd>…<kbd>3</kbd> barre d'outils (le reste dans le coffre)</span>
       <span><kbd>Échap</kbd> pause</span>
+      <span class="controls-pad-hint">🎮 Manette Xbox ou PS5 : branche-la et appuie sur un bouton.</span>
     </div>
   );
 }
@@ -1319,14 +1343,14 @@ function Hud({ game }: { game: Game }) {
               <div class={`gadget bell ${store.bell.value.active ? 'ringing' : store.bell.value.ready ? 'resting' : 'ready'}`} title="Clochette : les assistants vont 2× plus vite (touche R)">
                 <span class="g-icon">🔔</span>
                 <span class="g-text">{store.bell.value.active ? `${store.bell.value.active} s` : store.bell.value.ready ? clock(store.bell.value.ready) : 'Prête'}</span>
-                <span class="tool-key">R</span>
+                <kbd class="tool-key">R</kbd>
               </div>
             )}
             {store.belts.value.max > 0 && (
               <div class="gadget" title="Tapis roulants : T pour poser là où tu vises, T sur un tapis pour le ramasser">
                 <span class="g-icon">🛤️</span>
                 <span class="g-text">{store.belts.value.placed}/{store.belts.value.max}</span>
-                <span class="tool-key">T</span>
+                <kbd class="tool-key">T</kbd>
               </div>
             )}
           </div>

@@ -21,6 +21,7 @@ import { Multiplayer, type MpGame, type Pose } from './net/multiplayer';
 import { NO_HELPERS } from './sim/helpers';
 import { ALL_SOUVENIRS, ENDING, ROOM_STORY, SPEAKERS, THRONE_SOUVENIRS, type Line, type SpeakerId } from './data/story';
 import { CineCam, type View } from './render/cinecam';
+import { activateFocus, moveFocus, padActive, padRumble, pollGamepad, pushPadHandler, watchKeyboardMouse, type PadEvent, type PadState } from './input/gamepad';
 import type { Role } from './render/figures';
 import { AUTO_START, QUALITY_LABELS, autoStartFor, isQualitySetting, lowerQuality, type QualityLevel, type QualitySetting } from './render/quality';
 
@@ -146,6 +147,7 @@ export class Game {
       player: this.player,
       world: this.world,
       onSouvenir: () => {
+        padRumble(0.35, 0.7, 260);
         this.synth.bigNode();
         this.synth.sparkle();
         this.publishCastle();
@@ -203,6 +205,7 @@ export class Game {
       const realDt = Math.max(0.0001, (now - this.last) / 1000);
       const dt = Math.min(0.1, realDt);
       this.last = now;
+      this.updatePad(dt);
       step(dt);
       const p = this.player;
       const bp = p.broomPoint();
@@ -382,6 +385,7 @@ export class Game {
     this.bellUntil = now + this.mods.bell.duration * 1000;
     this.save.bellReadyAt = now + this.mods.bell.cooldown * 1000;
     this.synth.bell();
+    padRumble(0.3, 0.5, 220);
     this.persistSoon();
     this.net?.pushEconomy();
     return true;
@@ -734,6 +738,8 @@ export class Game {
   }
 
   private lockPointer(): void {
+    // À la manette, pas besoin de capturer la souris (et le navigateur le refuserait sans clic).
+    if (padActive.value) return;
     const c = this.world.canvas;
     try {
       const r = c.requestPointerLock() as unknown as Promise<void> | undefined;
@@ -744,7 +750,7 @@ export class Game {
   }
 
   private onLockFailed(): void {
-    if (!this.debug) store.paused.value = true;
+    if (!this.debug && !padActive.value) store.paused.value = true;
   }
 
   setQuality(setting: QualitySetting): void {
@@ -1103,7 +1109,127 @@ export class Game {
 
   // ───────────────────────────── Commandes ─────────────────────────────
 
+  // ───────────────────────────── Manette (Xbox, PlayStation) ─────────────────────────────
+
+  private padSweep = false;
+
+  /** Chaque image : sticks (marcher, regarder) et gâchettes (balayer, courir). */
+  private updatePad(dt: number): void {
+    const s = pollGamepad(dt);
+    const p = this.player;
+    if (!s || !this.playing) {
+      p.analog.x = p.analog.y = 0;
+      p.analogSprint = false;
+      if (this.padSweep) {
+        this.padSweep = false;
+        this.input.pressed = false;
+      }
+      return;
+    }
+    p.analog.x = s.lx;
+    p.analog.y = s.ly;
+    p.analogSprint = s.lt > 0.4 || s.held('l3');
+    // Regard : courbe douce (précis au centre, rapide au bout du stick), suit la sensibilité des réglages.
+    const curve = (v: number) => Math.sign(v) * Math.pow(Math.abs(v), 1.7);
+    if (s.rx || s.ry) p.look(curve(s.rx) * 1250 * dt, curve(s.ry) * 900 * dt);
+    // RT / R2 : balayer (on garde la souris utilisable en même temps).
+    if (s.rt > 0.3 && !this.padSweep) {
+      this.padSweep = true;
+      this.input.pressed = true;
+    } else if (s.rt < 0.2 && this.padSweep) {
+      this.padSweep = false;
+      this.input.pressed = false;
+    }
+  }
+
+  /** Une touche du clavier, comme si on l'avait tapée (la manette réutilise les raccourcis). */
+  private key(key: string, code: string): void {
+    window.dispatchEvent(new KeyboardEvent('keydown', { key, code, bubbles: true }));
+    window.dispatchEvent(new KeyboardEvent('keyup', { key, code, bubbles: true }));
+  }
+
+  /** Un menu est-il ouvert (la manette sert alors à s'y déplacer) ? */
+  private menuOpen(): boolean {
+    return !store.started.value || store.paused.value || store.mapOpen.value || store.albumOpen.value || store.journalOpen.value || store.netOpen.value || store.inventoryOpen.value || store.settingsOpen.value || store.creditsPanel.value || store.prestigeConfirm.value || store.recoverOpen.value || store.credits.value || store.treeOpen.value;
+  }
+
+  /** Bouton B / ○ dans un menu : on ferme le panneau du dessus (ou on reprend la partie). */
+  private closeTopPanel(): void {
+    if (store.settingsOpen.value) store.settingsOpen.value = false;
+    else if (store.creditsPanel.value) store.creditsPanel.value = false;
+    else if (store.prestigeConfirm.value) store.prestigeConfirm.value = false;
+    else if (store.recoverOpen.value) store.recoverOpen.value = false;
+    else if (store.credits.value) store.credits.value = false;
+    else if (store.netOpen.value) this.toggleNet();
+    else if (store.albumOpen.value) this.toggleAlbum();
+    else if (store.journalOpen.value) this.toggleJournal();
+    else if (store.mapOpen.value) this.toggleMap();
+    else if (store.inventoryOpen.value) this.toggleInventory();
+    else if (store.treeOpen.value) this.toggleTree();
+    else if (store.paused.value && store.started.value) this.start();
+  }
+
+  /** Mettre en pause (bouton Menu / Options). */
+  private padPause(): void {
+    if (!store.started.value) return;
+    this.input.pressed = false;
+    this.padSweep = false;
+    this.player.clearKeys();
+    store.paused.value = true;
+    if (document.pointerLockElement) document.exitPointerLock();
+  }
+
+  /** Les boutons de la manette. */
+  private onPad(e: PadEvent, s: PadState): boolean {
+    void s;
+    // Cinématique : A = réplique suivante, B ou Menu = passer.
+    if (this.scene || this.wakeT >= 0) {
+      if (e === 'a') this.key(' ', 'Space');
+      if (e === 'b' || e === 'menu') this.skipCinematic();
+      return true;
+    }
+    if (this.menuOpen()) {
+      if (e === 'nav-up' || e === 'nav-down' || e === 'nav-left' || e === 'nav-right') moveFocus(e.slice(4) as 'up');
+      else if (e === 'a') activateFocus();
+      else if (e === 'b') this.closeTopPanel();
+      else if (e === 'menu') {
+        if (store.paused.value && store.started.value && !store.settingsOpen.value) this.start();
+        else this.closeTopPanel();
+      } else if (e === 'y' && store.treeOpen.value) this.toggleTree();
+      return true;
+    }
+    if (!this.playing) return false;
+    switch (e) {
+      case 'a':
+        // Une réplique ou une carte de souvenir à l'écran : on avance ; sinon, on agit (porte, établi, coffre…).
+        if (store.dialogue.value || store.souvenirCard.value) this.key(' ', 'Space');
+        else this.key('e', 'KeyE');
+        break;
+      case 'b': this.key('r', 'KeyR'); break;
+      case 'x': this.key('t', 'KeyT'); break;
+      case 'y': this.key('b', 'KeyB'); break;
+      case 'lb':
+      case 'rb':
+        window.dispatchEvent(new WheelEvent('wheel', { deltaY: e === 'rb' ? 1 : -1 }));
+        break;
+      case 'up': this.key('m', 'KeyM'); break;
+      case 'down': this.key('j', 'KeyJ'); break;
+      case 'left': this.key('k', 'KeyK'); break;
+      case 'right': this.key('p', 'KeyP'); break;
+      case 'view':
+        // Quelqu'un demande à rejoindre ma partie : Vue = accepter. Sinon : la carte.
+        if (store.netRequests.value.length) this.key('o', 'KeyO');
+        else this.key('m', 'KeyM');
+        break;
+      case 'menu': this.padPause(); break;
+      default: return false;
+    }
+    return true;
+  }
+
   private bindInput(): void {
+    watchKeyboardMouse();
+    pushPadHandler((e, s) => this.onPad(e, s));
     const canvas = this.world.canvas;
     let lockedAt = 0;
     document.addEventListener('pointerlockchange', () => {
@@ -1645,6 +1771,7 @@ export class Game {
     this.save.stats.doors++;
     this.world.setDoorState((dd) => this.doorOpen(dd));
     this.synth.unlockDoor();
+    padRumble(0.6, 0.4, 350);
     setTimeout(() => this.synth.fanfare(), 700);
     store.pushToast('Porte ouverte ! 🔓', `${room.name} est accessible. La poussière y est ${room.valueMult}× plus précieuse !`, 4500);
     this.visibleKey = '';
@@ -1729,7 +1856,10 @@ export class Game {
       if (r.def === this.currentRoom) {
         const lvl = 0;
         if (counts.star) this.synth.collect('star', lvl, counts.star);
-        if (counts.bunny || counts.rubble) this.synth.collect('bunny', lvl, (counts.bunny ?? 0) + (counts.rubble ?? 0));
+        if (counts.bunny || counts.rubble) {
+          this.synth.collect('bunny', lvl, (counts.bunny ?? 0) + (counts.rubble ?? 0));
+          padRumble(0.1, 0.3, 60);
+        }
         const small = (counts.dust ?? 0) + (counts.crumb ?? 0) + (counts.leaf ?? 0) + (counts.soot ?? 0) + (counts.web ?? 0) + (counts.stain ?? 0);
         if (small) this.synth.collect('dust', lvl, small);
       }
@@ -1889,6 +2019,7 @@ export class Game {
       const bonus = Math.max(250, Math.round(r.def.price * 0.5)) * this.mods.cleanBonusMult(r.def.id);
       this.earn(bonus, 'bonus');
       this.world.celebrate(ri);
+      padRumble(0.8, 0.6, 450);
       const here = this.currentRoom === r.def;
       if (here) this.sceneHold = Date.now() + 4500;
       this.director.onRoomClean(ri, here);
