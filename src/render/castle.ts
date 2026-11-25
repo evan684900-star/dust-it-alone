@@ -1,7 +1,9 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { DoorDef, RoomDef, StairDef } from '../data/rooms';
 import { fabric, mat, metal, solid } from './materials';
 import { roundedBox } from './geometry';
+import { DECOR_BY_STYLE, buildDecor, decorHeight, decorWidth } from './decor';
 import { REALISTIC, naturalWood, realGrass, realStone, realWood, realify, type SurfaceTextures } from './realistic';
 import { blobShadow, drawCarpet, drawFlagstones, drawGrass, drawPlanks, drawPortrait, drawStoneWall, softDot } from './canvasTextures';
 
@@ -54,6 +56,30 @@ const T = {
   get grass() { return (this._grass ??= REALISTIC ? surf(realGrass(512)) : canvasTex(drawGrass(512), true)); },
   get shadow() { return (this._shadow ??= canvasTex(blobShadow())); },
   get soft() { return (this._soft ??= canvasTex(softDot())); },
+  _beam: null as THREE.Texture | null,
+  /** Dégradé d'un rayon de lumière : fort près de la fenêtre, bords adoucis. */
+  get beam() {
+    if (this._beam) return this._beam;
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d')!;
+    const img = g.createImageData(64, 64);
+    for (let y = 0; y < 64; y++) {
+      for (let x = 0; x < 64; x++) {
+        const u = x / 63;
+        const v = y / 63;
+        const edge = Math.sin(Math.PI * u) ** 0.8;
+        const a = Math.pow(1 - v, 1.4) * edge * (0.85 + 0.15 * Math.sin(u * 40));
+        const i = (y * 64 + x) * 4;
+        img.data[i] = img.data[i + 1] = img.data[i + 2] = 255;
+        img.data[i + 3] = Math.round(a * 255);
+      }
+    }
+    g.putImageData(img, 0, 0);
+    this._beam = new THREE.CanvasTexture(c);
+    this._beam.flipY = false;
+    return this._beam;
+  },
   planks(key: string, woods: string[]) {
     let t = this.woods.get(key);
     if (!t) {
@@ -171,6 +197,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
   const { width: W, height: H, ceiling: C } = def;
   const torches: THREE.Vector3[] = [];
   const flames: THREE.Object3D[] = [];
+  const ambience: THREE.Object3D[] = [];
 
   // Sol.
   const wood = Array.isArray(st.floor);
@@ -183,12 +210,16 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
   floor.receiveShadow = true;
   g.add(floor);
 
+  // Cour : de l'herbe en touffes et des fleurs (instanciées : un seul dessin pour toutes).
+  if (st.floor === 'grass') g.add(...meadow(def));
+
   // Murs de pierre, avec leurs ouvertures de portes.
   const wallTex = st.wallTex === 'stone' ? T.stone : T.darkStone;
   // Une seule face : la pièce voisine a son propre mur exactement au même endroit (sinon les deux textures se battent).
   const wallMat = mat(0xffffff, texParams(wallTex, 3, 0.9));
   const wainMat = mat(0xffffff, texParams(T.planks('wainscot', ['#6a3a22', '#5e321c', '#74422a']), 1, 0.6));
   const frameMat = mat(0x5a3220, { roughness: 0.6 });
+  const archMat = mat(st.wallTex === 'darkStone' ? (REALISTIC ? 0x8a847c : 0x6a6058) : REALISTIC ? 0xc4beb4 : 0xb4a48e, { roughness: 0.85 });
   for (const side of ['n', 's', 'w', 'e'] as Side[]) {
     const { len, place } = wallFrame(def, side);
     const ops = openingsFor(def, doors, side).map((o) => ({ ...o, from: toWallU(def, side, o.from), to: toWallU(def, side, o.to) }))
@@ -213,18 +244,41 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
       place(wall, (a + b) / 2, wallH / 2);
       if (wallH < C) {
         // Créneaux sur le parapet, et le dos du mur (on le voit depuis l'intérieur du chemin de ronde).
-        const merlon = mat(0xb8a894, { roughness: 0.9 });
+        // Créneaux en pierre (chacun un peu différent), avec quelques drapeaux.
+        const merlons = [0x9a8c7c, 0x8e8272, 0xa69684].map((c) => mat(c, { roughness: 0.92 }));
+        let mk = 0;
         for (let m = a + 40; m < b - 40; m += 160) {
-          const blk = solid(roundedBox(80, 60, 40, 4), merlon);
+          const blk = solid(roundedBox(80, 60 + (mk % 3) * 3, 40, 4), merlons[mk % 3]);
           place(blk, m + 40, wallH + 30, -10);
           g.add(blk);
+          if (mk % 6 === 3) g.add(...flag(place, m + 40 + 80, wallH, mk));
+          mk++;
         }
-        const top = solid(roundedBox(b - a, 14, 50, 3), merlon);
+        const top = solid(roundedBox(b - a, 14, 50, 3), merlons[0]);
         place(top, (a + b) / 2, wallH + 2, -15);
         g.add(top);
       }
       wall.receiveShadow = true;
       g.add(wall);
+      // Architecture : socle de pierre en bas, corniche en haut (pas sur les parapets ni avec les boiseries).
+      if (wallH >= C && b - a > 30) {
+        if (!st.wainscot) {
+          const plinth = solid(roundedBox(b - a, 34, 12, 3), archMat);
+          place(plinth, (a + b) / 2, 17, 6);
+          plinth.castShadow = false;
+          g.add(plinth);
+        }
+        if (!st.outdoor) {
+          const cornice = solid(roundedBox(b - a, 22, 22, 4), archMat);
+          place(cornice, (a + b) / 2, C - 11, 11);
+          cornice.castShadow = false;
+          g.add(cornice);
+          const band = solid(roundedBox(b - a, 8, 12, 2), archMat);
+          place(band, (a + b) / 2, C - 30, 6);
+          band.castShadow = false;
+          g.add(band);
+        }
+      }
       if (st.wainscot) {
         const wain = new THREE.Mesh(tiledPlane(b - a, 110, 600, a, 0), wainMat);
         place(wain, (a + b) / 2, 55, 1.5);
@@ -245,7 +299,7 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
       let k = 0;
       for (let wu = step / 2; wu < len - 100; wu += step) {
         if (ops.some((o) => wu > o.from - 160 && wu < o.to + 160)) continue;
-        addWindow(g, place, wu, sill, 110, wh, st.windowColors ? st.windowColors[k++ % st.windowColors.length] : undefined);
+        ambience.push(addWindow(g, place, wu, sill, 110, wh, st.windowColors ? st.windowColors[k++ % st.windowColors.length] : undefined));
       }
     }
 
@@ -254,9 +308,42 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
     for (let tu = tStep / 2 + (side === st.windows ? tStep / 2 : 0); st.torches !== false && wallH >= C && tu < len - 120; tu += tStep) {
       if (ops.some((o) => tu > o.from - 120 && tu < o.to + 120)) continue;
       const th = st.torchHeight ?? 215;
+      // Un pilier de pierre engagé dans le mur porte chaque torche : il rythme les grands murs.
+      if (!st.outdoor && len > 900) {
+        const shaft = solid(roundedBox(50, C - 60, 14, 4), archMat);
+        place(shaft, tu, (C - 60) / 2 + 30, 7);
+        shaft.castShadow = false;
+        const base = solid(roundedBox(66, 32, 24, 4), archMat);
+        place(base, tu, 16, 12);
+        const capital = solid(roundedBox(66, 22, 24, 4), archMat);
+        place(capital, tu, C - 52, 12);
+        g.add(shaft, base, capital);
+      }
       const t = addTorch(g, place, tu, th);
       torches.push(t.light);
       flames.push(t.flame);
+    }
+
+    // Décorations murales (entre les torches), sur les murs qui n'ont ni fenêtres, ni portraits, ni bannières.
+    const kinds = DECOR_BY_STYLE[def.style];
+    if (kinds && wallH >= C && side !== st.windows && st.portraits !== side && !st.banners?.includes(side)) {
+      let k = side.charCodeAt(0);
+      for (let du = tStep + (side === st.windows ? tStep / 2 : 0); du < len - 160; du += tStep) {
+        const kind = kinds[k % kinds.length];
+        const half = decorWidth(kind) / 2 + 40;
+        if (du - half < 60 || du + half > len - 60) continue;
+        if (ops.some((o) => du + half > o.from - 60 && du - half < o.to + 60)) continue;
+        // Pas derrière un grand meuble collé au mur.
+        const probe = new THREE.Object3D();
+        place(probe, du, 0, 60);
+        if (def.obstacles.some((o) => probe.position.x > o.rect.x - half && probe.position.x < o.rect.x + o.rect.w + half && probe.position.z > o.rect.y - 90 && probe.position.z < o.rect.y + o.rect.h + 90)) continue;
+        const item = buildDecor(kind, k * 7 + def.width, C);
+        // Plus grands dans les grandes salles (sinon ils paraissent minuscules sur ces murs immenses).
+        item.scale.setScalar(Math.max(1, Math.min(1.55, C / 420)));
+        place(item, du, decorHeight(kind, C), 1);
+        g.add(item);
+        k++;
+      }
     }
 
     // Portraits de famille dans la galerie (mur sud) et la chambre (mur ouest).
@@ -318,12 +405,35 @@ export function buildRoomShell(def: RoomDef, doors: DoorDef[]): RoomShell {
   // Ombres douces sous les meubles.
   for (const p of def.obstacles) addShadowBlob(g, p.rect.x + p.rect.w / 2, p.rect.y + p.rect.h / 2, Math.max(p.rect.w, p.rect.h) * 0.85);
 
-  return { group: g, ambience: [], torches, flames };
+  return { group: g, ambience: mergeBeams(g, ambience), torches, flames };
+}
+
+/** Les rayons de lumière d'une pièce, regroupés par couleur (un seul dessin par couleur au lieu d'un par fenêtre). */
+function mergeBeams(g: THREE.Group, beams: THREE.Object3D[]): THREE.Object3D[] {
+  const byColor = new Map<number, THREE.Mesh[]>();
+  for (const b of beams) {
+    const m = b as THREE.Mesh;
+    const key = (m.material as THREE.MeshBasicMaterial).color.getHex();
+    byColor.set(key, [...(byColor.get(key) ?? []), m]);
+  }
+  const out: THREE.Object3D[] = [];
+  for (const list of byColor.values()) {
+    const geos = list.map((m) => {
+      m.updateMatrix();
+      return m.geometry.clone().applyMatrix4(m.matrix);
+    });
+    const merged = new THREE.Mesh(mergeGeometries(geos)!, list[0].material);
+    merged.renderOrder = 4;
+    for (const m of list) g.remove(m);
+    g.add(merged);
+    out.push(merged);
+  }
+  return out;
 }
 
 type Place = (o: THREE.Object3D, u: number, v: number, d?: number) => void;
 
-function addWindow(g: THREE.Group, place: Place, u: number, sill: number, w: number, h: number, color?: number): void {
+function addWindow(g: THREE.Group, place: Place, u: number, sill: number, w: number, h: number, color?: number): THREE.Object3D {
   const shape = new THREE.Shape();
   const r = w / 2;
   shape.moveTo(-r, 0);
@@ -356,6 +466,138 @@ function addWindow(g: THREE.Group, place: Place, u: number, sill: number, w: num
     place(hb, u, sill + (k * (h - r)) / 4, 2);
     g.add(hb);
   }
+  // Un rayon de soleil entre par la fenêtre et vient se poser sur le sol.
+  const beam = new THREE.Mesh(beamGeometry(w * 0.92, sill + 8, h - 14, (u * 0.37) % 1 > 0.5 ? 0.22 : -0.22), new THREE.MeshBasicMaterial({
+    map: T.beam,
+    color: new THREE.Color(color ?? 0xffe2a8).lerp(new THREE.Color(0xffe8c0), color ? 0.35 : 0),
+    transparent: true,
+    opacity: REALISTIC ? 0.2 : 0.26,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    fog: false,
+  }));
+  beam.renderOrder = 4;
+  place(beam, u, 0, 2);
+  g.add(beam);
+  return beam;
+}
+
+/** Un mât et son drapeau (posés sur le parapet). */
+function flag(place: Place, u: number, top: number, seed: number): THREE.Object3D[] {
+  const pole = solid(new THREE.CylinderGeometry(3, 3.5, 260, 8), metal(0x6a5a4a, 0.5));
+  place(pole, u, top + 130, -12);
+  const knob = solid(new THREE.SphereGeometry(6, 10, 8), metal(0xd8b860, 0.3));
+  place(knob, u, top + 263, -12);
+  const geo = new THREE.PlaneGeometry(110, 70, 8, 1);
+  const p = geo.attributes.position as THREE.BufferAttribute;
+  // Le drapeau ondule (et flotte vers la droite du mât).
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i) + 55;
+    p.setXYZ(i, x, p.getY(i) - Math.sin(x * 0.03) * 4, Math.sin(x * 0.06 + seed) * 8 * (x / 110));
+  }
+  geo.computeVertexNormals();
+  const colors = [0x8a1a2a, 0x1a3a7a, 0xd8b860];
+  const cloth = new THREE.Mesh(geo, fabric(colors[seed % 3], { side: THREE.DoubleSide }));
+  place(cloth, u + 3, top + 220, -12);
+  return [pole, knob, cloth];
+}
+
+/** Touffes d'herbe et fleurs de la cour (loin des meubles, des pelles et des portes). */
+function meadow(def: RoomDef): THREE.Object3D[] {
+  let seed = 12345;
+  const rnd = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  // Une touffe : cinq brins en éventail (deux triangles chacun), couleurs par sommet (pied foncé, pointe claire).
+  const blades: number[] = [];
+  const cols: number[] = [];
+  for (let k = 0; k < 5; k++) {
+    const a = (k / 5) * Math.PI + rnd() * 0.4;
+    const lean = (rnd() - 0.5) * 0.6;
+    const h = 14 + rnd() * 14;
+    const w = 2.2;
+    const cx = Math.cos(a) * 3;
+    const cz = Math.sin(a) * 3;
+    const tx = cx + Math.cos(a + Math.PI / 2) * lean * h;
+    const tz = cz + Math.sin(a + Math.PI / 2) * lean * h;
+    const px = Math.cos(a) * w;
+    const pz = Math.sin(a) * w;
+    blades.push(cx - px, 0, cz - pz, cx + px, 0, cz + pz, tx, h, tz);
+    cols.push(0.22, 0.38, 0.16, 0.22, 0.38, 0.16, 0.55, 0.78, 0.36);
+  }
+  const tuft = new THREE.BufferGeometry();
+  tuft.setAttribute('position', new THREE.Float32BufferAttribute(blades, 3));
+  tuft.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  tuft.computeVertexNormals();
+  const free = (x: number, z: number, m: number) =>
+    !def.obstacles.some((o) => x > o.rect.x - m && x < o.rect.x + o.rect.w + m && z > o.rect.y - m && z < o.rect.y + o.rect.h + m) &&
+    !def.collectors.some((c) => Math.hypot(c.mouth.x - x, c.mouth.y - z) < 260);
+  const N = 900;
+  const grass = new THREE.InstancedMesh(tuft, mat(0xffffff, { vertexColors: true, side: THREE.DoubleSide, roughness: 0.9 }), N);
+  const o = new THREE.Object3D();
+  let n = 0;
+  for (let k = 0; k < N * 3 && n < N; k++) {
+    // Plus dense le long des murs (on y marche moins).
+    const edge = rnd() < 0.6;
+    let x = rnd() * def.width;
+    let z = rnd() * def.height;
+    if (edge) {
+      if (rnd() < 0.5) x = rnd() < 0.5 ? 20 + rnd() * 200 : def.width - 20 - rnd() * 200;
+      else z = rnd() < 0.5 ? 20 + rnd() * 200 : def.height - 20 - rnd() * 200;
+    }
+    if (!free(x, z, 30)) continue;
+    o.position.set(x, 0, z);
+    o.rotation.set(0, rnd() * Math.PI * 2, 0);
+    o.scale.setScalar(0.8 + rnd() * 0.9);
+    o.updateMatrix();
+    grass.setMatrixAt(n++, o.matrix);
+  }
+  grass.count = n;
+  grass.receiveShadow = true;
+  // Fleurs : une petite tête de couleur sur une tige.
+  const M = 160;
+  const head = new THREE.IcosahedronGeometry(3.2, 0).translate(0, 16, 0);
+  const flowers = new THREE.InstancedMesh(head, mat(0xffffff, { roughness: 0.6 }), M);
+  const palette = [0xffffff, 0xffd84a, 0xff8ab0, 0xb08aff, 0xff6a5a].map((c) => new THREE.Color(c));
+  let f = 0;
+  for (let k = 0; k < M * 4 && f < M; k++) {
+    const x = rnd() * def.width;
+    const z = rnd() * def.height;
+    if (!free(x, z, 40)) continue;
+    o.position.set(x, 0, z);
+    o.rotation.set(0, 0, 0);
+    o.scale.setScalar(0.8 + rnd() * 0.6);
+    o.updateMatrix();
+    flowers.setMatrixAt(f, o.matrix);
+    flowers.setColorAt(f, palette[Math.floor(rnd() * palette.length)]);
+    f++;
+  }
+  flowers.count = f;
+  return [grass, flowers];
+}
+
+/**
+ * Volume de lumière : il part du rectangle de la fenêtre (sur le mur) et descend jusqu'au sol,
+ * vers l'intérieur de la pièce (+z), un peu de biais. v = 0 côté fenêtre, 1 au sol.
+ */
+function beamGeometry(w: number, y0: number, h: number, slant: number): THREE.BufferGeometry {
+  const dir = new THREE.Vector3(slant, -0.82, 1);
+  const corners = [new THREE.Vector3(-w / 2, y0, 0), new THREE.Vector3(w / 2, y0, 0), new THREE.Vector3(w / 2, y0 + h, 0), new THREE.Vector3(-w / 2, y0 + h, 0)];
+  const ground = corners.map((c) => c.clone().addScaledVector(dir, c.y / 0.82));
+  const pos: number[] = [];
+  const uv: number[] = [];
+  // Les quatre faces du volume (bas, droite, haut, gauche).
+  for (let k = 0; k < 4; k++) {
+    const a = corners[k];
+    const b = corners[(k + 1) % 4];
+    const a2 = ground[k];
+    const b2 = ground[(k + 1) % 4];
+    pos.push(a.x, a.y, a.z, b.x, b.y, b.z, b2.x, b2.y, b2.z, a.x, a.y, a.z, b2.x, b2.y, b2.z, a2.x, a2.y, a2.z);
+    uv.push(0, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 1);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return g;
 }
 
 function addTorch(g: THREE.Group, place: Place, u: number, h: number): { light: THREE.Vector3; flame: THREE.Object3D } {

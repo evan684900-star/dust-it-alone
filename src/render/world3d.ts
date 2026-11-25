@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { REALISTIC, REAL_DUST_COLORS, filmPass, sanitizePass, naturalize, realFuzzballGeometry, realDustGeometry, realDustTexture } from './realistic';
 import { panFit, type DoorDef, type RoomDef, type StairDef } from '../data/rooms';
 import { DIRT_ORDER, DIRT_TYPES, type DirtId } from '../data/dirtTypes';
@@ -91,6 +92,9 @@ interface RoomView {
   belts: THREE.Group[];
   /** Message de Mouton Ier écrit dans la poussière. */
   dustMessage?: THREE.Mesh;
+  /** Voile de poussière sur le sol et toiles d'araignée des coins : ils s'effacent quand la pièce est propre. */
+  grime?: THREE.Mesh;
+  webs?: THREE.Mesh[];
 }
 
 /** Un autre joueur (multijoueur). */
@@ -255,6 +259,7 @@ export class World3D {
     const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
     sky.renderOrder = -1;
     s.add(sky);
+    this.buildSkyExtras(rooms.map((r) => r.def));
     const sun = new THREE.DirectionalLight(0xffd59a, 4.2);
     this.sun = sun;
     sun.castShadow = true;
@@ -363,6 +368,7 @@ export class World3D {
 
     // Tout ce qui ne bouge pas est fusionné (les pelles rebondissent et les flammes vacillent : on les garde à part).
     mergeStatic(group, new Set<THREE.Object3D>([...pans.map((p) => p.obj), ...shell.flames]));
+    const neglect = this.buildNeglect(def, group);
 
     const r = sim.pool.ranges;
     // Teinte des taches selon la pièce (vin, graisse, cire…).
@@ -393,7 +399,7 @@ export class World3D {
     group.updateMatrixWorld(true);
     // Torches : coordonnées locales → monde.
     const torches = shell.torches.map((t) => t.clone().add(new THREE.Vector3(def.origin.x, def.floorY, def.origin.z)));
-    return { def, sim, group, dust, meshes, helperViews: new Map(), belts: [], pans, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
+    return { def, sim, group, dust, meshes, helperViews: new Map(), belts: [], pans, ...neglect, ambience: shell.ambience, torches, flames: shell.flames, motes: shell.motes, visible: true };
   }
 
   /** Empreinte de la brosse au sol : un rectangle arrondi qui suit exactement la zone qui pousse. */
@@ -490,6 +496,183 @@ export class World3D {
   }
 
   /** Taille des pelles d'une pièce (amélioration « Pelles géantes »), avec un petit rebond. */
+  // ───────────────────────────── Ciel : soleil, nuages, collines ─────────────────────────────
+
+  private clouds: THREE.Mesh | null = null;
+
+  /** Autour du château : un soleil de fin d'après-midi, des nuages qui passent, des collines au loin. */
+  private buildSkyExtras(defs: RoomDef[]): void {
+    const xs = defs.flatMap((d) => [d.origin.x, d.origin.x + d.width]);
+    const zs = defs.flatMap((d) => [d.origin.z, d.origin.z + d.height]);
+    const cx = (Math.min(...xs) + Math.max(...xs)) / 2;
+    const cz = (Math.min(...zs) + Math.max(...zs)) / 2;
+    const root = new THREE.Group();
+    root.position.set(cx, 0, cz);
+    this.scene.add(root);
+    const basic = (o: THREE.MeshBasicMaterialParameters) => new THREE.MeshBasicMaterial({ fog: false, depthWrite: false, transparent: true, ...o });
+
+    // Le soleil : un disque chaud et un grand halo.
+    const sunDir = new THREE.Vector3(-0.55, 0.28, -0.79).normalize();
+    const disc = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(softDot()), color: new THREE.Color(0xfff0c0).multiplyScalar(2), fog: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+    disc.scale.set(3600, 3600, 1);
+    disc.position.copy(sunDir).multiplyScalar(30000);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(softDot()), color: 0xffb070, opacity: 0.55, fog: false, depthWrite: false, blending: THREE.AdditiveBlending }));
+    halo.scale.set(16000, 16000, 1);
+    halo.position.copy(disc.position);
+    root.add(halo, disc);
+
+    // Collines : deux bandes de relief tout autour (les plus loin, bleutées ; les plus proches, vertes).
+    const hills = (h: number, color: string, top: string, seed: number) => {
+      const c = document.createElement('canvas');
+      c.width = 2048;
+      c.height = 128;
+      const g = c.getContext('2d')!;
+      const grad = g.createLinearGradient(0, 0, 0, 128);
+      grad.addColorStop(0, top);
+      grad.addColorStop(1, color);
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(0, 128);
+      for (let x = 0; x <= 2048; x += 8) {
+        const t = (x / 2048) * Math.PI * 2;
+        const y = 70 - 26 * Math.sin(t * 3 + seed) - 14 * Math.sin(t * 7 + seed * 2) - 6 * Math.sin(t * 17 + seed);
+        g.lineTo(x, y);
+      }
+      g.lineTo(2048, 128);
+      g.fill();
+      // De petits arbres sur la crête la plus proche.
+      if (seed > 1) {
+        g.fillStyle = top;
+        for (let x = 10; x < 2048; x += 14 + ((x * 7) % 23)) {
+          const t = (x / 2048) * Math.PI * 2;
+          const y = 70 - 26 * Math.sin(t * 3 + seed) - 14 * Math.sin(t * 7 + seed * 2) - 6 * Math.sin(t * 17 + seed);
+          g.beginPath();
+          g.arc(x, y - 3, 5 + ((x * 13) % 5), 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.wrapS = THREE.RepeatWrapping;
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(h, h, h * 0.16, 64, 1, true), basic({ map: t, side: THREE.BackSide, alphaTest: 0.02 }));
+      m.position.y = -900 + h * 0.07;
+      m.renderOrder = -1;
+      return m;
+    };
+    root.add(hills(34000, '#8a9ab8', '#a8b4cc', 1), hills(26000, '#4a6a3a', '#6a8a4a', 4));
+
+    // Nuages : des grappes de boules douces, qui dérivent lentement.
+    const cloudTex = (() => {
+      const c = document.createElement('canvas');
+      c.width = 256;
+      c.height = 128;
+      const g = c.getContext('2d')!;
+      for (let k = 0; k < 9; k++) {
+        const x = 50 + k * 19 + Math.sin(k * 2.1) * 10;
+        const y = 78 - Math.sin((k / 8) * Math.PI) * 26;
+        const r = 26 + Math.sin(k * 1.7) * 10 + Math.sin((k / 8) * Math.PI) * 14;
+        const grad = g.createRadialGradient(x, y, 0, x, y, r);
+        grad.addColorStop(0, 'rgba(255,250,244,0.95)');
+        grad.addColorStop(0.7, 'rgba(255,240,230,0.7)');
+        grad.addColorStop(1, 'rgba(255,236,220,0)');
+        g.fillStyle = grad;
+        g.beginPath();
+        g.arc(x, y, r, 0, Math.PI * 2);
+        g.fill();
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    })();
+    // Tous les nuages en un seul dessin : des rectangles tournés vers le château.
+    const quads: THREE.BufferGeometry[] = [];
+    const dummy = new THREE.Object3D();
+    for (let k = 0; k < 16; k++) {
+      const a = (k / 16) * Math.PI * 2 + Math.sin(k * 3.7) * 0.2;
+      const r = 17000 + ((k * 3779) % 9000);
+      const w = 5000 + ((k * 1931) % 4000);
+      dummy.position.set(Math.cos(a) * r, 5500 + ((k * 2711) % 4000), Math.sin(a) * r);
+      dummy.lookAt(0, dummy.position.y * 0.6, 0);
+      dummy.updateMatrix();
+      quads.push(new THREE.PlaneGeometry(w, w / 2).applyMatrix4(dummy.matrix));
+    }
+    const clouds = new THREE.Mesh(mergeGeometries(quads)!, basic({ map: cloudTex, color: 0xfff4ec, opacity: 0.85 }));
+    root.add(clouds);
+    this.clouds = clouds;
+  }
+
+  // ───────────────────────────── L'abandon : voile de poussière et toiles d'araignée ─────────────────────────────
+
+  private grimeTex: THREE.Texture | null = null;
+  private cornerWebTex: THREE.Texture | null = null;
+
+  /** Un voile gris sur le sol et des toiles dans les coins du plafond (pas dehors). */
+  private buildNeglect(def: RoomDef, group: THREE.Group): { grime?: THREE.Mesh; webs?: THREE.Mesh[] } {
+    if (def.style === 'courtyard' || def.style === 'ramparts') return {};
+    if (!this.grimeTex) {
+      const c = document.createElement('canvas');
+      c.width = c.height = 256;
+      const g = c.getContext('2d')!;
+      // Des nappes de poussière irrégulières, plus épaisses par endroits, et de fines traînées.
+      for (let k = 0; k < 140; k++) {
+        const x = Math.random() * 256;
+        const y = Math.random() * 256;
+        const r = 10 + Math.random() * 50;
+        for (const [dx, dy] of [[0, 0], [256, 0], [-256, 0], [0, 256], [0, -256]]) {
+          const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
+          grad.addColorStop(0, `rgba(150,138,124,${0.12 + Math.random() * 0.18})`);
+          grad.addColorStop(1, 'rgba(150,138,124,0)');
+          g.fillStyle = grad;
+          g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
+        }
+      }
+      g.strokeStyle = 'rgba(120,110,100,0.18)';
+      for (let k = 0; k < 60; k++) {
+        g.lineWidth = 0.5 + Math.random();
+        g.beginPath();
+        const x = Math.random() * 256;
+        const y = Math.random() * 256;
+        g.moveTo(x, y);
+        g.lineTo(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 40);
+        g.stroke();
+      }
+      this.grimeTex = new THREE.CanvasTexture(c);
+      this.grimeTex.wrapS = this.grimeTex.wrapT = THREE.RepeatWrapping;
+      this.cornerWebTex = new THREE.CanvasTexture(drawWeb());
+    }
+    const tex = this.grimeTex.clone();
+    tex.needsUpdate = true;
+    tex.repeat.set(def.width / 520, def.height / 520);
+    const grime = new THREE.Mesh(
+      new THREE.PlaneGeometry(def.width, def.height).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, color: REALISTIC ? 0x9a9088 : 0xb0a49a }),
+    );
+    grime.position.set(def.width / 2, 1, def.height / 2);
+    grime.renderOrder = 1;
+    group.add(grime);
+    // Toiles d'araignée dans les quatre coins du plafond (le grenier a ses propres recoins).
+    const webs: THREE.Mesh[] = [];
+    if (def.style !== 'attic') {
+      const C = def.ceiling;
+      // Les quatre toiles en un seul dessin.
+      const parts: THREE.BufferGeometry[] = [];
+      const dummy = new THREE.Object3D();
+      for (const [cx, cz] of [[0, 0], [def.width, 0], [0, def.height], [def.width, def.height]]) {
+        // Tendue en travers du coin, un peu en avant (ses bords disparaissent dans les murs et le plafond).
+        const ix = cx === 0 ? 1 : -1;
+        const iz = cz === 0 ? 1 : -1;
+        dummy.position.set(cx + ix * 62, C - 70, cz + iz * 62);
+        dummy.lookAt(cx + ix * 400, C - 330, cz + iz * 400);
+        dummy.updateMatrix();
+        parts.push(new THREE.PlaneGeometry(260, 260).applyMatrix4(dummy.matrix));
+      }
+      const web = new THREE.Mesh(mergeGeometries(parts)!, new THREE.MeshBasicMaterial({ map: this.cornerWebTex, transparent: true, depthWrite: false, side: THREE.DoubleSide, color: REALISTIC ? 0xc8c4bc : 0xffffff }));
+      group.add(web);
+      webs.push(web);
+    }
+    return { grime, webs };
+  }
+
   // ───────────────────────────── Tapis roulants ─────────────────────────────
 
   private beltTex: THREE.CanvasTexture | null = null;
@@ -666,6 +849,11 @@ export class World3D {
     if (isStar) {
       this.shake = Math.max(this.shake, 3);
       this.burst(pan.textX, this.views[roomIndex].def.floorY + 40, pan.textZ, 30);
+      this.sparkles.burst(pan.textX, view.def.floorY + 50, pan.textZ, 45, { speed: 300, color: 0xffe070, size: 1.2 });
+    } else if (view.visible && Math.random() < 0.25) {
+      // Un petit nuage de poussière qui s'échappe de la pelle.
+      const p = pan.obj.position;
+      this.sparkles.spawn({ x: view.def.origin.x + p.x + (Math.random() - 0.5) * 50, y: view.def.floorY + 20, z: view.def.origin.z + p.z + (Math.random() - 0.5) * 50, vx: (Math.random() - 0.5) * 60, vy: 40 + Math.random() * 50, vz: (Math.random() - 0.5) * 60, life: 0.9, gravity: -10, drag: 1.5, size: 1.6, color: REALISTIC ? 0x6a645e : 0x8a8090 });
     }
   }
 
@@ -713,6 +901,7 @@ export class World3D {
     // La bande des tapis défile (une seule texture pour tous).
     if (this.beltRun && this.beltTex) this.beltTex.offset.y = (this.beltTex.offset.y - (dt * BELT.speed * this.beltSpeed) / 40) % 1;
     this.beltRun = false;
+    if (this.clouds) this.clouds.rotation.y += dt * 0.004;
     this.updateDoors(dt);
     this.updateStory(dt);
     this.updateLights(dt);
@@ -1349,6 +1538,23 @@ export class World3D {
       const c = v.sim.cleanliness;
       (v.dustMessage.material as THREE.MeshBasicMaterial).opacity = Math.max(0, 1 - c / 0.55);
     }
+    for (const v of this.views) {
+      if (!v.visible) continue;
+      const c = v.sim.cleanliness;
+      // Le voile gris s'en va avec la poussière ; les toiles tombent à mi-chemin.
+      if (v.grime) {
+        const a = Math.pow(Math.max(0, 1 - c / 0.92), 1.3);
+        (v.grime.material as THREE.MeshBasicMaterial).opacity = a;
+        v.grime.visible = a > 0.01;
+      }
+      if (v.webs) {
+        const a = Math.max(0, 1 - c / 0.7) * 0.85;
+        for (const w of v.webs) {
+          (w.material as THREE.MeshBasicMaterial).opacity = a;
+          w.visible = a > 0.01;
+        }
+      }
+    }
     for (const g of this.souvenirViews.values()) {
       const u = g.userData as { float: THREE.Group; ring: THREE.Mesh; outer: THREE.Mesh; inner: THREE.Mesh; room: number };
       u.float.position.y = u.float.userData.base + Math.sin(this.time * 2 + g.id) * 9;
@@ -1485,6 +1691,15 @@ export class World3D {
       head.rotation.x += t < 0.35 ? -Math.sin((t / 0.35) * Math.PI) * 0.6 : 0;
     }
     this.updateWhirl(sim, broom, dt);
+    // La brosse qui pousse beaucoup de poussière soulève un petit nuage.
+    if (sim && broom.pressed && (this.tool === 'broom' || this.tool === 'widebroom')) {
+      const pushed = sim.broomPushed;
+      if (pushed > 3 && Math.random() < Math.min(0.9, pushed / 40) * dt * 30) {
+        const w = sim.toolWidth(this.tool === 'widebroom' ? 'widebroom' : 'broom');
+        const side = (Math.random() - 0.5) * w;
+        this.sparkles.spawn({ x: broom.x + Math.cos(yaw) * side, y: broom.y + 8, z: broom.z - Math.sin(yaw) * side, vx: -Math.sin(yaw) * 40 + (Math.random() - 0.5) * 30, vy: 30 + Math.random() * 45, vz: -Math.cos(yaw) * 40 + (Math.random() - 0.5) * 30, life: 0.8 + Math.random() * 0.5, gravity: -8, drag: 1.8, size: 1.4 + Math.random(), color: REALISTIC ? 0x5a5650 : 0x7a7080 });
+      }
+    }
 
     const grip = this.tmpA.set(24, -42, -36).applyMatrix4(cam.matrixWorld);
     const base = this.tmpB.set(0, 34 * (1 - squash), 0);

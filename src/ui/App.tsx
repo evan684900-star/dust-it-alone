@@ -52,6 +52,7 @@ export function App({ game }: { game: Game }) {
       {store.recoverOpen.value && <RecoverPanel game={game} />}
       {store.started.value && store.net.value.role !== 'off' && !store.netOpen.value && <NetHud />}
       {store.netRequests.value.length > 0 && <NetRequest game={game} />}
+      {store.started.value && <div class="screen-vignette" />}
       <CinemaLayer />
       {store.started.value && store.souvenirCard.value && !store.cinematic.value && <SouvenirCard key={store.souvenirCard.value.key} card={store.souvenirCard.value} />}
       {store.credits.value && <Credits />}

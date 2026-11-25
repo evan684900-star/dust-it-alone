@@ -1,3 +1,4 @@
+import * as THREE from 'three';
 import { DOORS, ROOMS, START, STAIRS, roomById, type DoorDef, type RoomDef } from './data/rooms';
 import { BELT, RoomSim, type BroomInput } from './sim/roomSim';
 import { World3D } from './render/world3d';
@@ -1370,6 +1371,20 @@ export class Game {
         echo: (id: string) => this.playEchoCinematic(this.rooms.findIndex((r) => r.def.id === id)),
         ending: () => this.startEnding(),
         skip: () => this.skipCinematic(),
+        sceneStats: () => {
+          const out: Record<string, [number, number]> = {};
+          this.world.scene.traverseVisible((o) => {
+            const m = o as THREE.Mesh;
+            if (!m.isMesh && !(o as THREE.Sprite).isSprite) return;
+            const g = m.geometry;
+            const tris = g ? (g.index ? g.index.count : g.attributes.position.count) / 3 : 2;
+            const inst = (m as THREE.InstancedMesh).isInstancedMesh ? (m as THREE.InstancedMesh).count : 1;
+            const key = `${g?.type}|${(m.material as THREE.Material)?.type}`;
+            const cur = out[key] ?? [0, 0];
+            out[key] = [cur[0] + 1, cur[1] + tris * inst];
+          });
+          return Object.entries(out).sort((a, b) => b[1][1] - a[1][1]).slice(0, 14);
+        },
         wake: () => this.startWake(),
         cleanRoom: (id: string, fraction = 1) => {
           const r = this.rooms.find((x) => x.def.id === id);
@@ -1720,8 +1735,29 @@ export class Game {
     return { ...base, eye: base.eye - (1 - e) * (base.eye - (this.player.feet + 22)), pitch: base.pitch * e + (1 - e) * -0.75, yaw: base.yaw + sway };
   }
 
+  private titleT = 0;
+
+  /** Écran d'accueil : la caméra tourne lentement dans les combles, des poussières dorées montent. */
+  private titleView(dt: number): View {
+    this.titleT += dt;
+    const r = ROOMS[0];
+    const cx = r.origin.x + r.width * 0.5;
+    const cz = r.origin.z + r.height * 0.5;
+    const a = this.titleT * 0.045 + 0.8;
+    const rad = Math.min(r.width, r.height) * 0.3;
+    const x = cx + Math.sin(a) * rad;
+    const z = cz + Math.cos(a) * rad;
+    if (Math.random() < dt * 12) {
+      const k = Math.random() * Math.PI * 2;
+      const d = 150 + Math.random() * 500;
+      this.world.sparkles.spawn({ x: cx + Math.cos(k) * d, y: r.floorY + 10 + Math.random() * 60, z: cz + Math.sin(k) * d, vy: 25 + Math.random() * 35, vx: (Math.random() - 0.5) * 15, life: 4 + Math.random() * 3, gravity: -3, drag: 0.05, twinkle: true, size: 0.7, color: 0xffd890 });
+    }
+    return { x, z, eye: r.floorY + 150 + Math.sin(this.titleT * 0.3) * 20, yaw: Math.atan2(x - cx, z - cz) + 0.35, pitch: -0.22 };
+  }
+
   /** La vue de la caméra pour cette image (joueur, cinématique ou réveil). */
   private cameraView(dt: number): View {
+    if (!store.started.value) return this.titleView(dt);
     const base = this.playerView();
     if (this.wakeT >= 0) return this.wakeView(dt, base);
     return this.cine.update(dt, base);

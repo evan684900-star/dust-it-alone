@@ -85,6 +85,15 @@ body {
   transform: rotate(-1.5deg);
   animation: card-in 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) both;
   max-width: min(640px, calc(100vw - 32px));
+  /* Sur un petit écran, la carte reste entière : elle défile au lieu d'être coupée. */
+  max-height: calc(100vh - 40px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+@media (max-height: 760px) {
+  .title-card { padding: 20px 34px 18px; }
+  .title-card .logo { font-size: clamp(40px, 7vw, 70px); }
+  .title-card .tagline { margin: 6px 0 14px; font-size: 17px; }
 }
 @keyframes card-in { from { transform: scale(0.4) rotate(-12deg); opacity: 0; } }
 .logo {
@@ -1014,3 +1023,6 @@ kbd.pad-glyph.pad-ls, kbd.pad-glyph.pad-rs { background: radial-gradient(circle 
 .pad-controls .controls-title, .controls-pad-hint { font-weight: 900; }
 .controls-pad-hint { opacity: 0.8; font-size: 0.9em; }
 .pad-controls span { display: inline-flex; align-items: center; gap: 4px; }
+
+/* Vignette : coins de l'image un peu assombris et réchauffés (fait par le navigateur, sans coût pour la 3D). */
+.screen-vignette { position: fixed; inset: 0; pointer-events: none; z-index: 0; background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 55%, rgba(40, 18, 30, 0.32) 100%); }
